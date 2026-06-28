@@ -248,6 +248,25 @@ public final class DockingAppModel: ObservableObject {
         dockItems.move(fromOffsets: source, toOffset: destination)
     }
 
+    func moveDockItem(_ item: DockItem, by offset: Int) {
+        guard let sourceIndex = dockItems.firstIndex(of: item) else {
+            return
+        }
+
+        let destinationIndex = min(max(sourceIndex + offset, 0), dockItems.count - 1)
+        guard sourceIndex != destinationIndex else {
+            return
+        }
+
+        // This helper backs explicit up/down buttons in Control Center. We keep
+        // it separate from SwiftUI's `move(fromOffsets:toOffset:)` because that
+        // API uses insertion indexes after removal, which is easy to misuse from
+        // per-row buttons and would make a one-step move skip rows. Direct
+        // remove/insert preserves the user's visible row order exactly.
+        let moved = dockItems.remove(at: sourceIndex)
+        dockItems.insert(moved, at: destinationIndex)
+    }
+
     func moveDockItem(_ item: DockItem, before target: DockItem) {
         guard item != target,
               let from = dockItems.firstIndex(of: item),

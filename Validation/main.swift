@@ -354,6 +354,47 @@ func validateUnpinnedRunningAppResolver() throws {
     try expect(hidden.isEmpty, "unpinned running apps should be hideable")
 }
 
+@MainActor
+func validateExplicitAppReorderControls() async throws {
+    let suiteName = "docking.validation.reorder.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    let appListURL = FileManager.default.temporaryDirectory.appendingPathComponent("DockItemsReorderValidation-\(UUID().uuidString).json")
+    let weatherCacheURL = FileManager.default.temporaryDirectory.appendingPathComponent("WeatherReorderValidation-\(UUID().uuidString).json")
+    defer {
+        defaults.removePersistentDomain(forName: suiteName)
+        try? FileManager.default.removeItem(at: appListURL)
+        try? FileManager.default.removeItem(at: weatherCacheURL)
+    }
+
+    let model = DockingAppModel(
+        settingsStore: SettingsStore(defaults: defaults),
+        appListStore: AppListStore(fileURL: appListURL),
+        calendarViewModel: CalendarWidgetViewModel(provider: EmptyCalendarProvider()),
+        weatherViewModel: WeatherWidgetViewModel(
+            provider: StaticWeatherProvider(snapshot: validationWeatherSnapshot()),
+            cache: WeatherCache(fileURL: weatherCacheURL)
+        )
+    )
+    let first = DockItem(title: "First", bundleIdentifier: "com.example.first", appURL: nil, iconCacheKey: "first")
+    let second = DockItem(title: "Second", bundleIdentifier: "com.example.second", appURL: nil, iconCacheKey: "second")
+    let third = DockItem(title: "Third", bundleIdentifier: "com.example.third", appURL: nil, iconCacheKey: "third")
+
+    model.dockItems = [first, second, third]
+
+    model.moveDockItem(second, by: -1)
+    try expect(model.dockItems.map(\.title) == ["Second", "First", "Third"], "Control Center move-up should move exactly one row")
+
+    model.moveDockItem(first, by: 1)
+    try expect(model.dockItems.map(\.title) == ["Second", "Third", "First"], "Control Center move-down should move exactly one row")
+
+    // Boundary moves are no-ops by design: disabled buttons should already
+    // prevent them in the UI, but the model still guards direct calls so a
+    // future settings surface cannot accidentally rotate the app list.
+    model.moveDockItem(second, by: -1)
+    model.moveDockItem(first, by: 1)
+    try expect(model.dockItems.map(\.title) == ["Second", "Third", "First"], "Control Center reorder should not wrap at list boundaries")
+}
+
 func validateDockWindowLevelToggle() throws {
     var settings = DockingSettings.default
     settings.keepAboveOtherWindows = true
@@ -839,6 +880,7 @@ let asyncValidations: [(String, () async throws -> Void)] = [
     ("settings persistence debounce", { try await validateSettingsPersistenceIsDebounced() }),
     ("widget refresh cancellation", { try await validateWidgetRefreshCancellation() }),
     ("widget task lifecycle", { try await validateWidgetTaskLifecycle() }),
+    ("explicit app reorder controls", { try await validateExplicitAppReorderControls() }),
     ("calendar launch does not request permission", { try await validateCalendarLaunchDoesNotRequestPermission() }),
     ("disabled calendar ignores store changes", { try await validateDisabledCalendarIgnoresStoreChanges() }),
     ("weather provider fallback", validateCompositeWeatherFallback),

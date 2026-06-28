@@ -426,7 +426,7 @@ private struct AppsControlCenterContent: View {
             }
 
             List {
-                ForEach(model.dockItems) { item in
+                ForEach(Array(model.dockItems.enumerated()), id: \.element.id) { index, item in
                     HStack {
                         Image(nsImage: model.icon(for: item))
                             .resizable()
@@ -439,6 +439,32 @@ private struct AppsControlCenterContent: View {
                                 .lineLimit(1)
                         }
                         Spacer()
+                        // Dock drag-reorder remains the fastest path while the
+                        // dock is visible, but settings needs an explicit
+                        // keyboard- and VoiceOver-friendly reorder affordance.
+                        // Relying only on List's platform-specific edit mode
+                        // made the Apps section look editable without giving a
+                        // clear way to change order in this Control Center.
+                        HStack(spacing: 4) {
+                            Button {
+                                model.moveDockItem(item, by: -1)
+                            } label: {
+                                Image(systemName: "chevron.up")
+                            }
+                            .buttonStyle(.borderless)
+                            .disabled(index == 0)
+                            .dockTooltip("Move up")
+
+                            Button {
+                                model.moveDockItem(item, by: 1)
+                            } label: {
+                                Image(systemName: "chevron.down")
+                            }
+                            .buttonStyle(.borderless)
+                            .disabled(index == model.dockItems.count - 1)
+                            .dockTooltip("Move down")
+                        }
+                        .accessibilityElement(children: .contain)
                         Button {
                             model.remove(item)
                         } label: {

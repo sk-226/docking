@@ -13,7 +13,7 @@ icons, text, or layout.
 - Running and active app indicators update from `NSWorkspace` notifications, not
   polling.
 - App add by picker or `.app` drag/drop, remove, reset, Finder reveal, context
-  menu, and basic drag reorder.
+  menu, Dock drag reorder, and explicit Control Center reorder buttons.
 - Running apps that are not kept in Docking can appear in a separated transient
   section, or be hidden entirely from Control Center.
 - Calendar widget backed by EventKit with loading, denied, empty, loaded, and
