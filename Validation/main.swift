@@ -543,6 +543,8 @@ func validateCalendarLaunchDoesNotRequestPermission() async throws {
 
     try expect(provider.upcomingEventRequestCount == 0, "launch/stale calendar refresh should not request EventKit permission")
     try expect(provider.availableCalendarRequestCount == 0, "launch/stale calendar refresh should not enumerate calendars before permission")
+    try expect(viewModel.compactText == ("Access", "Calendar"), "calendar compact widget should show a permission state instead of claiming there are no events")
+    try expect(viewModel.nextEventLine == "Calendar access has not been granted yet", "calendar detail header should explain missing access before events are loaded")
 }
 
 @MainActor

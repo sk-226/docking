@@ -57,6 +57,8 @@ final class CalendarWidgetViewModel: ObservableObject {
     var compactText: (primary: String, secondary: String) {
         guard let event = events.first else {
             switch state {
+            case .permissionNotDetermined:
+                return ("Access", "Calendar")
             case .permissionDenied:
                 return ("Off", "Calendar")
             case .loading:
@@ -73,7 +75,20 @@ final class CalendarWidgetViewModel: ObservableObject {
 
     var nextEventLine: String {
         guard let event = events.first else {
-            return "No upcoming event loaded"
+            switch state {
+            case .permissionNotDetermined:
+                return "Calendar access has not been granted yet"
+            case .permissionDenied:
+                return "Calendar access is off"
+            case .empty:
+                return "No upcoming events"
+            case .loading:
+                return "Loading upcoming events"
+            case .error:
+                return "Calendar could not load"
+            case .idle, .loaded:
+                return "No upcoming event loaded"
+            }
         }
         return "Next: \(DockingFormatters.timeFormatter.string(from: event.startDate))  \(event.title)"
     }

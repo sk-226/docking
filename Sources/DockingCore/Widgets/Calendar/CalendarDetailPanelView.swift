@@ -45,7 +45,7 @@ struct CalendarDetailPanelView: View {
             PermissionStateView(
                 systemImage: "calendar.badge.exclamationmark",
                 title: "Calendar access is needed",
-                message: "Open the calendar widget to grant access and show upcoming events."
+                message: "Use refresh or reopen this widget to grant access. Docking reads upcoming events locally through EventKit."
             )
         case .permissionDenied:
             PermissionStateView(
