@@ -23,7 +23,7 @@ final class MenuBarStatusController: NSObject {
         }
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = NSImage(systemSymbolName: "dock.rectangle", accessibilityDescription: "Docking")
+        item.button?.image = DockingIconAssets.menuBarIcon()
         item.button?.toolTip = "Docking"
         item.menu = makeMenu()
         statusItem = item

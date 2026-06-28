@@ -11,6 +11,8 @@ DIST_DIR="$ROOT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 INFO_PLIST="$APP_BUNDLE/Contents/Info.plist"
 PACKAGE_ZIP="$DIST_DIR/$APP_NAME-$APP_VERSION-macos26.zip"
+APP_ICON="$APP_BUNDLE/Contents/Resources/DockingAppIcon.icns"
+MENU_BAR_ICON="$APP_BUNDLE/Contents/Resources/DockingMenuBarTemplate.png"
 
 cd "$ROOT_DIR"
 
@@ -74,7 +76,13 @@ section "Bundle metadata"
 assert_plist_value CFBundleShortVersionString "$APP_VERSION"
 assert_plist_value CFBundleVersion "$APP_VERSION"
 assert_plist_value CFBundleIdentifier "$BUNDLE_ID"
+assert_plist_value CFBundleIconFile "DockingAppIcon"
 assert_plist_value LSMinimumSystemVersion "$MIN_SYSTEM_VERSION"
+
+if [[ ! -s "$APP_ICON" || ! -s "$MENU_BAR_ICON" ]]; then
+  printf 'Release check failed: icon resources were not copied into %s\n' "$APP_BUNDLE" >&2
+  exit 1
+fi
 
 section "Code signature"
 # This is a local signature-integrity gate, not a notarization claim. Developer

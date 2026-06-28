@@ -11,6 +11,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         // permissions prompts, Control Center, and file panels behaving like a
         // normal macOS app.
         NSApp.setActivationPolicy(.regular)
+        DockingIconAssets.applyApplicationIcon()
         DockingAppModel.shared.start()
     }
 

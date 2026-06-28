@@ -13,9 +13,13 @@ DIST_DIR="$ROOT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
+APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 PACKAGE_ZIP="$DIST_DIR/$APP_NAME-$APP_VERSION-macos26.zip"
+RESOURCES_DIR="$ROOT_DIR/Resources"
+APP_ICON_RESOURCE="$RESOURCES_DIR/DockingAppIcon.icns"
+MENU_BAR_ICON_RESOURCE="$RESOURCES_DIR/DockingMenuBarTemplate.png"
 
 case "$CONFIGURATION" in
   debug)
@@ -68,10 +72,17 @@ pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 swift build "${SWIFTPM_CONFIGURATION_ARGS[@]}" --product "$APP_NAME" --scratch-path "$SWIFTPM_SCRATCH_PATH"
 BUILD_BINARY="$(swift build "${SWIFTPM_CONFIGURATION_ARGS[@]}" --scratch-path "$SWIFTPM_SCRATCH_PATH" --show-bin-path)/$APP_NAME"
 
+if [[ ! -s "$APP_ICON_RESOURCE" || ! -s "$MENU_BAR_ICON_RESOURCE" ]]; then
+  echo "Missing Docking icon resources. Run ./script/render_icons.swift before building the app bundle." >&2
+  exit 1
+fi
+
 rm -rf "$APP_BUNDLE"
-mkdir -p "$APP_MACOS"
+mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 cp "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
+cp "$APP_ICON_RESOURCE" "$APP_RESOURCES/DockingAppIcon.icns"
+cp "$MENU_BAR_ICON_RESOURCE" "$APP_RESOURCES/DockingMenuBarTemplate.png"
 
 cat >"$INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -82,6 +93,10 @@ cat >"$INFO_PLIST" <<PLIST
   <string>$APP_NAME</string>
   <key>CFBundleIdentifier</key>
   <string>$BUNDLE_ID</string>
+  <key>CFBundleIconFile</key>
+  <string>DockingAppIcon</string>
+  <key>CFBundleIconName</key>
+  <string>DockingAppIcon</string>
   <key>CFBundleName</key>
   <string>$APP_NAME</string>
   <key>CFBundlePackageType</key>

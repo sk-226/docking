@@ -97,6 +97,18 @@ CONFIGURATION=release ./script/build_and_run.sh --package
 The Codex app Run action is wired to the same script through
 `.codex/environments/environment.toml`.
 
+## Icons
+
+The app icon and menu bar template icon follow the selected "minimal rocket over
+translucent dock shelf" direction. Regenerate them after icon design changes:
+
+```bash
+./script/render_icons.swift
+```
+
+The generated resources live in `Resources/` and are copied into the staged app
+bundle by `./script/build_and_run.sh`.
+
 ## Release Candidate
 
 Run the local release gate before sharing a build:
@@ -106,10 +118,11 @@ Run the local release gate before sharing a build:
 ```
 
 It runs the validation executable, builds and stages a release `Docking.app`,
-checks bundle metadata and signature integrity, rejects user-specific authored
-paths/identifiers, and writes `dist/Docking-0.0.0-macos26.zip`. This is a local
-0.0.0 candidate gate; Developer ID signing, hardened runtime, notarization, and
-GitHub push remain separate explicit release steps.
+checks bundle metadata, icon resources, and signature integrity, rejects
+user-specific authored paths/identifiers, and writes
+`dist/Docking-0.0.0-macos26.zip`. This is a local 0.0.0 candidate gate;
+Developer ID signing, hardened runtime, notarization, and GitHub push remain
+separate explicit release steps.
 
 ## Permissions
 
