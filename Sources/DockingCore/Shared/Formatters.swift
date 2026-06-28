@@ -70,6 +70,24 @@ enum DockingFormatters {
     static func temperature(_ value: Double, unit: TemperatureUnit) -> String {
         "\(Int(value.rounded()))°"
     }
+
+    static func seconds(_ value: Double) -> String {
+        let hundredths = Int((max(0, value) * 100).rounded())
+        let seconds = Double(hundredths) / 100
+
+        // Auto-hide delay is tuned in 0.05s increments. A fixed one-decimal
+        // label would turn 0.05s into "0.1 sec", hiding the fast setting the
+        // user deliberately chose; a fixed two-decimal label would make normal
+        // values like 0.7s look noisy. This keeps the precision only where it
+        // carries meaning.
+        if hundredths.isMultiple(of: 100) {
+            return String(format: "%.0f sec", seconds)
+        }
+        if hundredths.isMultiple(of: 10) {
+            return String(format: "%.1f sec", seconds)
+        }
+        return String(format: "%.2f sec", seconds)
+    }
 }
 
 enum CalendarGrouping {

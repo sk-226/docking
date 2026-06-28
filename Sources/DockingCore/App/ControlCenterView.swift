@@ -140,7 +140,7 @@ private struct ControlCenterOverview: View {
                     if model.settings.dockVisibility == .autoHide {
                         GridRow {
                             Text("Auto-hide delay")
-                            Text(String(format: "%.1f sec", model.settings.autoHideDelay))
+                            Text(DockingFormatters.seconds(model.settings.autoHideDelay))
                         }
                     }
                 }

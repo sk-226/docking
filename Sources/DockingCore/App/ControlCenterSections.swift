@@ -36,8 +36,18 @@ struct GeneralControlCenterSection: View {
                     if model.settings.dockVisibility == .autoHide {
                         GridRow {
                             Text("Auto-hide delay")
-                            Slider(value: $model.settings.autoHideDelay, in: DockingSettingLimits.autoHideDelay, step: 0.1)
-                                .frame(width: 280)
+                            HStack(spacing: 10) {
+                                Slider(
+                                    value: $model.settings.autoHideDelay,
+                                    in: DockingSettingLimits.autoHideDelay,
+                                    step: DockingSettingLimits.autoHideDelayStep
+                                )
+                                .frame(width: 240)
+                                Text(DockingFormatters.seconds(model.settings.autoHideDelay))
+                                    .monospacedDigit()
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 64, alignment: .trailing)
+                            }
                         }
                     }
 

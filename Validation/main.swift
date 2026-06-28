@@ -16,6 +16,9 @@ func validateFormatters() throws {
     let start = Date(timeIntervalSince1970: 0)
     let end = start.addingTimeInterval(100 * 60)
     try expect(DockingFormatters.durationString(from: start, to: end) == "1 hr 40 min", "duration formatter should use compact hour/minute output")
+    try expect(DockingFormatters.seconds(0.05) == "0.05 sec", "seconds formatter should preserve fast auto-hide precision")
+    try expect(DockingFormatters.seconds(0.7) == "0.7 sec", "seconds formatter should avoid noisy precision for ordinary auto-hide delays")
+    try expect(DockingFormatters.seconds(2.0) == "2 sec", "seconds formatter should keep whole-second delays compact")
 
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
@@ -542,6 +545,8 @@ func validateDefaultSettingsFitEditableRanges() throws {
     let settings = DockingSettings.default
 
     try expect(DockingSettingLimits.autoHideDelay.contains(settings.autoHideDelay), "default auto-hide delay should be editable in Control Center")
+    try expect(abs(DockingSettingLimits.autoHideDelay.lowerBound - 0.05) < 0.000_001, "auto-hide delay should allow near-instant hiding for users who prefer a faster dock")
+    try expect(abs(DockingSettingLimits.autoHideDelayStep - 0.05) < 0.000_001, "auto-hide delay should expose fine-grained subsecond adjustment")
     try expect(DockingSettingLimits.dockSize.contains(settings.dockSize), "default dock size should be editable in Control Center")
     try expect(DockingSettingLimits.iconSize.contains(settings.iconSize), "default icon size should be editable in Control Center")
     try expect(DockingSettingLimits.widgetSize.contains(settings.widgetSize), "default widget size should be editable in Control Center")

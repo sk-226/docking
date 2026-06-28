@@ -294,7 +294,12 @@ enum DockingSettingLimits {
     // and validation share them so a default value cannot drift outside the
     // range the user can later edit back to.
     static let widgetReadableMinimum = 52.0
-    static let autoHideDelay: ClosedRange<Double> = 0.2...2.0
+    // The lower bound stays above zero because an immediate hide makes the dock
+    // feel like it is fighting pointer movement, especially while opening
+    // widget panels. 0.05s is still fast enough for users who want a near-
+    // instant hide without turning the setting into an accidental flicker mode.
+    static let autoHideDelay: ClosedRange<Double> = 0.05...2.0
+    static let autoHideDelayStep = 0.05
     static let dockSize: ClosedRange<Double> = 58...104
     static let iconSize: ClosedRange<Double> = 32...72
     // 44pt allowed the Calendar icon and two compact text rows to compete for
