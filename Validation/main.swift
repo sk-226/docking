@@ -620,6 +620,12 @@ func validateWeatherDockLocationDisplay() throws {
         "manual weather city should be shown as the user's concise dock label"
     )
 
+    manualSettings.weatherManualLocation = "   "
+    try expect(
+        WeatherDockLocationDisplay.name(snapshotLocationName: "Setagaya-ku, Tokyo, Japan", settings: manualSettings) == "Setagaya",
+        "cached/manual weather without a configured city should still compact provider-expanded ward names"
+    )
+
     var currentLocationSettings = DockingSettings.default
     currentLocationSettings.weatherUsesCurrentLocation = true
     currentLocationSettings.weatherManualLocation = "Tokyo"

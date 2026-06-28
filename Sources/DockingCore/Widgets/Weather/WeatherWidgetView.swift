@@ -113,13 +113,20 @@ enum WeatherDockLocationDisplay {
     }
 
     private static func compactName(_ rawName: String) -> String {
+        // Geocoders return provider-friendly labels such as
+        // "Setagaya City, Tokyo, Japan", but the dock tile is not a place
+        // picker and does not have enough horizontal space for administrative
+        // hierarchy. We intentionally keep only the first meaningful locality
+        // and strip common English/Japanese ward suffixes. The detail panel can
+        // still show the full provider label; this helper is only for the dock's
+        // glanceable surface.
         let firstComponent = rawName
-            .split(separator: ",", maxSplits: 1)
+            .split(whereSeparator: { $0 == "," || $0 == "、" })
             .first
             .map(String.init) ?? rawName
         var name = firstComponent.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        for suffix in [" City", " city", " Ward", " ward"] {
+        for suffix in [" City", " city", " Ward", " ward", "-ku", " Ku", " ku"] {
             if name.hasSuffix(suffix) {
                 name.removeLast(suffix.count)
                 return name.trimmingCharacters(in: .whitespacesAndNewlines)
