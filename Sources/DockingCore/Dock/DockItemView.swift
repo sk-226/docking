@@ -59,8 +59,8 @@ struct DockItemView: View {
                 model.remove(item)
             }
             Divider()
-            Button("Settings") {
-                model.openSettingsWindow()
+            Button("Open Control Center") {
+                model.openControlCenterWindow()
             }
         }
         .accessibilityLabel(item.title)

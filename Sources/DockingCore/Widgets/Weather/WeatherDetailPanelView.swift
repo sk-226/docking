@@ -40,7 +40,7 @@ struct WeatherDetailPanelView: View {
         case .stale(let message):
             return message
         case .manualLocationNotSet:
-            return "Choose a city in Settings."
+            return "Choose a city in Control Center."
         case .locationPermissionNeeded:
             return "Location permission or manual city needed."
         case .loading:

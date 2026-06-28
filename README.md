@@ -15,17 +15,17 @@ icons, text, or layout.
 - App add by picker or `.app` drag/drop, remove, reset, Finder reveal, context
   menu, and basic drag reorder.
 - Calendar widget backed by EventKit with loading, denied, empty, loaded, and
-  error states. Calendar sources can be selected in Settings; an empty selection
+  error states. Calendar sources can be selected in Control Center; an empty selection
   intentionally means all calendars.
 - Weather widget with a provider abstraction, WeatherKit-first provider,
   Open-Meteo fallback/manual-city provider, and CoreLocation-based
   current-location flow. It does not show fake production weather. Preview/test
   mock data is compiled only in `DEBUG`.
-- Settings window for dock sizing, dock position, auto-hide, widgets, weather
-  location/unit, calendar lookahead, display choice, accent color, material
-  strength, launch at login, and restore messaging.
-- Main control window with selectable Overview, Apps, Widgets, and Restore
-  sections.
+- Single Control Center window for dock sizing, dock position, auto-hide,
+  widgets, weather location/unit, calendar lookahead, display choice, accent
+  color, material strength, launch at login, and restore messaging.
+- Control Center has selectable Overview, General, Appearance, Apps, Widgets,
+  and Restore sections.
 - Menu bar status item with show, hide, settings, restore, and quit actions; it
   can be hidden from Settings.
 - Keyboard commands:
@@ -112,7 +112,7 @@ overlay-only:
 - `Docking` does not modify `com.apple.dock` preferences in the current
   overlay-only mode.
 
-Use Settings > Restore > **Use Docking as Primary Dock** when you explicitly
+Use Control Center > Restore > **Use Docking as Primary Dock** when you explicitly
 want Docking to take over day-to-day dock behavior. That action saves the
 current Apple Dock preferences before changing Apple Dock to strong auto-hide
 settings. Use **Restore Original macOS Dock Settings** or **Disable Primary

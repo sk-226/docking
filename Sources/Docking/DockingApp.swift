@@ -15,6 +15,13 @@ struct DockingApp: App {
                 .frame(minWidth: 520, minHeight: 420)
         }
         .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Open Control Center...") {
+                    model.openControlCenterWindow()
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
+
             CommandGroup(after: .appSettings) {
                 Button("Show Docking") {
                     model.showDock()
@@ -37,13 +44,6 @@ struct DockingApp: App {
                 .keyboardShortcut("w", modifiers: [.command, .option])
                 .disabled(!model.canOpenWeatherPanel)
             }
-        }
-
-        Settings {
-            SettingsView()
-                .environmentObject(model)
-                .preferredColorScheme(model.appPreferredColorScheme)
-                .tint(model.appAccentColor)
         }
     }
 }

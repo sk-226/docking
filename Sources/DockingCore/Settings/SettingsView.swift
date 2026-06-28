@@ -1,39 +1,14 @@
 import AppKit
 import SwiftUI
 
-public struct SettingsView: View {
-    @EnvironmentObject private var model: DockingAppModel
-
-    public init() {}
-
-    public var body: some View {
-        TabView {
-            GeneralSettingsTab()
-                .tabItem { Label("General", systemImage: "gearshape") }
-
-            AppearanceSettingsTab()
-                .tabItem { Label("Appearance", systemImage: "paintbrush") }
-
-            AppsSettingsTab()
-                .tabItem { Label("Apps", systemImage: "app.badge") }
-
-            WidgetsSettingsTab()
-                .tabItem { Label("Widgets", systemImage: "calendar.badge.clock") }
-
-            DockRestoreView()
-                .tabItem { Label("Restore", systemImage: "arrow.counterclockwise") }
-        }
-        .frame(width: 620, height: 520)
-        .scenePadding()
-    }
-}
-
-private struct GeneralSettingsTab: View {
+struct GeneralSettingsTab: View {
     @EnvironmentObject private var model: DockingAppModel
 
     var body: some View {
-        Form {
-            Section("General") {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("General")
+                    .font(.headline)
                 Toggle(
                     "Launch at login",
                     isOn: Binding(
@@ -45,33 +20,62 @@ private struct GeneralSettingsTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Toggle("Show menu bar icon", isOn: $model.settings.showMenuBarIcon)
-                Picker("Dock visibility", selection: $model.settings.dockVisibility) {
-                    ForEach(DockVisibilityMode.allCases) { mode in
-                        Text(mode.label).tag(mode)
+
+                Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 12) {
+                    GridRow {
+                        Text("Dock visibility")
+                        Picker("Dock visibility", selection: $model.settings.dockVisibility) {
+                            ForEach(DockVisibilityMode.allCases) { mode in
+                                Text(mode.label).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
                     }
-                }
-                .pickerStyle(.segmented)
-                if model.settings.dockVisibility == .autoHide {
-                    Slider(value: $model.settings.autoHideDelay, in: DockingSettingLimits.autoHideDelay, step: 0.1) {
-                        Text("Auto-hide delay")
+
+                    if model.settings.dockVisibility == .autoHide {
+                        GridRow {
+                            Text("Auto-hide delay")
+                            Slider(value: $model.settings.autoHideDelay, in: DockingSettingLimits.autoHideDelay, step: 0.1)
+                                .frame(width: 280)
+                        }
                     }
-                }
-                Button("Match Apple Dock visibility") {
-                    model.matchAppleDockVisibility()
+
+                    GridRow {
+                        Color.clear
+                            .frame(width: 1, height: 1)
+                        Button("Match Apple Dock visibility") {
+                            model.matchAppleDockVisibility()
+                        }
+                    }
                 }
                 Text(model.appleDockVisibilityStatusMessage)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Toggle("Show on all Spaces", isOn: $model.settings.showOnAllSpaces)
                 Toggle("Show on full-screen spaces", isOn: $model.settings.showOnFullScreenSpaces)
-                Picker("Position", selection: $model.settings.dockPosition) {
-                    ForEach(DockPosition.allCases) { position in
-                        Text(position.label).tag(position)
+
+                Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 12) {
+                    GridRow {
+                        Text("Position")
+                        Picker("Position", selection: $model.settings.dockPosition) {
+                            ForEach(DockPosition.allCases) { position in
+                                Text(position.label).tag(position)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 220, alignment: .leading)
                     }
-                }
-                Picker("Display", selection: $model.settings.displayMode) {
-                    ForEach(DockDisplayMode.allCases) { mode in
-                        Text(mode.label).tag(mode)
+
+                    GridRow {
+                        Text("Display")
+                        Picker("Display", selection: $model.settings.displayMode) {
+                            ForEach(DockDisplayMode.allCases) { mode in
+                                Text(mode.label).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 220, alignment: .leading)
                     }
                 }
                 if model.settings.displayMode == .specific {
@@ -88,67 +92,104 @@ private struct GeneralSettingsTab: View {
                     }
                 }
             }
+            .padding()
+            .frame(maxWidth: 560, alignment: .topLeading)
         }
-        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
-private struct AppearanceSettingsTab: View {
+struct AppearanceSettingsTab: View {
     @EnvironmentObject private var model: DockingAppModel
 
     var body: some View {
-        Form {
-            Section("Sizing") {
-                Slider(value: $model.settings.dockSize, in: DockingSettingLimits.dockSize, step: 1) {
-                    Text("Dock size")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Sizing")
+                        .font(.headline)
+                    DockingSliderRow("Dock size", value: $model.settings.dockSize, range: DockingSettingLimits.dockSize, step: 1)
+                    DockingSliderRow("Icon size", value: $model.settings.iconSize, range: DockingSettingLimits.iconSize, step: 1)
+                    DockingSliderRow("Widget size", value: $model.settings.widgetSize, range: DockingSettingLimits.widgetSize, step: 1)
+                    DockingSliderRow("Spacing", value: $model.settings.spacing, range: DockingSettingLimits.spacing, step: 1)
                 }
-                Slider(value: $model.settings.iconSize, in: DockingSettingLimits.iconSize, step: 1) {
-                    Text("Icon size")
-                }
-                Slider(value: $model.settings.widgetSize, in: DockingSettingLimits.widgetSize, step: 1) {
-                    Text("Widget size")
-                }
-                Slider(value: $model.settings.spacing, in: DockingSettingLimits.spacing, step: 1) {
-                    Text("Spacing")
-                }
-            }
 
-            Section("Surface") {
-                Slider(value: $model.settings.cornerRadius, in: DockingSettingLimits.cornerRadius, step: 1) {
-                    Text("Corner radius")
-                }
-                Slider(value: $model.settings.materialStrength, in: DockingSettingLimits.materialStrength, step: 0.05) {
-                    Text("Material strength")
-                }
-                Slider(value: $model.settings.opacity, in: DockingSettingLimits.opacity, step: 0.01) {
-                    Text("Opacity")
-                }
-                Picker("Theme", selection: $model.settings.theme) {
-                    ForEach(ThemeMode.allCases) { mode in
-                        Text(mode.rawValue.capitalized).tag(mode)
-                    }
-                }
-                Picker("Accent color", selection: $model.settings.accentColorName) {
-                    ForEach(DockingAccentColor.allCases) { accent in
-                        HStack {
-                            Circle()
-                                .fill(accent.color)
-                                .frame(width: 10, height: 10)
-                            Text(accent.label)
+                Divider()
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Surface")
+                        .font(.headline)
+                    DockingSliderRow("Corner radius", value: $model.settings.cornerRadius, range: DockingSettingLimits.cornerRadius, step: 1)
+                    DockingSliderRow("Material strength", value: $model.settings.materialStrength, range: DockingSettingLimits.materialStrength, step: 0.05)
+                    DockingSliderRow("Opacity", value: $model.settings.opacity, range: DockingSettingLimits.opacity, step: 0.01)
+
+                    Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 12) {
+                        GridRow {
+                            Text("Theme")
+                            Picker("Theme", selection: $model.settings.theme) {
+                                ForEach(ThemeMode.allCases) { mode in
+                                    Text(mode.rawValue.capitalized).tag(mode)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 180, alignment: .leading)
                         }
-                        .tag(accent.rawValue)
+
+                        GridRow {
+                            Text("Accent color")
+                            Picker("Accent color", selection: $model.settings.accentColorName) {
+                                ForEach(DockingAccentColor.allCases) { accent in
+                                    HStack {
+                                        Circle()
+                                            .fill(accent.color)
+                                            .frame(width: 10, height: 10)
+                                        Text(accent.label)
+                                    }
+                                    .tag(accent.rawValue)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 180, alignment: .leading)
+                        }
                     }
                 }
             }
+            .padding()
+            .frame(maxWidth: 640, alignment: .topLeading)
         }
-        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
-private struct AppsSettingsTab: View {
+private struct DockingSliderRow: View {
+    let title: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+
+    init(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double) {
+        self.title = title
+        self._value = value
+        self.range = range
+        self.step = step
+    }
+
     var body: some View {
-        AppsSettingsContent()
-            .padding()
+        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 8) {
+            GridRow {
+                Text(title)
+                    .frame(width: 120, alignment: .leading)
+                Slider(value: $value, in: range, step: step)
+                    .frame(width: 280)
+                Text(formattedValue)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var formattedValue: String {
+        step < 1 ? String(format: "%.2f", value) : String(format: "%.0f", value)
     }
 }
 
@@ -156,12 +197,11 @@ struct WidgetsSettingsTab: View {
     @EnvironmentObject private var model: DockingAppModel
 
     var body: some View {
-        // The same widget settings surface is embedded in both the standalone
-        // Settings scene and the main Docking control window. A bare macOS
-        // Form can be clipped when reused inside NavigationSplitView detail
-        // content, which made the Weather controls disappear in the smaller
-        // control window. Owning the scroll container here makes the section
-        // robust in both hosts without adding per-host layout hacks.
+        // Widgets can expose permission-sensitive Calendar controls and
+        // network-backed Weather controls. Keeping this surface in the single
+        // Control Center avoids duplicate configuration surfaces, while the
+        // explicit scroll container keeps the lower Weather controls reachable
+        // in compact window sizes.
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 VStack(alignment: .leading, spacing: 12) {

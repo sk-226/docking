@@ -33,6 +33,7 @@ public final class DockingAppModel: ObservableObject {
     @Published var dockRestoreStatus = DockRestoreStatus(snapshotCreatedAt: nil, snapshotAppVersion: nil, savedPreferenceCount: 0)
     @Published var launchAtLoginStatusMessage: String = "Launch at login uses macOS Login Items when enabled."
     @Published var appleDockVisibilityStatusMessage: String = AppleDockPreferences.visibilityStatusText()
+    @Published var controlCenterSelection: ControlCenterSection = .overview
 
     let calendarViewModel: CalendarWidgetViewModel
     let weatherViewModel: WeatherWidgetViewModel
@@ -48,7 +49,7 @@ public final class DockingAppModel: ObservableObject {
     private let restoreService = DockSettingsRestoreService()
     private let launchAtLoginService = LaunchAtLoginService()
     private let menuBarStatusController = MenuBarStatusController()
-    private var settingsWindow: NSWindow?
+    private var controlCenterWindow: NSWindow?
     private var hasStarted = false
     private var environmentObserverTokens: [(NotificationCenter, NSObjectProtocol)] = []
     private var pendingSettingsSaveTask: Task<Void, Never>?
@@ -286,36 +287,48 @@ public final class DockingAppModel: ObservableObject {
         widgetFrames[kind] = frame
     }
 
-    func openSettingsWindow() {
-        let rootView = SettingsView()
+    public func openControlCenterWindow() {
+        controlCenterSelection = .general
+        showControlCenterWindow()
+    }
+
+    private func showControlCenterWindow() {
+        let rootView = ControlCenterView()
             .environmentObject(self)
             .preferredColorScheme(appPreferredColorScheme)
             .tint(appAccentColor)
 
-        if let settingsWindow {
-            settingsWindow.contentView = NSHostingView(rootView: rootView)
+        if let controlCenterWindow {
+            controlCenterWindow.contentView = NSHostingView(rootView: rootView)
             NSApp.activate(ignoringOtherApps: true)
-            settingsWindow.makeKeyAndOrderFront(nil)
+            controlCenterWindow.makeKeyAndOrderFront(nil)
             return
         }
 
-        // SwiftUI's Settings scene is still declared for the standard macOS
-        // Settings command, but opening it indirectly through AppKit selectors
-        // is unreliable from custom NSMenu items and our control-center button
-        // in this SwiftPM app bundle. Owning one explicit utility window keeps
-        // every in-app Settings entry point deterministic while the SwiftUI
-        // view remains the single source of settings UI.
+        if let existingWindow = NSApp.windows.first(where: { $0.title == "Docking" }) {
+            existingWindow.contentView = NSHostingView(rootView: rootView)
+            NSApp.activate(ignoringOtherApps: true)
+            existingWindow.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        // The main Docking window is the single settings/control surface. We
+        // still keep this AppKit fallback because status-item and dock-context
+        // menu actions can fire after the SwiftUI WindowGroup has been closed,
+        // and those AppKit entry points cannot directly call SwiftUI's
+        // openWindow environment action. The fallback recreates the same
+        // ControlCenterView instead of introducing a second Settings UI.
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 660, height: 560),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
-        window.title = "Docking Settings"
+        window.title = "Docking"
         window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: rootView)
         window.center()
-        settingsWindow = window
+        controlCenterWindow = window
 
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)

@@ -2,13 +2,12 @@ import SwiftUI
 
 public struct ControlCenterView: View {
     @EnvironmentObject private var model: DockingAppModel
-    @State private var selection: ControlCenterSection? = .overview
 
     public init() {}
 
     public var body: some View {
         NavigationSplitView {
-            List(selection: $selection) {
+            List(selection: $model.controlCenterSelection) {
                 Section("Dock") {
                     ForEach(ControlCenterSection.allCases) { section in
                         Label(section.title, systemImage: section.systemImage)
@@ -19,7 +18,7 @@ public struct ControlCenterView: View {
             .listStyle(.sidebar)
             .navigationTitle("Docking")
         } detail: {
-            detail(for: selection ?? .overview)
+            detail(for: model.controlCenterSelection)
         }
     }
 
@@ -29,6 +28,10 @@ public struct ControlCenterView: View {
         case .overview:
             ControlCenterOverview()
                 .environmentObject(model)
+        case .general:
+            GeneralSettingsTab()
+        case .appearance:
+            AppearanceSettingsTab()
         case .apps:
             AppListSettingsSection()
                 .padding(24)
@@ -40,8 +43,10 @@ public struct ControlCenterView: View {
     }
 }
 
-private enum ControlCenterSection: String, CaseIterable, Identifiable {
+enum ControlCenterSection: String, CaseIterable, Identifiable {
     case overview
+    case general
+    case appearance
     case apps
     case widgets
     case restore
@@ -52,6 +57,10 @@ private enum ControlCenterSection: String, CaseIterable, Identifiable {
         switch self {
         case .overview:
             return "Overview"
+        case .general:
+            return "General"
+        case .appearance:
+            return "Appearance"
         case .apps:
             return "Apps"
         case .widgets:
@@ -65,6 +74,10 @@ private enum ControlCenterSection: String, CaseIterable, Identifiable {
         switch self {
         case .overview:
             return "dock.rectangle"
+        case .general:
+            return "gearshape"
+        case .appearance:
+            return "paintbrush"
         case .apps:
             return "app.badge"
         case .widgets:
@@ -93,41 +106,56 @@ private struct ControlCenterOverview: View {
 
             Divider()
 
-            Form {
-                Section("Dock") {
-                    LabeledContent("Position", value: model.settings.dockPosition.label)
-                    LabeledContent("Apps", value: "\(model.dockItems.count)")
-                    LabeledContent("Widgets", value: "\(model.enabledWidgetCount) enabled")
-                    Picker("Dock visibility", selection: $model.settings.dockVisibility) {
-                        ForEach(DockVisibilityMode.allCases) { mode in
-                            Text(mode.label).tag(mode)
-                        }
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Dock")
+                    .font(.headline)
+
+                Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 8) {
+                    GridRow {
+                        Text("Position")
+                        Text(model.settings.dockPosition.label)
                     }
-                    .pickerStyle(.segmented)
+                    GridRow {
+                        Text("Apps")
+                        Text("\(model.dockItems.count)")
+                    }
+                    GridRow {
+                        Text("Widgets")
+                        Text("\(model.enabledWidgetCount) enabled")
+                    }
+                    GridRow {
+                        Text("Dock visibility")
+                        Picker("Dock visibility", selection: $model.settings.dockVisibility) {
+                            ForEach(DockVisibilityMode.allCases) { mode in
+                                Text(mode.label).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                    }
                     if model.settings.dockVisibility == .autoHide {
-                        LabeledContent("Auto-hide delay", value: String(format: "%.1f sec", model.settings.autoHideDelay))
+                        GridRow {
+                            Text("Auto-hide delay")
+                            Text(String(format: "%.1f sec", model.settings.autoHideDelay))
+                        }
                     }
                 }
+                .foregroundStyle(.primary)
 
-                Section("Actions") {
-                    HStack {
-                        Button {
-                            model.showDock()
-                        } label: {
-                            Label("Show Dock", systemImage: "dock.rectangle")
-                        }
+                Text("Actions")
+                    .font(.headline)
 
-                        Button {
-                            model.hideDock()
-                        } label: {
-                            Label("Hide Dock", systemImage: "dock.rectangle")
-                        }
+                HStack {
+                    Button {
+                        model.showDock()
+                    } label: {
+                        Label("Show Dock", systemImage: "dock.rectangle")
+                    }
 
-                        Button {
-                            model.openSettingsWindow()
-                        } label: {
-                            Label("Settings", systemImage: "gearshape")
-                        }
+                    Button {
+                        model.hideDock()
+                    } label: {
+                        Label("Hide Dock", systemImage: "dock.rectangle")
                     }
                 }
             }

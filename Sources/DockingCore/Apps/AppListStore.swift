@@ -27,7 +27,7 @@ final class AppListStore {
         } catch {
             // The app list is user-editable state, but losing the whole dock over
             // a bad JSON file would be a poor failure mode. We keep the fallback
-            // small and predictable so the user can still open Settings.
+            // small and predictable so the user can still open Control Center.
             DockingLog.app.error("Failed to decode app list: \(error.localizedDescription)")
             return Self.defaultItems()
         }

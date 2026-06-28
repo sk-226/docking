@@ -73,7 +73,7 @@ Check Spaces/full-screen behavior:
 
 Check display mode:
 
-1. In Settings > General, switch Display between "Main display" and "Display with
+1. In Control Center > General, switch Display between "Main display" and "Display with
    pointer".
 2. Move the pointer to another display and show the dock.
 3. Confirm the panel is placed on the selected display mode.
@@ -84,7 +84,7 @@ Check display mode:
 Check calendar source selection:
 
 1. Grant Calendar access.
-2. Open Settings > Widgets.
+2. Open Control Center > Widgets.
 3. Select only one calendar and open the Calendar widget.
 4. Confirm events from other calendars are hidden.
 5. Press "All" and confirm events from all calendars can appear again.

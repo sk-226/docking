@@ -115,7 +115,7 @@ struct DockRestoreView: View {
         // The product intent is that the user interacts with Docking's own dock,
         // not Apple's Dock. We still keep this opt-in because changing Apple
         // Dock preferences is visible system behavior and should never happen
-        // just because the app launched or the user opened Settings.
+        // just because the app launched or the user opened Control Center.
         return "Docking is active as its own dock. To make it the primary dock, enable this mode explicitly; Docking will save your current Apple Dock settings first."
     }
 
