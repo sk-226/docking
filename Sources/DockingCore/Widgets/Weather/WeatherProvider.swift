@@ -26,7 +26,7 @@ enum WeatherProviderError: LocalizedError, Equatable {
         case .locationDenied:
             return "Location access was denied. Choose a city manually or enable Location Services."
         case .manualLocationMissing:
-            return "Choose a city in Weather settings to load weather without Location Services."
+            return "Choose a city in Control Center to load weather without Location Services."
         case .providerUnavailable(let message):
             return message
         case .network(let message):

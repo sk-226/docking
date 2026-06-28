@@ -221,20 +221,20 @@ func validateSettingsRefreshKeys() throws {
 func validateDefaultSettingsFitEditableRanges() throws {
     let settings = DockingSettings.default
 
-    try expect(DockingSettingLimits.autoHideDelay.contains(settings.autoHideDelay), "default auto-hide delay should be editable in Settings")
-    try expect(DockingSettingLimits.dockSize.contains(settings.dockSize), "default dock size should be editable in Settings")
-    try expect(DockingSettingLimits.iconSize.contains(settings.iconSize), "default icon size should be editable in Settings")
-    try expect(DockingSettingLimits.widgetSize.contains(settings.widgetSize), "default widget size should be editable in Settings")
-    try expect(DockingSettingLimits.spacing.contains(settings.spacing), "default spacing should be editable in Settings")
-    try expect(DockingSettingLimits.cornerRadius.contains(settings.cornerRadius), "default corner radius should be editable in Settings")
-    try expect(DockingSettingLimits.materialStrength.contains(settings.materialStrength), "default material strength should be editable in Settings")
-    try expect(DockingSettingLimits.opacity.contains(settings.opacity), "default opacity should be editable in Settings")
-    try expect(DockingSettingLimits.calendarLookaheadDays.contains(settings.calendarLookaheadDays), "default calendar lookahead should be editable in Settings")
-    try expect(DockingSettingLimits.calendarMaxEventCount.contains(settings.calendarMaxEventCount), "default calendar max events should be editable in Settings")
-    try expect(DockingSettingLimits.weatherRefreshIntervalMinutes.contains(settings.weatherRefreshIntervalMinutes), "default weather refresh interval should be editable in Settings")
+    try expect(DockingSettingLimits.autoHideDelay.contains(settings.autoHideDelay), "default auto-hide delay should be editable in Control Center")
+    try expect(DockingSettingLimits.dockSize.contains(settings.dockSize), "default dock size should be editable in Control Center")
+    try expect(DockingSettingLimits.iconSize.contains(settings.iconSize), "default icon size should be editable in Control Center")
+    try expect(DockingSettingLimits.widgetSize.contains(settings.widgetSize), "default widget size should be editable in Control Center")
+    try expect(DockingSettingLimits.spacing.contains(settings.spacing), "default spacing should be editable in Control Center")
+    try expect(DockingSettingLimits.cornerRadius.contains(settings.cornerRadius), "default corner radius should be editable in Control Center")
+    try expect(DockingSettingLimits.materialStrength.contains(settings.materialStrength), "default material strength should be editable in Control Center")
+    try expect(DockingSettingLimits.opacity.contains(settings.opacity), "default opacity should be editable in Control Center")
+    try expect(DockingSettingLimits.calendarLookaheadDays.contains(settings.calendarLookaheadDays), "default calendar lookahead should be editable in Control Center")
+    try expect(DockingSettingLimits.calendarMaxEventCount.contains(settings.calendarMaxEventCount), "default calendar max events should be editable in Control Center")
+    try expect(DockingSettingLimits.weatherRefreshIntervalMinutes.contains(settings.weatherRefreshIntervalMinutes), "default weather refresh interval should be editable in Control Center")
     try expect(
         settings.weatherRefreshIntervalMinutes.isMultiple(of: DockingSettingLimits.weatherRefreshIntervalStep),
-        "default weather refresh interval should align with the Settings stepper"
+        "default weather refresh interval should align with the Control Center stepper"
     )
 }
 

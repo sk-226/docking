@@ -15,7 +15,7 @@ bounded refresh work over constant polling.
   a conservative stale interval.
 - Weather refresh uses the configured interval, defaulting to 45 minutes. Failed
   refreshes show cached data as stale when a previous snapshot exists.
-- Settings changes update the live dock immediately, but persistence is
+- Control Center changes update the live dock immediately, but persistence is
   debounced so slider drags do not create a burst of UserDefaults writes.
 - Current-location weather uses a one-shot coarse CoreLocation request. It does
   not subscribe to continuous location updates because a dock weather widget only

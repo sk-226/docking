@@ -44,7 +44,7 @@ final class MenuBarStatusController: NSObject {
         // satisfying the dock utility expectation that both actions are nearby.
         menu.addItem(menuItem("Show Docking", action: #selector(showDock)))
         menu.addItem(menuItem("Hide Docking", action: #selector(hideDock)))
-        menu.addItem(menuItem("Open Control Center", action: #selector(openSettings)))
+        menu.addItem(menuItem("Open Control Center", action: #selector(openControlCenter)))
         menu.addItem(.separator())
         menu.addItem(menuItem("Restore macOS Dock", action: #selector(restoreDock)))
         menu.addItem(.separator())
@@ -67,7 +67,7 @@ final class MenuBarStatusController: NSObject {
         model?.hideDock()
     }
 
-    @objc private func openSettings() {
+    @objc private func openControlCenter() {
         model?.openControlCenterWindow()
     }
 

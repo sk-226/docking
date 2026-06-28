@@ -1,6 +1,11 @@
 import Foundation
 
 #if DEBUG
+// Mock weather is deliberately debug-only. A production dock showing plausible
+// but fake weather is worse than a visible error, because users would have no
+// reason to distrust the data. Previews and validation use separate local test
+// providers, so this type should never become part of the release provider
+// graph just to make entitlement or network failures look nicer.
 final class MockWeatherProvider: WeatherProvider {
     func fetchWeather(configuration: WeatherRequestConfiguration) async throws -> WeatherSnapshot {
         WeatherSnapshot(

@@ -35,7 +35,7 @@ Expected results:
 
 | Area | Steps | Pass condition | Status |
 | --- | --- | --- | --- |
-| First launch | Run `./script/build_and_run.sh --verify`, then open the main window and Settings. | Dock panel appears, menu bar item works, Settings opens without crash. | Not yet manually verified |
+| First launch | Run `./script/build_and_run.sh --verify`, then open Control Center from the app menu and menu bar item. | Dock panel appears, menu bar item works, Control Center opens without crash. | Not yet manually verified |
 | Calendar permission not requested while disabled | Turn Calendar widget off, reopen Control Center > Widgets. | No Calendar permission prompt appears. | Not yet manually verified |
 | Calendar permission granted | Turn Calendar widget on and grant Calendar access. | Detail panel shows grouped events or a clear empty state. | Not yet manually verified |
 | Calendar permission denied | Deny Calendar access in System Settings, then open the widget. | Detail panel shows a permission state and does not crash. | Not yet manually verified |

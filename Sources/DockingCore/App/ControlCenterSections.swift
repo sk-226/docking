@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-struct GeneralSettingsTab: View {
+struct GeneralControlCenterSection: View {
     @EnvironmentObject private var model: DockingAppModel
 
     var body: some View {
@@ -99,7 +99,7 @@ struct GeneralSettingsTab: View {
     }
 }
 
-struct AppearanceSettingsTab: View {
+struct AppearanceControlCenterSection: View {
     @EnvironmentObject private var model: DockingAppModel
 
     var body: some View {
@@ -193,7 +193,7 @@ private struct DockingSliderRow: View {
     }
 }
 
-struct WidgetsSettingsTab: View {
+struct WidgetsControlCenterSection: View {
     @EnvironmentObject private var model: DockingAppModel
 
     var body: some View {
@@ -286,7 +286,7 @@ private struct CalendarSourcePicker: View {
                 switch model.calendarViewModel.sourceState {
                 case .idle:
                     // Do not enumerate calendars merely because the user opened
-                    // Settings. EventKit can display a system permission dialog,
+                    // Control Center. EventKit can display a system permission dialog,
                     // and surprising permission prompts made the Widgets tab
                     // feel broken. The explicit Load action keeps the settings
                     // surface inspectable even before the user is ready to grant
@@ -379,14 +379,14 @@ private struct CalendarColorDot: View {
     }
 }
 
-struct AppListSettingsSection: View {
+struct AppsControlCenterSection: View {
     var body: some View {
-        AppsSettingsContent()
+        AppsControlCenterContent()
             .frame(minHeight: 220)
     }
 }
 
-private struct AppsSettingsContent: View {
+private struct AppsControlCenterContent: View {
     @EnvironmentObject private var model: DockingAppModel
 
     var body: some View {

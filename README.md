@@ -26,8 +26,8 @@ icons, text, or layout.
   color, material strength, launch at login, and restore messaging.
 - Control Center has selectable Overview, General, Appearance, Apps, Widgets,
   and Restore sections.
-- Menu bar status item with show, hide, settings, restore, and quit actions; it
-  can be hidden from Settings.
+- Menu bar status item with show, hide, Control Center, restore, and quit
+  actions; it can be hidden from Control Center.
 - Keyboard commands:
   - `Command-Shift-D`: show Docking
   - `Command-Option-C`: open Calendar widget
@@ -135,7 +135,7 @@ confirms the dialog.
 - WeatherKit is wired as the primary provider, but unsigned or non-entitled
   SwiftPM bundles are expected to fall back to Open-Meteo.
 - Launch at login uses `SMAppService.mainApp`. It may fail for unsigned or
-  nonstandard development bundles; the Settings UI keeps the checkbox synced to
+  nonstandard development bundles; Control Center keeps the checkbox synced to
   macOS's actual Login Items state and shows the error.
 - Widget detail panels use reported widget screen frames when available, with a
   dock-centered fallback during early layout.

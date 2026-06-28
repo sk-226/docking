@@ -67,7 +67,7 @@ struct WeatherDetailPanelView: View {
             PermissionStateView(
                 systemImage: "location.slash",
                 title: "Manual location not set",
-                message: "Set a city in Weather settings to load weather without Location Services."
+                message: "Set a city in Control Center to load weather without Location Services."
             )
         case .locationPermissionNeeded:
             PermissionStateView(

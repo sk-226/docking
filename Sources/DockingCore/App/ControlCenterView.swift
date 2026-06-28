@@ -29,14 +29,14 @@ public struct ControlCenterView: View {
             ControlCenterOverview()
                 .environmentObject(model)
         case .general:
-            GeneralSettingsTab()
+            GeneralControlCenterSection()
         case .appearance:
-            AppearanceSettingsTab()
+            AppearanceControlCenterSection()
         case .apps:
-            AppListSettingsSection()
+            AppsControlCenterSection()
                 .padding(24)
         case .widgets:
-            WidgetsSettingsTab()
+            WidgetsControlCenterSection()
         case .restore:
             DockRestoreView()
         }

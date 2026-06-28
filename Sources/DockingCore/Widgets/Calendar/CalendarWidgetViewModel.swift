@@ -180,8 +180,7 @@ final class CalendarWidgetViewModel: ObservableObject {
         guard settings.calendarEnabled else {
             // Calendar source enumeration can request EventKit access. Keeping
             // the settings value on this entry point makes "disabled means no
-            // Calendar access" true even when a caller bypasses the Settings UI
-            // guard.
+            // Calendar access" true even when a caller bypasses Control Center.
             sourceGeneration += 1
             sourceTask?.cancel()
             sourceTask = nil
@@ -280,7 +279,7 @@ final class CalendarWidgetViewModel: ObservableObject {
         // Calendar-source loading is intentionally opt-in because it can expose
         // account names and request EventKit access. It still needs the same
         // lifecycle guard as event refreshes so a completed source load does not
-        // make the Settings UI think another load is perpetually active.
+        // make Control Center think another load is perpetually active.
         guard sourceGeneration == generation else {
             return
         }

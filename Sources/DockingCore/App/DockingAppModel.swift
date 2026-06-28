@@ -318,7 +318,7 @@ public final class DockingAppModel: ObservableObject {
         // menu actions can fire after the SwiftUI WindowGroup has been closed,
         // and those AppKit entry points cannot directly call SwiftUI's
         // openWindow environment action. The fallback recreates the same
-        // ControlCenterView instead of introducing a second Settings UI.
+        // ControlCenterView instead of introducing a second configuration UI.
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 660, height: 560),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -419,11 +419,11 @@ public final class DockingAppModel: ObservableObject {
         let settingsToSave = settings
         pendingSettingsSaveTask?.cancel()
 
-        // Sliders in Settings can emit many intermediate values while the user
-        // drags. Window updates should remain live, but writing every transient
-        // value to UserDefaults would violate the resident-app requirement to
-        // avoid needless disk churn. A short debounce keeps persistence simple
-        // while preserving the final value the user sees.
+        // Control Center sliders can emit many intermediate values while the
+        // user drags. Window updates should remain live, but writing every
+        // transient value to UserDefaults would violate the resident-app
+        // requirement to avoid needless disk churn. A short debounce keeps
+        // persistence simple while preserving the final value the user sees.
         pendingSettingsSaveTask = Task { @MainActor [weak self] in
             do {
                 try await Task.sleep(nanoseconds: Self.settingsSaveDelayNanoseconds)
