@@ -14,7 +14,7 @@ final class AutoHideController {
             return
         }
 
-        let screens = triggerScreens(for: settings, selectedScreen: screen)
+        let screens = Self.triggerScreens(for: settings, selectedScreen: screen, availableScreens: NSScreen.screens)
         let wantedKeys = Set(screens.map(screenKey))
         for (key, panel) in edgePanels where !wantedKeys.contains(key) {
             panel.close()
@@ -66,11 +66,20 @@ final class AutoHideController {
         return panel
     }
 
-    private func triggerScreens(for settings: DockingSettings, selectedScreen: NSScreen?) -> [NSScreen] {
+    nonisolated static func triggerScreens(for settings: DockingSettings, selectedScreen: NSScreen?, availableScreens: [NSScreen]) -> [NSScreen] {
         if settings.dockPosition.isBottom {
-            return NSScreen.screens.isEmpty ? selectedScreen.map { [$0] } ?? [] : NSScreen.screens
+            // Bottom auto-hide is the one mode where selected-display behavior
+            // is intentionally overridden. Apple's Dock can be revealed from
+            // the bottom edge of any attached display, and users expect the
+            // same muscle memory here. A single selected-screen trigger looked
+            // simpler, but it made the Docking dock feel broken as soon as the
+            // pointer was on another monitor. Non-bottom docks stay scoped to
+            // one display because full-height left/right trigger strips on
+            // every monitor would be much more likely to intercept unrelated
+            // edge gestures.
+            return availableScreens.isEmpty ? selectedScreen.map { [$0] } ?? [] : availableScreens
         }
-        return selectedScreen.map { [$0] } ?? NSScreen.screens.prefix(1).map { $0 }
+        return selectedScreen.map { [$0] } ?? availableScreens.prefix(1).map { $0 }
     }
 
     private func screenKey(_ screen: NSScreen?) -> String {

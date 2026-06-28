@@ -200,6 +200,51 @@ func validateDockPositionFrames() throws {
     }
 }
 
+func validateAutoHideTriggerScreens() throws {
+    guard let screen = NSScreen.main ?? NSScreen.screens.first else {
+        print("SKIP auto-hide trigger screens (no display)")
+        return
+    }
+
+    var bottomSettings = DockingSettings.default
+    bottomSettings.dockPosition = .bottomCenter
+    let bottomScreens = AutoHideController.triggerScreens(
+        for: bottomSettings,
+        selectedScreen: screen,
+        availableScreens: NSScreen.screens
+    )
+    try expect(
+        bottomScreens.count == NSScreen.screens.count,
+        "bottom auto-hide should install an edge trigger on every connected display"
+    )
+    try expect(
+        !bottomScreens.isEmpty,
+        "bottom auto-hide should still have at least one edge trigger when displays are available"
+    )
+
+    var leftSettings = DockingSettings.default
+    leftSettings.dockPosition = .left
+    let leftScreens = AutoHideController.triggerScreens(
+        for: leftSettings,
+        selectedScreen: screen,
+        availableScreens: NSScreen.screens
+    )
+    try expect(
+        leftScreens.count == 1 && leftScreens.first === screen,
+        "side auto-hide should stay scoped to the selected display instead of creating edge strips everywhere"
+    )
+
+    let fallbackScreens = AutoHideController.triggerScreens(
+        for: bottomSettings,
+        selectedScreen: screen,
+        availableScreens: []
+    )
+    try expect(
+        fallbackScreens.count == 1 && fallbackScreens.first === screen,
+        "bottom auto-hide should fall back to the selected display when AppKit reports no screen list"
+    )
+}
+
 func validateAppleDockMirroring() throws {
     let suiteName = "docking.validation.apple-mirror.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!
@@ -1032,6 +1077,7 @@ let validations: [(String, () throws -> Void)] = [
     ("widget panel dismiss hit testing", validateWidgetPanelDismissHitTesting),
     ("specific display selection", validateSpecificDisplaySelection),
     ("dock position frames", validateDockPositionFrames),
+    ("auto-hide trigger screens", validateAutoHideTriggerScreens),
     ("dock window level toggle", validateDockWindowLevelToggle),
     ("apple dock mirroring", validateAppleDockMirroring),
     ("app catalog bundle recognition", validateAppCatalogRecognizesOnlyApplicationBundles),
