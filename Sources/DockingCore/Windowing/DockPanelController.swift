@@ -20,7 +20,7 @@ final class DockPanelController {
         // auto-hide reveals. Using only pinned items looked fine before
         // transient running apps existed, but would clip the separated running
         // section exactly when a user was trying to inspect it.
-        applySettings(model.settings, itemCount: model.visibleAppItemCount, widgetCount: model.enabledWidgetCount)
+        applySettings(model.settings, itemCount: model.visibleAppItemCount)
         panel.orderFrontRegardless()
     }
 
@@ -41,7 +41,7 @@ final class DockPanelController {
         panel = nil
     }
 
-    func applySettings(_ settings: DockingSettings, itemCount: Int, widgetCount: Int) {
+    func applySettings(_ settings: DockingSettings, itemCount: Int) {
         guard let panel else {
             return
         }
@@ -51,7 +51,7 @@ final class DockPanelController {
         }
 
         let screen = revealScreen ?? ScreenPlacementService.dockScreen(for: settings)
-        let size = DockLayout.panelSize(itemCount: itemCount, widgetCount: widgetCount, settings: settings)
+        let size = DockLayout.panelSize(itemCount: itemCount, settings: settings)
         let frame = ScreenPlacementService.dockFrame(size: size, on: screen, position: settings.dockPosition)
         // Avoid AppKit's window-frame animation here. The dock frame is often
         // applied while SwiftUI is still laying out the hosting view during
@@ -71,18 +71,18 @@ final class DockPanelController {
         panel.collectionBehavior = DockingWindowBehavior.collectionBehavior(for: settings)
 
         autoHideController.update(settings: settings, dockFrame: frame, screen: screen) { [weak self] screen in
-            self?.reveal(on: screen, settings: settings, itemCount: itemCount, widgetCount: widgetCount)
+            self?.reveal(on: screen, settings: settings, itemCount: itemCount)
         }
     }
 
-    private func reveal(on screen: NSScreen?, settings: DockingSettings, itemCount: Int, widgetCount: Int) {
+    private func reveal(on screen: NSScreen?, settings: DockingSettings, itemCount: Int) {
         guard let panel else {
             return
         }
 
         cancelScheduledAutoHide()
         revealScreen = screen
-        let size = DockLayout.panelSize(itemCount: itemCount, widgetCount: widgetCount, settings: settings)
+        let size = DockLayout.panelSize(itemCount: itemCount, settings: settings)
         let frame = ScreenPlacementService.dockFrame(size: size, on: screen ?? ScreenPlacementService.dockScreen(for: settings), position: settings.dockPosition)
         panel.setFrame(frame, display: true, animate: false)
         panel.orderFrontRegardless()

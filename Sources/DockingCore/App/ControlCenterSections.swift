@@ -133,91 +133,206 @@ struct AppearanceControlCenterSection: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Sizing")
-                        .font(.headline)
-                    DockingSliderRow("Dock size", value: $model.settings.dockSize, range: DockingSettingLimits.dockSize, step: 1)
-                    DockingSliderRow("Icon size", value: $model.settings.iconSize, range: DockingSettingLimits.iconSize, step: 1)
-                    DockingSliderRow("Widget size", value: $model.settings.widgetSize, range: DockingSettingLimits.widgetSize, step: 1)
-                    DockingSliderRow("Spacing", value: $model.settings.spacing, range: DockingSettingLimits.spacing, step: 1)
+                Text("Appearance")
+                    .font(.headline)
+
+                Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 12) {
+                    GridRow {
+                        Text("Dock scale")
+                            .frame(width: 120, alignment: .leading)
+                        Picker("Dock scale", selection: dockScale) {
+                            ForEach(DockScalePreset.allCases) { preset in
+                                Text(preset.label).tag(preset)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                        .frame(width: 280)
+                    }
+
+                    GridRow {
+                        Text("Calendar widget")
+                            .frame(width: 120, alignment: .leading)
+                        Picker("Calendar widget size", selection: $model.settings.calendarWidgetSizePreset) {
+                            ForEach(WidgetSizePreset.allCases) { preset in
+                                Text(preset.label).tag(preset)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                        .frame(width: 280)
+                    }
+
+                    GridRow {
+                        Text("Weather widget")
+                            .frame(width: 120, alignment: .leading)
+                        Picker("Weather widget size", selection: $model.settings.weatherWidgetSizePreset) {
+                            ForEach(WidgetSizePreset.allCases) { preset in
+                                Text(preset.label).tag(preset)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                        .frame(width: 280)
+                    }
                 }
 
                 Divider()
 
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Surface")
-                        .font(.headline)
-                    DockingSliderRow("Corner radius", value: $model.settings.cornerRadius, range: DockingSettingLimits.cornerRadius, step: 1)
-                    DockingSliderRow("Material strength", value: $model.settings.materialStrength, range: DockingSettingLimits.materialStrength, step: 0.05)
-                    DockingSliderRow("Opacity", value: $model.settings.opacity, range: DockingSettingLimits.opacity, step: 0.01)
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 20) {
+                        surfaceControls
+                        LiquidGlassPreview(settings: model.settings)
+                    }
 
-                    Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 12) {
-                        GridRow {
-                            Text("Theme")
-                            Picker("Theme", selection: $model.settings.theme) {
-                                ForEach(ThemeMode.allCases) { mode in
-                                    Text(mode.rawValue.capitalized).tag(mode)
-                                }
-                            }
-                            .labelsHidden()
-                            .frame(width: 180, alignment: .leading)
-                        }
-
-                        GridRow {
-                            Text("Accent color")
-                            Picker("Accent color", selection: $model.settings.accentColorName) {
-                                ForEach(DockingAccentColor.allCases) { accent in
-                                    HStack {
-                                        Circle()
-                                            .fill(accent.color)
-                                            .frame(width: 10, height: 10)
-                                        Text(accent.label)
-                                    }
-                                    .tag(accent.rawValue)
-                                }
-                            }
-                            .labelsHidden()
-                            .frame(width: 180, alignment: .leading)
-                        }
+                    VStack(alignment: .leading, spacing: 14) {
+                        surfaceControls
+                        LiquidGlassPreview(settings: model.settings)
                     }
                 }
             }
             .padding()
-            .frame(maxWidth: 640, alignment: .topLeading)
+            .frame(maxWidth: 760, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
-}
 
-private struct DockingSliderRow: View {
-    let title: String
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-    let step: Double
-
-    init(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double) {
-        self.title = title
-        self._value = value
-        self.range = range
-        self.step = step
+    private var dockScale: Binding<DockScalePreset> {
+        Binding(
+            get: { DockScalePreset.nearest(to: model.settings) },
+            set: { preset in
+                // Store concrete dimensions instead of the preset enum so the
+                // model stays honest about what the renderer needs. The preset
+                // is a control-center affordance, not a second source of truth.
+                model.settings.dockSize = preset.dockSize
+                model.settings.iconSize = preset.iconSize
+                model.settings.spacing = preset.spacing
+            }
+        )
     }
 
-    var body: some View {
-        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 8) {
-            GridRow {
-                Text(title)
-                    .frame(width: 120, alignment: .leading)
-                Slider(value: $value, in: range, step: step)
+    private var surfaceControls: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 12) {
+                GridRow {
+                    Text("Liquid Glass")
+                        .frame(width: 120, alignment: .leading)
+                    Picker("Liquid Glass", selection: $model.settings.liquidGlassSurfaceStyle) {
+                        ForEach(LiquidGlassSurfaceStyle.allCases) { style in
+                            Text(style.label).tag(style)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
                     .frame(width: 280)
-                Text(formattedValue)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
+                }
+
+                GridRow {
+                    Text("Theme")
+                        .frame(width: 120, alignment: .leading)
+                    Picker("Theme", selection: $model.settings.theme) {
+                        ForEach(ThemeMode.allCases) { mode in
+                            Text(mode.rawValue.capitalized).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 180, alignment: .leading)
+                }
+
+                GridRow {
+                    Text("Accent color")
+                        .frame(width: 120, alignment: .leading)
+                    Picker("Accent color", selection: $model.settings.accentColorName) {
+                        ForEach(DockingAccentColor.allCases) { accent in
+                            HStack {
+                                Circle()
+                                    .fill(accent.color)
+                                    .frame(width: 10, height: 10)
+                                Text(accent.label)
+                            }
+                            .tag(accent.rawValue)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 180, alignment: .leading)
+                }
             }
         }
     }
+}
 
-    private var formattedValue: String {
-        step < 1 ? String(format: "%.2f", value) : String(format: "%.0f", value)
+private struct LiquidGlassPreview: View {
+    let settings: DockingSettings
+
+    var body: some View {
+        let previewScale = 0.45
+        ZStack {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            settings.accentColor.opacity(0.22),
+                            Color(nsColor: .windowBackgroundColor),
+                            Color.primary.opacity(0.08)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+
+            HStack(spacing: min(settings.spacing * previewScale, 6)) {
+                ForEach(0..<3, id: \.self) { index in
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(index == 0 ? settings.accentColor.opacity(0.78) : Color.primary.opacity(0.18))
+                        .frame(width: settings.iconSize * previewScale, height: settings.iconSize * previewScale)
+                        .overlay(alignment: .bottom) {
+                            Circle()
+                                .fill(index == 2 ? settings.accentColor : Color.clear)
+                                .frame(width: 5, height: 5)
+                                .offset(y: 8)
+                        }
+                }
+
+                Divider()
+                    .frame(height: min(settings.iconSize * previewScale, 34))
+
+                previewWidget(title: "17", subtitle: "Today", width: settings.calendarWidgetWidth, height: settings.widgetTileHeight, scale: previewScale)
+                previewWidget(title: "24", subtitle: "Clear", width: settings.weatherWidgetWidth, height: settings.widgetTileHeight, scale: previewScale)
+            }
+            .padding(.horizontal, 12)
+            // The preview is intentionally scaled, not pixel-for-pixel. It must
+            // show the relationship between presets without creating a second
+            // layout problem inside Control Center when the user chooses the
+            // largest Dock and widget sizes.
+            .frame(height: settings.effectiveDockThickness * 0.64)
+            .dockingSurface(settings: settings)
+            .padding(16)
+        }
+        .frame(width: 260, height: 138)
+        .preferredColorScheme(settings.theme.colorScheme)
+        .tint(settings.accentColor)
+        .accessibilityLabel("Liquid Glass preview")
+    }
+
+    private func previewWidget(title: String, subtitle: String, width: Double, height: Double, scale: Double) -> some View {
+        VStack(spacing: 1) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .lineLimit(1)
+            Text(subtitle)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .frame(width: width * scale, height: height * scale)
+        .background {
+            RoundedRectangle(cornerRadius: min(12, height * 0.18), style: .continuous)
+                .fill(.thinMaterial)
+                .overlay {
+                    RoundedRectangle(cornerRadius: min(12, height * 0.18), style: .continuous)
+                        .fill(Color.primary.opacity(0.045))
+                }
+        }
     }
 }
 

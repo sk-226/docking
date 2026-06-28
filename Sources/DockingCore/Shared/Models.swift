@@ -202,13 +202,172 @@ enum DockRunningItemResolver {
 struct DockWidgetConfiguration: Codable, Equatable {
     var calendarEnabled: Bool
     var weatherEnabled: Bool
-    var widgetSize: Double
+    var calendarWidgetSizePreset: WidgetSizePreset
+    var weatherWidgetSizePreset: WidgetSizePreset
 
     static let `default` = DockWidgetConfiguration(
         calendarEnabled: true,
         weatherEnabled: true,
-        widgetSize: 58
+        calendarWidgetSizePreset: .standard,
+        weatherWidgetSizePreset: .standard
     )
+}
+
+// Dock scale groups the three dimensions users perceive as one choice: surface
+// thickness, app icon size, and spacing. Exposing them independently made the
+// settings powerful but hard to reason about; the renderer still stores the
+// exact values so validation can guard geometry without another abstraction.
+enum DockScalePreset: String, CaseIterable, Identifiable, Codable {
+    case compact
+    case comfortable
+    case large
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .compact:
+            return "Compact"
+        case .comfortable:
+            return "Comfortable"
+        case .large:
+            return "Large"
+        }
+    }
+
+    var dockSize: Double {
+        switch self {
+        case .compact:
+            return 64
+        case .comfortable:
+            return 72
+        case .large:
+            return 88
+        }
+    }
+
+    var iconSize: Double {
+        switch self {
+        case .compact:
+            return 40
+        case .comfortable:
+            return 46
+        case .large:
+            return 58
+        }
+    }
+
+    var spacing: Double {
+        switch self {
+        case .compact:
+            return 6
+        case .comfortable:
+            return 8
+        case .large:
+            return 12
+        }
+    }
+
+    static func nearest(to settings: DockingSettings) -> DockScalePreset {
+        allCases.min { left, right in
+            left.distance(to: settings) < right.distance(to: settings)
+        } ?? .comfortable
+    }
+
+    private func distance(to settings: DockingSettings) -> Double {
+        abs(dockSize - settings.dockSize) + abs(iconSize - settings.iconSize) + abs(spacing - settings.spacing)
+    }
+}
+
+// Widget size remains a semantic preset, not a strict geometry contract. The
+// app-icon comparison is only a design calibration point for choosing widths;
+// encoding "one/two/three icons" as product semantics would make future layout
+// tuning harder and would expose an implementation detail to users.
+enum WidgetSizePreset: String, CaseIterable, Identifiable, Codable {
+    case compact
+    case standard
+    case detailed
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .compact:
+            return "Compact"
+        case .standard:
+            return "Standard"
+        case .detailed:
+            return "Detailed"
+        }
+    }
+
+    func width(iconSize: Double) -> Double {
+        switch self {
+        case .compact:
+            return max(DockingSettingLimits.widgetReadableMinimum, iconSize + 8)
+        case .standard:
+            return max(88, iconSize * 1.9)
+        case .detailed:
+            return max(126, iconSize * 2.75)
+        }
+    }
+}
+
+// Apple positions Liquid Glass as an adaptive control/navigation material, so
+// Docking treats it as a surface style for the dock chrome. We avoid separate
+// corner-radius/material/opacity sliders because independent values can easily
+// produce non-Apple-looking combinations, while these presets preserve a small
+// set of coherent glass treatments.
+enum LiquidGlassSurfaceStyle: String, CaseIterable, Identifiable, Codable {
+    case clear
+    case balanced
+    case dense
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .clear:
+            return "Clear"
+        case .balanced:
+            return "Balanced"
+        case .dense:
+            return "Dense"
+        }
+    }
+
+    var cornerRadius: Double {
+        switch self {
+        case .clear:
+            return 26
+        case .balanced:
+            return 22
+        case .dense:
+            return 18
+        }
+    }
+
+    var materialStrength: Double {
+        switch self {
+        case .clear:
+            return 1.0
+        case .balanced:
+            return 0.9
+        case .dense:
+            return 0.58
+        }
+    }
+
+    var opacity: Double {
+        switch self {
+        case .clear:
+            return 0.92
+        case .balanced:
+            return 0.96
+        case .dense:
+            return 0.99
+        }
+    }
 }
 
 struct DockingSettings: Codable, Equatable {
@@ -225,11 +384,10 @@ struct DockingSettings: Codable, Equatable {
     var dockPosition: DockPosition
     var dockSize: Double
     var iconSize: Double
-    var widgetSize: Double
+    var calendarWidgetSizePreset: WidgetSizePreset
+    var weatherWidgetSizePreset: WidgetSizePreset
     var spacing: Double
-    var cornerRadius: Double
-    var materialStrength: Double
-    var opacity: Double
+    var liquidGlassSurfaceStyle: LiquidGlassSurfaceStyle
     var theme: ThemeMode
     var accentColorName: String
     var calendarEnabled: Bool
@@ -260,11 +418,10 @@ struct DockingSettings: Codable, Equatable {
         dockPosition: .bottomCenter,
         dockSize: 72,
         iconSize: 46,
-        widgetSize: 58,
+        calendarWidgetSizePreset: .standard,
+        weatherWidgetSizePreset: .standard,
         spacing: 8,
-        cornerRadius: 22,
-        materialStrength: 0.9,
-        opacity: 0.96,
+        liquidGlassSurfaceStyle: .balanced,
         theme: .system,
         accentColorName: "blue",
         calendarEnabled: true,
@@ -305,11 +462,7 @@ enum DockingSettingLimits {
     // 44pt allowed the Calendar icon and two compact text rows to compete for
     // the same vertical space. The app is pre-1.0, so we choose the readable
     // product constraint instead of preserving a size that produced broken UI.
-    static let widgetSize: ClosedRange<Double> = widgetReadableMinimum...84
     static let spacing: ClosedRange<Double> = 4...18
-    static let cornerRadius: ClosedRange<Double> = 12...34
-    static let materialStrength: ClosedRange<Double> = 0.0...1.0
-    static let opacity: ClosedRange<Double> = 0.65...1.0
     static let calendarLookaheadDays: ClosedRange<Int> = 1...30
     static let calendarMaxEventCount: ClosedRange<Int> = 1...50
     static let weatherRefreshIntervalMinutes: ClosedRange<Int> = 30...180
@@ -332,6 +485,53 @@ struct WeatherRefreshKey: Equatable {
 }
 
 extension DockingSettings {
+    var effectiveDockThickness: Double {
+        // Wider widgets should not make Docking vertically greedy. If a user
+        // wants dense vertical detail they can click the widget panel; the dock
+        // itself should preserve a low horizontal silhouette and spend extra
+        // information density across the x-axis.
+        max(dockSize, iconSize + 18)
+    }
+
+    var widgetTileHeight: Double {
+        // This is intentionally capped to the dock's app-icon rhythm. Vertical
+        // occupation is much more expensive than horizontal occupation because
+        // it reduces the usable workspace even when the user is not reading the
+        // widget. Detailed widgets must therefore buy room with width only.
+        min(max(DockingSettingLimits.widgetReadableMinimum, iconSize + 8), dockSize - 10)
+    }
+
+    var calendarWidgetWidth: Double {
+        calendarWidgetSizePreset.width(iconSize: iconSize)
+    }
+
+    var weatherWidgetWidth: Double {
+        weatherWidgetSizePreset.width(iconSize: iconSize)
+    }
+
+    var cornerRadius: Double {
+        liquidGlassSurfaceStyle.cornerRadius
+    }
+
+    var materialStrength: Double {
+        liquidGlassSurfaceStyle.materialStrength
+    }
+
+    var opacity: Double {
+        liquidGlassSurfaceStyle.opacity
+    }
+
+    var enabledWidgetWidths: [Double] {
+        var widths: [Double] = []
+        if calendarEnabled {
+            widths.append(calendarWidgetWidth)
+        }
+        if weatherEnabled {
+            widths.append(weatherWidgetWidth)
+        }
+        return widths
+    }
+
     var calendarRefreshKey: CalendarRefreshKey {
         CalendarRefreshKey(
             enabled: calendarEnabled,

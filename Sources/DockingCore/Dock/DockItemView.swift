@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct DockItemView: View {
@@ -57,24 +58,27 @@ struct DockItemView: View {
                 Button("Hide") {
                     model.hideApplication(item)
                 }
-                Button("Quit") {
-                    model.quit(item)
+                Button(terminationMenuTitle, role: usesForceQuitMenuItem ? .destructive : nil) {
+                    if usesForceQuitMenuItem {
+                        confirmsForceQuit = true
+                    } else {
+                        model.quit(item)
+                    }
                 }
-                Button("Force Quit...", role: .destructive) {
-                    confirmsForceQuit = true
-                }
-            }
-            Button("Show in Finder") {
-                model.showInFinder(item)
             }
             Divider()
-            if isTransientRunningItem {
-                Button("Keep in Docking") {
-                    model.pinRunningItem(item)
+            Menu("Options") {
+                if isTransientRunningItem {
+                    Button("Keep in Docking") {
+                        model.pinRunningItem(item)
+                    }
+                } else {
+                    Button("Remove from Docking") {
+                        model.remove(item)
+                    }
                 }
-            } else {
-                Button("Remove from Docking", role: .destructive) {
-                    model.remove(item)
+                Button("Show in Finder") {
+                    model.showInFinder(item)
                 }
             }
             Divider()
@@ -104,5 +108,25 @@ struct DockItemView: View {
             return "Running, not kept in Docking"
         }
         return isRunning ? "Running" : "Not running"
+    }
+
+    private var usesForceQuitMenuItem: Bool {
+        // The macOS Dock does not show Quit and Force Quit as parallel ordinary
+        // choices. In the common public interaction, Option changes Quit into
+        // Force Quit. SwiftUI's contextMenu does not provide Dock-private live
+        // menu validation, so we sample the modifier state while constructing
+        // the menu and keep the normal menu aligned with the standard Dock
+        // shape: exactly one termination command is visible.
+        NSEvent.modifierFlags.contains(.option)
+    }
+
+    private var terminationMenuTitle: String {
+        DockTerminationMenuPolicy.title(optionKeyIsPressed: usesForceQuitMenuItem)
+    }
+}
+
+enum DockTerminationMenuPolicy {
+    static func title(optionKeyIsPressed: Bool) -> String {
+        optionKeyIsPressed ? "Force Quit..." : "Quit"
     }
 }

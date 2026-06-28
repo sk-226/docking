@@ -636,7 +636,7 @@ public final class DockingAppModel: ObservableObject {
     }
 
     private func applySettingsToWindows() {
-        dockPanelController.applySettings(settings, itemCount: visibleAppItemCount, widgetCount: enabledWidgetCount)
+        dockPanelController.applySettings(settings, itemCount: visibleAppItemCount)
         switch settings.dockVisibility {
         case .autoHide:
             // Auto-hide is a real visibility mode, not a second checkbox layered

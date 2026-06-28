@@ -50,7 +50,7 @@ enum AppleDockPreferences {
             // widgets. Keeping the existing widget readability floor avoids
             // recreating the Calendar-overlap bug when a user's Apple Dock is
             // very small.
-            let readableDockSize = max(iconSize + 26, settings.widgetSize + 14)
+            let readableDockSize = max(iconSize + 26, DockingSettingLimits.widgetReadableMinimum + 14)
             settings.dockSize = clamped(readableDockSize, to: DockingSettingLimits.dockSize)
             didApply = true
         }

@@ -46,15 +46,18 @@ func validateCalendarGrouping() throws {
 
 func validateDockLayout() throws {
     let settings = DockingSettings.default
-    let appOnly = DockLayout.panelSize(itemCount: 3, widgetCount: 0, settings: settings)
-    let withWidgets = DockLayout.panelSize(itemCount: 3, widgetCount: 2, settings: settings)
+    var appOnlySettings = settings
+    appOnlySettings.calendarEnabled = false
+    appOnlySettings.weatherEnabled = false
+    let appOnly = DockLayout.panelSize(itemCount: 3, settings: appOnlySettings)
+    let withWidgets = DockLayout.panelSize(itemCount: 3, settings: settings)
     try expect(withWidgets.width > appOnly.width, "dock width should grow when widgets are enabled")
-    try expect(appOnly.height == settings.dockSize, "dock height should follow settings")
+    try expect(appOnly.height == appOnlySettings.effectiveDockThickness, "dock height should follow effective dock thickness")
 
     var verticalSettings = settings
     verticalSettings.dockPosition = .left
-    let vertical = DockLayout.panelSize(itemCount: 3, widgetCount: 2, settings: verticalSettings)
-    try expect(vertical.width == settings.dockSize, "vertical dock width should use dock size as thickness")
+    let vertical = DockLayout.panelSize(itemCount: 3, settings: verticalSettings)
+    try expect(vertical.width == verticalSettings.effectiveDockThickness, "vertical dock width should use effective dock thickness")
     try expect(vertical.height > vertical.width, "vertical dock should put items on the long vertical axis")
 }
 
@@ -166,16 +169,16 @@ func validateDockPositionFrames() throws {
     for position in DockPosition.allCases {
         var settings = DockingSettings.default
         settings.dockPosition = position
-        let size = DockLayout.panelSize(itemCount: 4, widgetCount: 2, settings: settings)
+        let size = DockLayout.panelSize(itemCount: 4, settings: settings)
         let frame = ScreenPlacementService.dockFrame(size: size, on: screen, position: position)
 
         try expect(visible.insetBy(dx: -0.5, dy: -0.5).contains(frame), "\(position.label) dock frame should stay inside the visible screen")
 
         if position.isVertical {
-            try expect(frame.width == settings.dockSize, "\(position.label) dock should keep dock size as its thickness")
+            try expect(frame.width == settings.effectiveDockThickness, "\(position.label) dock should keep effective dock thickness")
             try expect(frame.height > frame.width, "\(position.label) dock should be vertical")
         } else {
-            try expect(frame.height == settings.dockSize, "\(position.label) dock should keep dock size as its height")
+            try expect(frame.height == settings.effectiveDockThickness, "\(position.label) dock should keep effective dock thickness")
             try expect(frame.width > frame.height, "\(position.label) dock should be horizontal")
         }
 
@@ -417,7 +420,8 @@ func validateSettingsStore() throws {
     settings.dockVisibility = .alwaysVisible
     settings.unpinnedRunningAppVisibility = .hidden
     settings.keepAboveOtherWindows = false
-    settings.widgetSize = 66
+    settings.calendarWidgetSizePreset = .compact
+    settings.weatherWidgetSizePreset = .detailed
     store.save(settings)
     try expect(store.load() == settings, "settings should round-trip through UserDefaults")
 }
@@ -426,8 +430,9 @@ func validateSettingsRefreshKeys() throws {
     var appearanceOnly = DockingSettings.default
     appearanceOnly.dockSize = 88
     appearanceOnly.iconSize = 60
-    appearanceOnly.cornerRadius = 28
-    appearanceOnly.opacity = 0.8
+    appearanceOnly.calendarWidgetSizePreset = .detailed
+    appearanceOnly.weatherWidgetSizePreset = .compact
+    appearanceOnly.liquidGlassSurfaceStyle = .dense
     appearanceOnly.dockPosition = .left
     appearanceOnly.unpinnedRunningAppVisibility = .hidden
     appearanceOnly.keepAboveOtherWindows = false
@@ -549,11 +554,19 @@ func validateDefaultSettingsFitEditableRanges() throws {
     try expect(abs(DockingSettingLimits.autoHideDelayStep - 0.05) < 0.000_001, "auto-hide delay should expose fine-grained subsecond adjustment")
     try expect(DockingSettingLimits.dockSize.contains(settings.dockSize), "default dock size should be editable in Control Center")
     try expect(DockingSettingLimits.iconSize.contains(settings.iconSize), "default icon size should be editable in Control Center")
-    try expect(DockingSettingLimits.widgetSize.contains(settings.widgetSize), "default widget size should be editable in Control Center")
+    try expect(WidgetSizePreset.allCases.contains(settings.calendarWidgetSizePreset), "default calendar widget size should be selectable in Control Center")
+    try expect(WidgetSizePreset.allCases.contains(settings.weatherWidgetSizePreset), "default weather widget size should be selectable in Control Center")
     try expect(DockingSettingLimits.spacing.contains(settings.spacing), "default spacing should be editable in Control Center")
-    try expect(DockingSettingLimits.cornerRadius.contains(settings.cornerRadius), "default corner radius should be editable in Control Center")
-    try expect(DockingSettingLimits.materialStrength.contains(settings.materialStrength), "default material strength should be editable in Control Center")
-    try expect(DockingSettingLimits.opacity.contains(settings.opacity), "default opacity should be editable in Control Center")
+    try expect(LiquidGlassSurfaceStyle.allCases.contains(settings.liquidGlassSurfaceStyle), "default Liquid Glass style should be selectable in Control Center")
+    try expect(DockScalePreset.nearest(to: settings) == .comfortable, "default dock scale should map to a user-facing preset")
+    try expect(settings.calendarWidgetSizePreset == .standard, "default calendar widget size should map to a user-facing preset")
+    try expect(settings.weatherWidgetSizePreset == .standard, "default weather widget size should map to a user-facing preset")
+    try expect(WidgetSizePreset.detailed.width(iconSize: settings.iconSize) > WidgetSizePreset.standard.width(iconSize: settings.iconSize), "detailed widget preset should expose a wider dock tile")
+    try expect(WidgetSizePreset.compact.width(iconSize: settings.iconSize) < WidgetSizePreset.standard.width(iconSize: settings.iconSize), "compact widget preset should remain narrower than standard")
+    var detailedWidgets = settings
+    detailedWidgets.calendarWidgetSizePreset = .detailed
+    detailedWidgets.weatherWidgetSizePreset = .detailed
+    try expect(detailedWidgets.widgetTileHeight <= detailedWidgets.dockSize - 10, "detailed widget presets must not increase dock vertical occupation")
     try expect(DockingSettingLimits.calendarLookaheadDays.contains(settings.calendarLookaheadDays), "default calendar lookahead should be editable in Control Center")
     try expect(DockingSettingLimits.calendarMaxEventCount.contains(settings.calendarMaxEventCount), "default calendar max events should be editable in Control Center")
     try expect(DockingSettingLimits.weatherRefreshIntervalMinutes.contains(settings.weatherRefreshIntervalMinutes), "default weather refresh interval should be editable in Control Center")
@@ -565,21 +578,37 @@ func validateDefaultSettingsFitEditableRanges() throws {
 
 func validateDockWidgetMetrics() throws {
     let persistedSmallSize = 44.0
-    let editableMinimumSize = DockingSettingLimits.widgetSize.lowerBound
+    let editableMinimumSize = DockingSettingLimits.widgetReadableMinimum
 
-    for size in [persistedSmallSize, editableMinimumSize, DockingSettings.default.widgetSize] {
-        let metrics = DockWidgetMetrics(size: size)
+    for height in [persistedSmallSize, editableMinimumSize, DockingSettings.default.widgetTileHeight] {
+        let metrics = DockWidgetMetrics(width: height, height: height)
 
         // This guards the specific UI regression the user saw: when SwiftUI was
         // allowed to infer the widget's internal heights, the Calendar icon and
         // labels could occupy the same pixels at compact sizes. The invariant is
         // intentionally mechanical because screenshots are still the final UI
         // check, while this catches impossible geometry during fast validation.
-        try expect(metrics.allocatedHeight <= size + 0.001, "compact widget layout should not over-allocate vertical space at \(size)pt")
-        try expect(metrics.iconHeight > 0, "compact widget should always reserve an icon row")
+        try expect(metrics.allocatedHeight <= height + 0.001, "compact widget layout should not over-allocate vertical space at \(height)pt")
+        try expect(metrics.iconExtent > 0, "compact widget should always reserve an icon row")
         try expect(metrics.contentHeight > 0, "compact widget should always reserve a text content row")
-        try expect(metrics.cornerRadius < size / 2, "compact widget corner radius should not collapse the rounded rectangle at \(size)pt")
+        try expect(metrics.cornerRadius < height / 2, "compact widget corner radius should not collapse the rounded rectangle at \(height)pt")
     }
+
+    let wideMetrics = DockWidgetMetrics(
+        width: WidgetSizePreset.detailed.width(iconSize: DockingSettings.default.iconSize),
+        height: DockingSettings.default.widgetTileHeight
+    )
+    try expect(wideMetrics.usesHorizontalLayout, "wide widget presets should use horizontal layout to spend width instead of height")
+    try expect(wideMetrics.allocatedHeight <= DockingSettings.default.widgetTileHeight + 0.001, "wide widget layout should stay within the dock tile height")
+}
+
+func validateDockItemTerminationMenuPolicy() throws {
+    try expect(DockTerminationMenuPolicy.title(optionKeyIsPressed: false) == "Quit", "normal Dock item menu should expose Quit")
+    try expect(DockTerminationMenuPolicy.title(optionKeyIsPressed: true) == "Force Quit...", "Option-modified Dock item menu should replace Quit with Force Quit")
+    try expect(
+        DockTerminationMenuPolicy.title(optionKeyIsPressed: false) != DockTerminationMenuPolicy.title(optionKeyIsPressed: true),
+        "Quit and Force Quit should be mutually exclusive menu titles"
+    )
 }
 
 @MainActor
@@ -1215,6 +1244,7 @@ let validations: [(String, () throws -> Void)] = [
     ("unpinned running app resolver", validateUnpinnedRunningAppResolver),
     ("default settings fit editable ranges", validateDefaultSettingsFitEditableRanges),
     ("dock widget metrics", validateDockWidgetMetrics),
+    ("dock item termination menu policy", validateDockItemTerminationMenuPolicy),
     ("accent color options", validateAccentColorOptionsCoverDefault),
     ("weather cache", validateWeatherCache),
     ("restore snapshot", validateRestoreSnapshot)

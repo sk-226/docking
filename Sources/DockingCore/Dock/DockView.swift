@@ -6,6 +6,7 @@ struct DockView: View {
 
     var body: some View {
         let isVertical = model.settings.dockPosition.isVertical
+        let dockThickness = model.settings.effectiveDockThickness
         let layout = isVertical
             ? AnyLayout(VStackLayout(spacing: model.settings.spacing))
             : AnyLayout(HStackLayout(spacing: model.settings.spacing))
@@ -58,11 +59,11 @@ struct DockView: View {
             .accessibilityLabel("Add application")
             .accessibilityHint("Choose an application bundle to add to Docking")
         }
-        .padding(.horizontal, isVertical ? 0 : model.settings.dockSize * 0.16)
-        .padding(.vertical, isVertical ? model.settings.dockSize * 0.16 : 0)
+        .padding(.horizontal, isVertical ? 0 : dockThickness * 0.16)
+        .padding(.vertical, isVertical ? dockThickness * 0.16 : 0)
         .frame(
-            width: isVertical ? model.settings.dockSize : nil,
-            height: isVertical ? nil : model.settings.dockSize
+            width: isVertical ? dockThickness : nil,
+            height: isVertical ? nil : dockThickness
         )
         .dockingSurface(settings: model.settings)
         // AppKit's rectangular panel shadow is disabled, so this is the only
