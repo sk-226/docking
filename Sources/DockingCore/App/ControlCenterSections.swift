@@ -52,6 +52,24 @@ struct GeneralControlCenterSection: View {
                 Text(model.appleDockVisibilityStatusMessage)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 12) {
+                    GridRow {
+                        Text("Unpinned running apps")
+                        Picker("Unpinned running apps", selection: $model.settings.unpinnedRunningAppVisibility) {
+                            ForEach(UnpinnedRunningAppVisibility.allCases) { visibility in
+                                Text(visibility.label).tag(visibility)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                        .frame(width: 220, alignment: .leading)
+                    }
+                }
+                Toggle("Keep above other windows", isOn: $model.settings.keepAboveOtherWindows)
+                Text("Turn this off if you want Docking to behave like an ordinary overlay while testing another full-screen or always-on-top workflow.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Toggle("Show on all Spaces", isOn: $model.settings.showOnAllSpaces)
                 Toggle("Show on full-screen spaces", isOn: $model.settings.showOnFullScreenSpaces)
 

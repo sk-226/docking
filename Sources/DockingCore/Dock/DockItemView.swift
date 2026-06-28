@@ -4,6 +4,7 @@ struct DockItemView: View {
     @EnvironmentObject private var model: DockingAppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let item: DockItem
+    var isTransientRunningItem = false
     @State private var isHovering = false
 
     private var isRunning: Bool {
@@ -55,8 +56,14 @@ struct DockItemView: View {
                 model.showInFinder(item)
             }
             Divider()
-            Button("Remove from Docking", role: .destructive) {
-                model.remove(item)
+            if isTransientRunningItem {
+                Button("Keep in Docking") {
+                    model.pinRunningItem(item)
+                }
+            } else {
+                Button("Remove from Docking", role: .destructive) {
+                    model.remove(item)
+                }
             }
             Divider()
             Button("Open Control Center") {
@@ -64,7 +71,14 @@ struct DockItemView: View {
             }
         }
         .accessibilityLabel(item.title)
-        .accessibilityValue(isRunning ? "Running" : "Not running")
+        .accessibilityValue(accessibilityValue)
         .accessibilityHint("Opens \(item.title)")
+    }
+
+    private var accessibilityValue: String {
+        if isTransientRunningItem {
+            return "Running, not kept in Docking"
+        }
+        return isRunning ? "Running" : "Not running"
     }
 }

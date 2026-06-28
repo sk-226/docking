@@ -90,12 +90,15 @@ enum ScreenPlacementService {
         return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
 
-    static func edgeTriggerFrame(dockFrame: NSRect, position: DockPosition = .bottomCenter, on screen: NSScreen? = NSScreen.main) -> NSRect {
+    static func edgeTriggerFrame(dockFrame: NSRect, position: DockPosition = .bottomCenter, on screen: NSScreen? = NSScreen.main, spansFullBottomEdge: Bool = false) -> NSRect {
         let screenFrame = (screen ?? NSScreen.screens.first)?.frame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
         let thickness: CGFloat = 8
 
         switch position {
         case .bottomCenter, .bottomLeft, .bottomRight:
+            if spansFullBottomEdge {
+                return NSRect(x: screenFrame.minX, y: screenFrame.minY, width: screenFrame.width, height: thickness)
+            }
             let clampedWidth = min(dockFrame.width + 64, screenFrame.width)
             let x = min(max(dockFrame.midX - clampedWidth / 2, screenFrame.minX), screenFrame.maxX - clampedWidth)
             // Auto-hide needs to wake from the physical screen edge, not from

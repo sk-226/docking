@@ -42,6 +42,10 @@ final class DockSettingsRestoreService {
         )
     }
 
+    func savedDockPreferenceValues() -> [String: DockPreferenceValue]? {
+        try? snapshotService.loadSnapshot()?.values
+    }
+
     func manualRestoreInstructions() -> DockManualRestoreInstructions {
         guard let snapshot = try? snapshotService.loadSnapshot() else {
             return DockManualRestoreInstructions(

@@ -22,12 +22,20 @@ struct DockView: View {
                     )
             }
 
-            if model.enabledWidgetCount > 0 && !model.dockItems.isEmpty {
-                Divider()
-                    .frame(
-                        width: isVertical ? model.settings.iconSize * 0.62 : nil,
-                        height: isVertical ? nil : model.settings.iconSize * 0.62
-                    )
+            if !model.unpinnedRunningItems.isEmpty {
+                // Match the Apple Dock mental model: apps the user keeps in
+                // Docking stay in the primary group, while merely-running apps
+                // sit behind a divider so they can be discovered without
+                // silently becoming permanent dock items.
+                dockDivider(isVertical: isVertical)
+
+                ForEach(model.unpinnedRunningItems) { item in
+                    DockItemView(item: item, isTransientRunningItem: true)
+                }
+            }
+
+            if model.enabledWidgetCount > 0 && model.visibleAppItemCount > 0 {
+                dockDivider(isVertical: isVertical)
             }
 
             if model.settings.calendarEnabled {
@@ -73,6 +81,14 @@ struct DockView: View {
         }
         .onDrop(of: [.fileURL], delegate: DockExternalAppDropDelegate(model: model))
         .accessibilityLabel("Docking")
+    }
+
+    private func dockDivider(isVertical: Bool) -> some View {
+        Divider()
+            .frame(
+                width: isVertical ? model.settings.iconSize * 0.62 : nil,
+                height: isVertical ? nil : model.settings.iconSize * 0.62
+            )
     }
 }
 

@@ -114,6 +114,10 @@ enum DockPosition: String, CaseIterable, Codable, Identifiable {
         }
     }
 
+    var isBottom: Bool {
+        !isVertical
+    }
+
     var label: String {
         switch self {
         case .bottomCenter:
@@ -146,6 +150,55 @@ enum DockVisibilityMode: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+enum UnpinnedRunningAppVisibility: String, CaseIterable, Codable, Identifiable {
+    case separated
+    case hidden
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .separated:
+            return "Show separated"
+        case .hidden:
+            return "Hide"
+        }
+    }
+}
+
+enum DockRunningItemResolver {
+    static func unpinnedRunningItems(
+        pinnedItems: [DockItem],
+        runningItems: [DockItem],
+        visibility: UnpinnedRunningAppVisibility
+    ) -> [DockItem] {
+        guard visibility == .separated else {
+            return []
+        }
+
+        // Running apps are intentionally resolved from stable app identity,
+        // not from DockItem.id. Transient items are rebuilt from
+        // NSRunningApplication snapshots, so UUID comparison would treat the
+        // same app as new after every observer refresh. Bundle ID is preferred
+        // because it survives path changes; the path fallback covers unsigned
+        // or helper-like apps that still behave as regular user apps.
+        let pinnedKeys = Set(pinnedItems.map(stableKey))
+        var seenKeys: Set<String> = []
+        return runningItems.filter { item in
+            let key = stableKey(for: item)
+            guard !pinnedKeys.contains(key), !seenKeys.contains(key) else {
+                return false
+            }
+            seenKeys.insert(key)
+            return true
+        }
+    }
+
+    private static func stableKey(for item: DockItem) -> String {
+        item.bundleIdentifier ?? item.appURL?.path ?? item.iconCacheKey
+    }
+}
+
 struct DockWidgetConfiguration: Codable, Equatable {
     var calendarEnabled: Bool
     var weatherEnabled: Bool
@@ -162,6 +215,8 @@ struct DockingSettings: Codable, Equatable {
     var launchAtLogin: Bool
     var showMenuBarIcon: Bool
     var dockVisibility: DockVisibilityMode
+    var unpinnedRunningAppVisibility: UnpinnedRunningAppVisibility
+    var keepAboveOtherWindows: Bool
     var autoHideDelay: Double
     var showOnAllSpaces: Bool
     var showOnFullScreenSpaces: Bool
@@ -195,6 +250,8 @@ struct DockingSettings: Codable, Equatable {
         launchAtLogin: false,
         showMenuBarIcon: true,
         dockVisibility: .autoHide,
+        unpinnedRunningAppVisibility: .separated,
+        keepAboveOtherWindows: true,
         autoHideDelay: 0.7,
         showOnAllSpaces: true,
         showOnFullScreenSpaces: true,

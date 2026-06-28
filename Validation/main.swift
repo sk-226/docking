@@ -130,6 +130,9 @@ func validateDockPositionFrames() throws {
             // when the standard Dock was still visible.
             try expect(abs(trigger.minY - screen.frame.minY) < 0.5, "\(position.label) auto-hide trigger should touch the bottom screen edge")
             try expect(trigger.height >= 4, "\(position.label) auto-hide trigger should have enough thickness to catch pointer entry")
+            let fullBottomTrigger = ScreenPlacementService.edgeTriggerFrame(dockFrame: frame, position: position, on: screen, spansFullBottomEdge: true)
+            try expect(abs(fullBottomTrigger.minX - screen.frame.minX) < 0.5, "\(position.label) full-width trigger should start at the screen edge")
+            try expect(abs(fullBottomTrigger.width - screen.frame.width) < 0.5, "\(position.label) full-width trigger should cover the whole display bottom")
         case .left:
             try expect(abs(trigger.minX - screen.frame.minX) < 0.5, "left auto-hide trigger should touch the left screen edge")
             try expect(trigger.width >= 4, "left auto-hide trigger should have enough thickness to catch pointer entry")
@@ -138,6 +141,61 @@ func validateDockPositionFrames() throws {
             try expect(trigger.width >= 4, "right auto-hide trigger should have enough thickness to catch pointer entry")
         }
     }
+}
+
+func validateAppleDockMirroring() throws {
+    let suiteName = "docking.validation.apple-mirror.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    defaults.set(true, forKey: "autohide")
+    defaults.set("right", forKey: "orientation")
+    defaults.set(40.0, forKey: "tilesize")
+    defaults.set(
+        [
+            [
+                "tile-type": "file-tile",
+                "tile-data": [
+                    "bundle-identifier": "com.example.Foo",
+                    "file-label": "Foo",
+                    "file-data": [
+                        "_CFURLString": URL(fileURLWithPath: "/Applications/Foo.app").absoluteString
+                    ]
+                ]
+            ],
+            [
+                "tile-type": "directory-tile",
+                "tile-data": [
+                    "file-label": "Downloads"
+                ]
+            ]
+        ],
+        forKey: "persistent-apps"
+    )
+
+    var settings = DockingSettings.default
+    let appliedFromDefaults = AppleDockPreferences.mirrorOriginalDock(into: &settings, savedValues: nil, dockDefaults: defaults)
+    try expect(appliedFromDefaults, "Apple Dock mirror should apply readable defaults")
+    try expect(settings.dockVisibility == .autoHide, "Apple Dock autohide should map to Docking visibility")
+    try expect(settings.dockPosition == .right, "Apple Dock orientation should map to Docking position")
+    try expect(settings.iconSize == 40.0, "Apple Dock tile size should map to Docking icon size")
+
+    let savedValues: [String: DockPreferenceValue] = [
+        "autohide": .bool(false),
+        "orientation": .string("left"),
+        "tilesize": .double(44.0)
+    ]
+    let appliedFromSnapshot = AppleDockPreferences.mirrorOriginalDock(into: &settings, savedValues: savedValues, dockDefaults: defaults)
+    try expect(appliedFromSnapshot, "saved Apple Dock snapshot should override already-mutated Dock defaults")
+    try expect(settings.dockVisibility == .alwaysVisible, "saved autohide should restore original visibility intent")
+    try expect(settings.dockPosition == .left, "saved orientation should restore original Dock edge")
+    try expect(settings.iconSize == 44.0, "saved tile size should restore original icon size")
+
+    let items = AppleDockPreferences.persistentAppItems(from: defaults)
+    try expect(items.count == 1, "Apple Dock mirror should import only app tiles")
+    try expect(items.first?.title == "Foo", "Apple Dock mirror should preserve app labels")
+    try expect(items.first?.bundleIdentifier == "com.example.Foo", "Apple Dock mirror should preserve bundle identifiers")
+    try expect(items.first?.appURL?.path == "/Applications/Foo.app", "Apple Dock mirror should preserve app URLs")
 }
 
 func validateAppCatalogRecognizesOnlyApplicationBundles() throws {
@@ -190,6 +248,8 @@ func validateSettingsStore() throws {
 
     var settings = DockingSettings.default
     settings.dockVisibility = .alwaysVisible
+    settings.unpinnedRunningAppVisibility = .hidden
+    settings.keepAboveOtherWindows = false
     settings.widgetSize = 66
     store.save(settings)
     try expect(store.load() == settings, "settings should round-trip through UserDefaults")
@@ -202,6 +262,8 @@ func validateSettingsRefreshKeys() throws {
     appearanceOnly.cornerRadius = 28
     appearanceOnly.opacity = 0.8
     appearanceOnly.dockPosition = .left
+    appearanceOnly.unpinnedRunningAppVisibility = .hidden
+    appearanceOnly.keepAboveOtherWindows = false
     appearanceOnly.calendarShowsLocation = false
     appearanceOnly.weatherShowsHumidity = false
     appearanceOnly.weatherShowsAQI = false
@@ -216,6 +278,59 @@ func validateSettingsRefreshKeys() throws {
     var weatherData = DockingSettings.default
     weatherData.weatherManualLocation = "Tokyo"
     try expect(weatherData.weatherRefreshKey != DockingSettings.default.weatherRefreshKey, "weather request settings should trigger weather data refresh")
+}
+
+func validateUnpinnedRunningAppResolver() throws {
+    let pinned = DockItem(
+        title: "Pinned Editor",
+        bundleIdentifier: "com.example.editor",
+        appURL: URL(fileURLWithPath: "/Applications/Pinned Editor.app"),
+        iconCacheKey: "com.example.editor"
+    )
+    let runningPinned = DockItem(
+        title: "Pinned Editor",
+        bundleIdentifier: "com.example.editor",
+        appURL: URL(fileURLWithPath: "/Applications/Pinned Editor.app"),
+        iconCacheKey: "com.example.editor",
+        isPinned: false
+    )
+    let runningTransient = DockItem(
+        title: "Zed",
+        bundleIdentifier: "dev.zed.Zed",
+        appURL: URL(fileURLWithPath: "/Applications/Zed.app"),
+        iconCacheKey: "dev.zed.Zed",
+        isPinned: false
+    )
+    let duplicateTransient = DockItem(
+        title: "Zed",
+        bundleIdentifier: "dev.zed.Zed",
+        appURL: URL(fileURLWithPath: "/Applications/Zed.app"),
+        iconCacheKey: "dev.zed.Zed",
+        isPinned: false
+    )
+
+    let visible = DockRunningItemResolver.unpinnedRunningItems(
+        pinnedItems: [pinned],
+        runningItems: [runningPinned, runningTransient, duplicateTransient],
+        visibility: .separated
+    )
+    try expect(visible == [runningTransient], "unpinned running apps should appear once in their own section")
+
+    let hidden = DockRunningItemResolver.unpinnedRunningItems(
+        pinnedItems: [pinned],
+        runningItems: [runningTransient],
+        visibility: .hidden
+    )
+    try expect(hidden.isEmpty, "unpinned running apps should be hideable")
+}
+
+func validateDockWindowLevelToggle() throws {
+    var settings = DockingSettings.default
+    settings.keepAboveOtherWindows = true
+    try expect(DockPanelController.windowLevel(for: settings) == .floating, "default dock panel should float above ordinary windows")
+
+    settings.keepAboveOtherWindows = false
+    try expect(DockPanelController.windowLevel(for: settings) == .normal, "always-on-top toggle should allow ordinary window level")
 }
 
 func validateDefaultSettingsFitEditableRanges() throws {
@@ -667,9 +782,12 @@ let validations: [(String, () throws -> Void)] = [
     ("detail panel anchoring", validateDetailPanelAnchoring),
     ("specific display selection", validateSpecificDisplaySelection),
     ("dock position frames", validateDockPositionFrames),
+    ("dock window level toggle", validateDockWindowLevelToggle),
+    ("apple dock mirroring", validateAppleDockMirroring),
     ("app catalog bundle recognition", validateAppCatalogRecognizesOnlyApplicationBundles),
     ("settings store", validateSettingsStore),
     ("settings refresh keys", validateSettingsRefreshKeys),
+    ("unpinned running app resolver", validateUnpinnedRunningAppResolver),
     ("default settings fit editable ranges", validateDefaultSettingsFitEditableRanges),
     ("dock widget metrics", validateDockWidgetMetrics),
     ("accent color options", validateAccentColorOptionsCoverDefault),

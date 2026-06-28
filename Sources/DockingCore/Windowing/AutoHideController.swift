@@ -3,32 +3,49 @@ import Foundation
 
 @MainActor
 final class AutoHideController {
-    private var edgePanel: NSPanel?
-    private var onEnter: (() -> Void)?
+    private var edgePanels: [String: NSPanel] = [:]
+    private var onEnter: ((NSScreen?) -> Void)?
 
-    func update(settings: DockingSettings, dockFrame: NSRect, screen: NSScreen?, onEnter: @escaping () -> Void) {
+    func update(settings: DockingSettings, dockFrame: NSRect, screen: NSScreen?, onEnter: @escaping (NSScreen?) -> Void) {
         self.onEnter = onEnter
 
         guard settings.dockVisibility == .autoHide else {
-            edgePanel?.close()
-            edgePanel = nil
+            close()
             return
         }
 
-        let frame = ScreenPlacementService.edgeTriggerFrame(dockFrame: dockFrame, position: settings.dockPosition, on: screen)
-        let panel = edgePanel ?? makeEdgePanel()
-        panel.setFrame(frame, display: true)
-        panel.collectionBehavior = collectionBehavior(for: settings)
-        panel.orderFrontRegardless()
-        edgePanel = panel
+        let screens = triggerScreens(for: settings, selectedScreen: screen)
+        let wantedKeys = Set(screens.map(screenKey))
+        for (key, panel) in edgePanels where !wantedKeys.contains(key) {
+            panel.close()
+            edgePanels[key] = nil
+        }
+
+        for triggerScreen in screens {
+            let key = screenKey(triggerScreen)
+            let screenDockFrame = ScreenPlacementService.dockFrame(size: dockFrame.size, on: triggerScreen, position: settings.dockPosition)
+            let frame = ScreenPlacementService.edgeTriggerFrame(
+                dockFrame: screenDockFrame,
+                position: settings.dockPosition,
+                on: triggerScreen,
+                spansFullBottomEdge: settings.dockPosition.isBottom
+            )
+            let panel = edgePanels[key] ?? makeEdgePanel(for: triggerScreen)
+            panel.setFrame(frame, display: true)
+            panel.collectionBehavior = collectionBehavior(for: settings)
+            panel.orderFrontRegardless()
+            edgePanels[key] = panel
+        }
     }
 
     func close() {
-        edgePanel?.close()
-        edgePanel = nil
+        for panel in edgePanels.values {
+            panel.close()
+        }
+        edgePanels = [:]
     }
 
-    private func makeEdgePanel() -> NSPanel {
+    private func makeEdgePanel(for screen: NSScreen?) -> NSPanel {
         let panel = NSPanel(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -39,13 +56,29 @@ final class AutoHideController {
         panel.isOpaque = false
         panel.hasShadow = false
         panel.level = .statusBar
-        // A tiny edge trigger panel avoids timer-based mouse polling. The panel
-        // only exists when auto-hide is enabled and wakes the dock via tracking
-        // area callbacks when the pointer reaches the screen edge.
+        // Tiny edge trigger panels avoid timer-based mouse polling. Bottom
+        // docks get one trigger per display so the Docking dock can appear on
+        // whichever screen edge the user pushes into, matching the expectation
+        // set by Apple's Dock on multi-display systems.
         panel.contentView = EdgeTriggerView { [weak self] in
-            self?.onEnter?()
+            self?.onEnter?(screen)
         }
         return panel
+    }
+
+    private func triggerScreens(for settings: DockingSettings, selectedScreen: NSScreen?) -> [NSScreen] {
+        if settings.dockPosition.isBottom {
+            return NSScreen.screens.isEmpty ? selectedScreen.map { [$0] } ?? [] : NSScreen.screens
+        }
+        return selectedScreen.map { [$0] } ?? NSScreen.screens.prefix(1).map { $0 }
+    }
+
+    private func screenKey(_ screen: NSScreen?) -> String {
+        guard let screen else {
+            return "fallback"
+        }
+        let frame = screen.frame
+        return "\(screen.localizedName)-\(Int(frame.minX))-\(Int(frame.minY))-\(Int(frame.width))-\(Int(frame.height))"
     }
 
     private func collectionBehavior(for settings: DockingSettings) -> NSWindow.CollectionBehavior {

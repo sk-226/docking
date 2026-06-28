@@ -116,8 +116,12 @@ private struct ControlCenterOverview: View {
                         Text(model.settings.dockPosition.label)
                     }
                     GridRow {
-                        Text("Apps")
+                        Text("Pinned apps")
                         Text("\(model.dockItems.count)")
+                    }
+                    GridRow {
+                        Text("Running unpinned")
+                        Text("\(model.unpinnedRunningItems.count)")
                     }
                     GridRow {
                         Text("Widgets")

@@ -14,6 +14,8 @@ icons, text, or layout.
   polling.
 - App add by picker or `.app` drag/drop, remove, reset, Finder reveal, context
   menu, and basic drag reorder.
+- Running apps that are not kept in Docking can appear in a separated transient
+  section, or be hidden entirely from Control Center.
 - Calendar widget backed by EventKit with loading, denied, empty, loaded, and
   error states. Calendar sources can be selected in Control Center; an empty selection
   intentionally means all calendars.
@@ -22,8 +24,9 @@ icons, text, or layout.
   current-location flow. It does not show fake production weather. Preview/test
   mock data is compiled only in `DEBUG`.
 - Single Control Center window for dock sizing, dock position, auto-hide,
-  widgets, weather location/unit, calendar lookahead, display choice, accent
-  color, material strength, launch at login, and restore messaging.
+  unpinned running-app visibility, keep-above behavior, widgets, weather
+  location/unit, calendar lookahead, display choice, accent color, material
+  strength, launch at login, and restore messaging.
 - Control Center has selectable Overview, General, Appearance, Apps, Widgets,
   and Restore sections.
 - Menu bar status item with show, hide, Control Center, restore, and quit
@@ -34,6 +37,8 @@ icons, text, or layout.
   - `Command-Option-W`: open Weather widget
 - Restore section that clearly states this 0.0.0 app is overlay-only and does
   not alter Apple Dock settings by default.
+- Primary Dock mode imports readable Apple Dock layout details and pinned apps
+  into Docking before moving Apple Dock out of the way.
 
 ## Build
 
@@ -114,13 +119,17 @@ overlay-only:
 
 Use Control Center > Restore > **Use Docking as Primary Dock** when you explicitly
 want Docking to take over day-to-day dock behavior. That action saves the
-current Apple Dock preferences before changing Apple Dock to strong auto-hide
-settings. Use **Restore Original macOS Dock Settings** or **Disable Primary
-Mode** to write the saved settings back.
+current Apple Dock preferences, mirrors the readable original Dock layout and
+pinned apps into Docking, then changes Apple Dock to strong auto-hide settings.
+Use **Match Original Apple Dock Layout** if primary mode was already enabled and
+you want to re-import the saved layout. Use **Restore Original macOS Dock
+Settings** or **Disable Primary Mode** to write the saved settings back.
 
 The Restore section also includes **Reload Apple Dock to Apply**. That button is
 separate because it runs `killall Dock`; Docking only does this after the user
-confirms the dialog.
+confirms the dialog. Reloading Apple Dock only applies Apple Dock preference
+writes; Docking's own reproduced layout is controlled by the match/import action
+above.
 
 ## Privacy
 

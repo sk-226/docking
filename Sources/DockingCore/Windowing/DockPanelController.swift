@@ -5,6 +5,7 @@ import SwiftUI
 final class DockPanelController {
     private var panel: NSPanel?
     private let autoHideController = AutoHideController()
+    private var revealScreen: NSScreen?
 
     var frame: NSRect? {
         panel?.frame
@@ -13,7 +14,11 @@ final class DockPanelController {
     func show(model: DockingAppModel) {
         let panel = panel ?? makePanel(model: model)
         self.panel = panel
-        applySettings(model.settings, itemCount: model.dockItems.count, widgetCount: model.enabledWidgetCount)
+        // Manual "Show Dock" must size the panel from the same visible model as
+        // auto-hide reveals. Using only pinned items looked fine before
+        // transient running apps existed, but would clip the separated running
+        // section exactly when a user was trying to inspect it.
+        applySettings(model.settings, itemCount: model.visibleAppItemCount, widgetCount: model.enabledWidgetCount)
         panel.orderFrontRegardless()
     }
 
@@ -36,7 +41,11 @@ final class DockPanelController {
             return
         }
 
-        let screen = ScreenPlacementService.dockScreen(for: settings)
+        if settings.dockVisibility != .autoHide || !settings.dockPosition.isBottom {
+            revealScreen = nil
+        }
+
+        let screen = revealScreen ?? ScreenPlacementService.dockScreen(for: settings)
         let size = DockLayout.panelSize(itemCount: itemCount, widgetCount: widgetCount, settings: settings)
         let frame = ScreenPlacementService.dockFrame(size: size, on: screen, position: settings.dockPosition)
         // Avoid AppKit's window-frame animation here. The dock frame is often
@@ -47,17 +56,30 @@ final class DockPanelController {
         // transitions, not from resizing the resident panel itself.
         panel.setFrame(frame, display: true, animate: false)
         panel.alphaValue = settings.opacity
-        // Auto-hide changes whether the panel is ordered out, not whether it is
-        // allowed to float. Dropping to .normal made the revealed Docking dock
-        // appear behind ordinary app windows, which felt like auto-hide was
-        // broken. The panel is still non-activating, so this does not turn the
-        // dock into a foreground document window.
-        panel.level = .floating
+        // The default is floating because Docking is meant to act like system
+        // chrome, not a document. The toggle exists for workflows where a user
+        // intentionally wants another always-on-top surface to win. We keep the
+        // panel non-activating in both modes so changing this setting does not
+        // turn Docking into a focus-stealing app window.
+        panel.isFloatingPanel = settings.keepAboveOtherWindows
+        panel.level = Self.windowLevel(for: settings)
         panel.collectionBehavior = collectionBehavior(for: settings)
 
-        autoHideController.update(settings: settings, dockFrame: frame, screen: screen) { [weak panel] in
-            panel?.orderFrontRegardless()
+        autoHideController.update(settings: settings, dockFrame: frame, screen: screen) { [weak self] screen in
+            self?.reveal(on: screen, settings: settings, itemCount: itemCount, widgetCount: widgetCount)
         }
+    }
+
+    private func reveal(on screen: NSScreen?, settings: DockingSettings, itemCount: Int, widgetCount: Int) {
+        guard let panel else {
+            return
+        }
+
+        revealScreen = screen
+        let size = DockLayout.panelSize(itemCount: itemCount, widgetCount: widgetCount, settings: settings)
+        let frame = ScreenPlacementService.dockFrame(size: size, on: screen ?? ScreenPlacementService.dockScreen(for: settings), position: settings.dockPosition)
+        panel.setFrame(frame, display: true, animate: false)
+        panel.orderFrontRegardless()
     }
 
     func scheduleAutoHide(model: DockingAppModel) {
@@ -105,5 +127,9 @@ final class DockPanelController {
             behavior.insert(.fullScreenAuxiliary)
         }
         return behavior
+    }
+
+    nonisolated static func windowLevel(for settings: DockingSettings) -> NSWindow.Level {
+        settings.keepAboveOtherWindows ? .floating : .normal
     }
 }

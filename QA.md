@@ -42,12 +42,14 @@ Expected results:
 | Weather manual city | Disable current location, set a city such as `Tokyo`, open Weather. | Real weather loads or a provider/network error is shown with no mock values. | Not yet manually verified |
 | Weather location denial | Enable current location and deny Location Services. | Weather shows the location-denied state and does not silently fall back to fake data. | Not yet manually verified |
 | App launcher | Add an `.app`, launch it from Docking, remove it, reset the list. | Icon loads once, app opens through `NSWorkspace`, running indicator updates. | Not yet manually verified |
+| Unpinned running apps | Launch an app that is not kept in Docking, such as Zed, then toggle Control Center > General > Unpinned running apps. | The running app appears once in a separated section when enabled and disappears when hidden; pinned apps are not duplicated. | Not yet manually verified |
 | Reorder/drop | Reorder apps inside the dock and drop an external `.app`. | Ordering persists and non-application drops are ignored. | Not yet manually verified |
 | Auto-hide | Enable auto-hide and move the pointer away, then to the screen edge. | Dock hides after the configured delay and reappears through the edge trigger. | Not yet manually verified |
+| Keep above windows | Toggle Control Center > General > Keep above other windows off and on. | Docking uses ordinary window level when off and floating dock level when on, without stealing focus. | Not yet manually verified |
 | Spaces/full-screen | Toggle all-Spaces/full-screen settings and move through Spaces/full-screen apps. | Dock remains available without stealing focus. | Not yet manually verified |
 | Multiple displays | Test main, pointer, and specific display modes. | Dock stays inside the selected display's visible frame and falls back safely if disconnected. | Not yet manually verified |
 | Sleep/wake | Put the Mac to sleep and wake it with Docking running. | Dock repositions, running app state refreshes, widgets remain responsive. | Not yet manually verified |
-| Restore safety | Open Control Center > Restore, inspect primary mode, restore, disable, and reload controls. Do not confirm reload unless intentionally testing Apple Dock restart. | Primary mode explains snapshot/restore behavior; reload shows a confirmation before `killall Dock`; restore/disable do not crash. | Not yet manually verified |
+| Restore safety | Open Control Center > Restore, inspect primary mode, match-original-layout, restore, disable, and reload controls. Do not confirm reload unless intentionally testing Apple Dock restart. | Primary mode explains snapshot/restore behavior; match-original-layout imports readable Apple Dock layout into Docking; reload shows a confirmation before `killall Dock`; restore/disable do not crash. | Not yet manually verified |
 | Idle performance | Leave pointer away from the dock for several minutes in Activity Monitor. | CPU stays close to 0% and memory remains stable. | Not yet manually verified |
 | Network cadence | Open Weather once and observe logs/network. | Refreshes do not repeat every few seconds. | Not yet manually verified |
 

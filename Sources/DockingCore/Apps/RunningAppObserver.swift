@@ -5,11 +5,13 @@ import Foundation
 final class RunningAppObserver {
     struct Snapshot: Equatable {
         var runningBundleIDs: Set<String>
+        var runningItems: [DockItem]
         var activeBundleID: String?
     }
 
     var onChange: ((Snapshot) -> Void)?
     private var tokens: [NSObjectProtocol] = []
+    private var itemIDsByKey: [String: UUID] = [:]
 
     func start() {
         stop()
@@ -47,10 +49,43 @@ final class RunningAppObserver {
     }
 
     private func publishCurrentSnapshot() {
-        let running = Set(
-            NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)
-        )
+        let applications = NSWorkspace.shared.runningApplications
+        let running = Set(applications.compactMap(\.bundleIdentifier))
+        let items = applications.compactMap(dockItem(for:))
         let active = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-        onChange?(Snapshot(runningBundleIDs: running, activeBundleID: active))
+        onChange?(Snapshot(runningBundleIDs: running, runningItems: items, activeBundleID: active))
+    }
+
+    private func dockItem(for application: NSRunningApplication) -> DockItem? {
+        guard application.activationPolicy == .regular,
+              application.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
+            return nil
+        }
+
+        let bundleIdentifier = application.bundleIdentifier
+        guard bundleIdentifier != nil || application.bundleURL != nil else {
+            return nil
+        }
+
+        let title = application.localizedName?.nilIfBlank
+            ?? application.bundleURL?.deletingPathExtension().lastPathComponent
+            ?? bundleIdentifier
+            ?? "Running app"
+        let key = bundleIdentifier ?? application.bundleURL?.path ?? title
+        let id = itemIDsByKey[key] ?? UUID()
+        itemIDsByKey[key] = id
+
+        // These are not persisted as pinned apps. They are live affordances for
+        // apps the user chose not to keep in Docking, which is why the same
+        // stable ID is reused only while the observer knows about that app. A
+        // persisted insert happens explicitly through "Keep in Docking".
+        return DockItem(
+            id: id,
+            title: title,
+            bundleIdentifier: bundleIdentifier,
+            appURL: application.bundleURL,
+            iconCacheKey: key,
+            isPinned: false
+        )
     }
 }

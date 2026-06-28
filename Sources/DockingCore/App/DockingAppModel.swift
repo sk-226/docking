@@ -27,6 +27,11 @@ public final class DockingAppModel: ObservableObject {
     }
 
     @Published var runningBundleIDs: Set<String> = []
+    @Published var runningAppItems: [DockItem] = [] {
+        didSet {
+            applySettingsToWindows()
+        }
+    }
     @Published var activeBundleID: String?
     @Published var isPointerInsideDock = false
     @Published var restoreStatusMessage: String = "Docking is currently overlay-only and has not changed Apple Dock settings."
@@ -59,6 +64,18 @@ public final class DockingAppModel: ObservableObject {
 
     var enabledWidgetCount: Int {
         (settings.calendarEnabled ? 1 : 0) + (settings.weatherEnabled ? 1 : 0)
+    }
+
+    var unpinnedRunningItems: [DockItem] {
+        DockRunningItemResolver.unpinnedRunningItems(
+            pinnedItems: dockItems,
+            runningItems: runningAppItems,
+            visibility: settings.unpinnedRunningAppVisibility
+        )
+    }
+
+    var visibleAppItemCount: Int {
+        dockItems.count + unpinnedRunningItems.count
     }
 
     public var showsMenuBarIcon: Bool {
@@ -128,6 +145,7 @@ public final class DockingAppModel: ObservableObject {
 
         runningObserver.onChange = { [weak self] snapshot in
             self?.runningBundleIDs = snapshot.runningBundleIDs
+            self?.runningAppItems = snapshot.runningItems
             self?.activeBundleID = snapshot.activeBundleID
         }
         runningObserver.start()
@@ -212,6 +230,18 @@ public final class DockingAppModel: ObservableObject {
 
     func remove(_ item: DockItem) {
         dockItems.removeAll { $0.id == item.id }
+    }
+
+    func pinRunningItem(_ item: DockItem) {
+        insertDockItemIfNeeded(
+            DockItem(
+                title: item.title,
+                bundleIdentifier: item.bundleIdentifier,
+                appURL: item.appURL,
+                iconCacheKey: item.iconCacheKey,
+                isPinned: true
+            )
+        )
     }
 
     func moveDockItem(from source: IndexSet, to destination: Int) {
@@ -353,12 +383,44 @@ public final class DockingAppModel: ObservableObject {
             settings.dockReplacementModeEnabled = true
             settings.showOnAllSpaces = true
             settings.showOnFullScreenSpaces = true
+            matchOriginalAppleDockLayout(updateStatus: false)
             applySettingsToWindows()
-            restoreStatusMessage = result.userMessage
+            restoreStatusMessage = "\(result.userMessage) Docking also matched the saved Apple Dock layout and pinned apps where they were readable."
             syncRestoreStatus()
         } catch {
             restoreStatusMessage = "Docking could not enable primary dock mode. \(error.localizedDescription)"
             syncRestoreStatus()
+        }
+    }
+
+    func matchOriginalAppleDockLayout(updateStatus: Bool = true) {
+        var mirroredSettings = settings
+        let didApplyPreferences = AppleDockPreferences.mirrorOriginalDock(
+            into: &mirroredSettings,
+            savedValues: restoreService.savedDockPreferenceValues()
+        )
+
+        // The Apple Dock app list is not changed by primary mode, so it remains
+        // the best source for reproducing the user's original pinned apps even
+        // after Docking has already pushed Apple Dock into strong auto-hide.
+        let mirroredItems = AppleDockPreferences.persistentAppItems()
+        if !mirroredItems.isEmpty {
+            dockItems = mirroredItems
+        }
+
+        mirroredSettings.dockReplacementModeEnabled = settings.dockReplacementModeEnabled
+        mirroredSettings.showOnAllSpaces = true
+        mirroredSettings.showOnFullScreenSpaces = true
+        settings = mirroredSettings
+
+        guard updateStatus else {
+            return
+        }
+
+        if didApplyPreferences || !mirroredItems.isEmpty {
+            restoreStatusMessage = "Docking matched the saved Apple Dock layout: \(mirroredItems.count) pinned apps imported, with original visibility, position, and size applied where available."
+        } else {
+            restoreStatusMessage = "Docking could not read enough Apple Dock layout data to mirror it. Use the manual restore instructions if Apple Dock itself needs to be restored."
         }
     }
 
@@ -489,7 +551,7 @@ public final class DockingAppModel: ObservableObject {
     }
 
     private func applySettingsToWindows() {
-        dockPanelController.applySettings(settings, itemCount: dockItems.count, widgetCount: enabledWidgetCount)
+        dockPanelController.applySettings(settings, itemCount: visibleAppItemCount, widgetCount: enabledWidgetCount)
         switch settings.dockVisibility {
         case .autoHide:
             // Auto-hide is a real visibility mode, not a second checkbox layered
@@ -532,7 +594,7 @@ public final class DockingAppModel: ObservableObject {
         }
 
         return dockRestoreStatus.hasSnapshot
-            ? "Docking is overlay-only now. A saved Apple Dock snapshot is available if you need to restore it."
+            ? "A saved Apple Dock snapshot is available. Restore Apple Dock or match the saved layout into Docking if the current setup does not look right."
             : "Docking is currently overlay-only and has not changed Apple Dock settings."
     }
 }

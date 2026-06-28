@@ -16,7 +16,7 @@ struct DockRestoreView: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                     VStack(alignment: .leading, spacing: 6) {
-                        LabeledContent("Current mode", value: model.settings.dockReplacementModeEnabled ? "Primary dock" : "Overlay")
+                        LabeledContent("Current mode", value: currentModeLabel)
                         LabeledContent("Saved snapshot", value: snapshotSummary)
                     }
                     .font(.caption)
@@ -36,6 +36,12 @@ struct DockRestoreView: View {
                             Label("Disable Docking replacement mode", systemImage: "xmark.circle")
                         }
                         .disabled(!model.settings.dockReplacementModeEnabled)
+                    }
+
+                    Button {
+                        model.matchOriginalAppleDockLayout()
+                    } label: {
+                        Label("Match Original Apple Dock Layout", systemImage: "square.stack.3d.up")
                     }
 
                     Button {
@@ -103,7 +109,7 @@ struct DockRestoreView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Docking will save your current Apple Dock settings, move Apple Dock out of the way with auto-hide and a long delay, and keep using Docking's current visibility mode. You can restore the saved Apple Dock settings from this screen.")
+            Text("Docking will save your current Apple Dock settings, import the readable Apple Dock layout and pinned apps into Docking, then move Apple Dock out of the way with auto-hide and a long delay. You can restore the saved Apple Dock settings from this screen.")
         }
         .confirmationDialog(
             "Reload Apple Dock now?",
@@ -115,9 +121,19 @@ struct DockRestoreView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This runs killall Dock so macOS restarts Apple Dock and applies preference changes. Open windows stay open, but Mission Control and Dock may briefly refresh.")
+            Text("This runs killall Dock so macOS restarts Apple Dock and applies preference changes. It does not import Apple Dock apps into Docking; use Match Original Apple Dock Layout for that. Open windows stay open, but Mission Control and Dock may briefly refresh.")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var currentModeLabel: String {
+        if model.settings.dockReplacementModeEnabled {
+            return "Primary dock"
+        }
+        if model.dockRestoreStatus.hasSnapshot {
+            return "Overlay, restore available"
+        }
+        return "Overlay"
     }
 
     private var primaryModeSummary: String {
@@ -129,6 +145,9 @@ struct DockRestoreView: View {
         // not Apple's Dock. We still keep this opt-in because changing Apple
         // Dock preferences is visible system behavior and should never happen
         // just because the app launched or the user opened Control Center.
+        if model.dockRestoreStatus.hasSnapshot {
+            return "Docking is active as its own dock and a saved Apple Dock snapshot is available. If Apple Dock still looks displaced, restore it here or match the saved layout into Docking."
+        }
         return "Docking is active as its own dock. To make it the primary dock, enable this mode explicitly; Docking will save your current Apple Dock settings first."
     }
 
