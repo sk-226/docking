@@ -16,7 +16,7 @@ macOS Dock. This file keeps that scope explicit while the app is still `0.0.0`.
 | Keep in Docking | Implemented for transient running apps | Converts a running unpinned app into a pinned Docking item. |
 | Remove from Docking | Implemented for pinned apps | Removes only Docking's pinned item, not the application bundle. |
 | Show in Finder | Implemented | Reveals the app bundle when Docking can resolve it. |
-| Open Control Center | Implemented | Provides the settings path that replaces the standard Dock's app-specific Options submenu. |
+| Open Control Center | Implemented under Docking submenu | Docking-specific configuration stays separate from the standard Dock-style Open/Show/Hide/Quit/Options stack. |
 | Open at Login for arbitrary apps | Not implemented | macOS exposes safe public login-item APIs primarily for the current app/helper. Changing login items for arbitrary third-party apps from Docking would be surprising and fragile. |
 | Assign to Desktop / All Desktops | Not implemented | Spaces assignment is Dock/System UI behavior without a stable public API suitable for a third-party dock. |
 | App-specific recent documents or New Window actions | Not implemented | Those actions are app-specific and require per-app integration rather than a generic dock item model. |

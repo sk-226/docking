@@ -82,8 +82,15 @@ struct DockItemView: View {
                 }
             }
             Divider()
-            Button("Open Control Center") {
-                model.openControlCenterWindow()
+            Menu("Docking") {
+                // Keep Docking-specific actions out of the standard Dock action
+                // stack. Users should be able to scan Open/Show/Hide/Quit and
+                // Options as Dock-like controls first, then find app-specific
+                // Docking configuration without mistaking it for an Apple Dock
+                // command.
+                Button("Open Control Center") {
+                    model.openControlCenterWindow()
+                }
             }
         }
         .confirmationDialog(
