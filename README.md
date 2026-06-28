@@ -13,7 +13,10 @@ icons, text, or layout.
 - Running and active app indicators update from `NSWorkspace` notifications, not
   polling.
 - App add by picker or `.app` drag/drop, remove, reset, Finder reveal, context
-  menu, Dock drag reorder, and explicit Control Center reorder buttons.
+  menu with Quit/Force Quit for running apps, Dock drag reorder, and explicit
+  Control Center reorder buttons.
+- Dock app-control parity is tracked in [DOCK_PARITY.md](DOCK_PARITY.md),
+  including implemented Quit, Force Quit, Hide, and Show All Windows behavior.
 - Running apps that are not kept in Docking can appear in a separated transient
   section, or be hidden entirely from Control Center.
 - Calendar widget backed by EventKit with loading, denied, empty, loaded, and

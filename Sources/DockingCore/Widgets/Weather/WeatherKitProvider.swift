@@ -1,20 +1,18 @@
 import CoreLocation
 import Foundation
+import MapKit
 import WeatherKit
 
 final class WeatherKitProvider: WeatherProvider {
     private let weatherService: WeatherService
     private let locationProvider: LocationProviding
-    private let geocoder: CLGeocoder
 
     init(
         weatherService: WeatherService = .shared,
-        locationProvider: LocationProviding = CoreLocationProvider(),
-        geocoder: CLGeocoder = CLGeocoder()
+        locationProvider: LocationProviding = CoreLocationProvider()
     ) {
         self.weatherService = weatherService
         self.locationProvider = locationProvider
-        self.geocoder = geocoder
     }
 
     func fetchWeather(configuration: WeatherRequestConfiguration) async throws -> WeatherSnapshot {
@@ -58,16 +56,21 @@ final class WeatherKitProvider: WeatherProvider {
     }
 
     private func geocode(_ query: String) async throws -> WeatherLocation {
+        guard let request = MKGeocodingRequest(addressString: query) else {
+            throw WeatherProviderError.providerUnavailable("Weather location could not be encoded.")
+        }
+        request.preferredLocale = .autoupdatingCurrent
+
         do {
-            let placemarks = try await geocoder.geocodeAddressString(query)
-            guard let placemark = placemarks.first, let location = placemark.location else {
+            guard let mapItem = try await request.mapItems.first else {
                 throw WeatherProviderError.providerUnavailable("No matching city was found for \"\(query)\".")
             }
 
+            let coordinate = mapItem.location.coordinate
             return WeatherLocation(
-                latitude: location.coordinate.latitude,
-                longitude: location.coordinate.longitude,
-                displayName: displayName(for: placemark, fallback: query)
+                latitude: coordinate.latitude,
+                longitude: coordinate.longitude,
+                displayName: displayName(for: mapItem, fallback: query)
             )
         } catch let error as WeatherProviderError {
             throw error
@@ -76,14 +79,13 @@ final class WeatherKitProvider: WeatherProvider {
         }
     }
 
-    private func displayName(for placemark: CLPlacemark, fallback: String) -> String {
-        let parts = [
-            placemark.locality,
-            placemark.administrativeArea,
-            placemark.country
-        ].compactMap { $0?.nilIfBlank }
-
-        return parts.isEmpty ? fallback : parts.joined(separator: ", ")
+    private func displayName(for mapItem: MKMapItem, fallback: String) -> String {
+        [
+            mapItem.addressRepresentations?.cityWithContext(.full),
+            mapItem.address?.shortAddress,
+            mapItem.name,
+            fallback
+        ].compactMap { $0?.nilIfBlank }.first ?? fallback
     }
 
     private func makeSnapshot(weather: Weather, locationName: String, unit: TemperatureUnit) -> WeatherSnapshot {

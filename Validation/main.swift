@@ -258,6 +258,47 @@ func validateAppCatalogRecognizesOnlyApplicationBundles() throws {
     try expect(AppCatalogService.dockItemIfApplication(for: plainDirectoryURL) == nil, "plain directory drops should not create dock items")
 }
 
+func validateRunningApplicationMatcher() throws {
+    let item = DockItem(
+        title: "Editor",
+        bundleIdentifier: "com.example.Editor",
+        appURL: URL(fileURLWithPath: "/Applications/Editor.app"),
+        iconCacheKey: "com.example.Editor"
+    )
+
+    try expect(
+        RunningApplicationMatcher.matches(
+            item: item,
+            applicationBundleIdentifier: "com.example.Editor",
+            applicationBundleURL: URL(fileURLWithPath: "/Different/Editor.app")
+        ),
+        "running-app process actions should prefer bundle identity when it is available"
+    )
+    try expect(
+        !RunningApplicationMatcher.matches(
+            item: item,
+            applicationBundleIdentifier: "com.example.Other",
+            applicationBundleURL: URL(fileURLWithPath: "/Different/Editor.app")
+        ),
+        "running-app process actions should not match unrelated bundle identifiers"
+    )
+
+    let pathOnlyItem = DockItem(
+        title: "Unsigned Tool",
+        bundleIdentifier: nil,
+        appURL: URL(fileURLWithPath: "/Applications/Unsigned Tool.app"),
+        iconCacheKey: "/Applications/Unsigned Tool.app"
+    )
+    try expect(
+        RunningApplicationMatcher.matches(
+            item: pathOnlyItem,
+            applicationBundleIdentifier: nil,
+            applicationBundleURL: URL(fileURLWithPath: "/Applications/Unsigned Tool.app")
+        ),
+        "running-app process actions should fall back to app path for apps without bundle identifiers"
+    )
+}
+
 func validateSettingsStore() throws {
     let suiteName = "docking.validation.\(UUID().uuidString)"
     let dockSuiteName = "docking.validation.apple-dock.\(UUID().uuidString)"
@@ -908,6 +949,7 @@ let validations: [(String, () throws -> Void)] = [
     ("dock window level toggle", validateDockWindowLevelToggle),
     ("apple dock mirroring", validateAppleDockMirroring),
     ("app catalog bundle recognition", validateAppCatalogRecognizesOnlyApplicationBundles),
+    ("running app matcher", validateRunningApplicationMatcher),
     ("settings store", validateSettingsStore),
     ("settings refresh keys", validateSettingsRefreshKeys),
     ("unpinned running app resolver", validateUnpinnedRunningAppResolver),

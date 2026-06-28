@@ -43,7 +43,7 @@ final class OpenMeteoWeatherProvider: WeatherProvider {
         )
     }
 
-    private func geocode(_ query: String) async throws -> GeocodingPlace {
+    private func geocode(_ query: String) async throws -> WeatherLocation {
         var components = URLComponents(string: "https://geocoding-api.open-meteo.com/v1/search")
         components?.queryItems = [
             URLQueryItem(name: "name", value: query),
@@ -62,7 +62,7 @@ final class OpenMeteoWeatherProvider: WeatherProvider {
             guard let place = response.results?.first else {
                 throw WeatherProviderError.providerUnavailable("No matching city was found for \"\(query)\".")
             }
-            return place
+            return place.location
         } catch let error as WeatherProviderError {
             throw error
         } catch {
@@ -110,7 +110,11 @@ private struct GeocodingPlace: Decodable {
     var country: String?
     var admin1: String?
 
-    var displayName: String {
+    var location: WeatherLocation {
+        WeatherLocation(latitude: latitude, longitude: longitude, displayName: displayName)
+    }
+
+    private var displayName: String {
         [name, admin1, country]
             .compactMap { $0?.nilIfBlank }
             .joined(separator: ", ")

@@ -210,6 +210,40 @@ public final class DockingAppModel: ObservableObject {
         appLauncherService.open(item)
     }
 
+    func isRunning(_ item: DockItem) -> Bool {
+        if let bundleIdentifier = item.bundleIdentifier {
+            return runningBundleIDs.contains(bundleIdentifier)
+        }
+
+        // SwiftUI asks this during view rendering. Use the observer's cached
+        // snapshot instead of querying NSWorkspace from every dock item body;
+        // process discovery remains event-driven, while path-only apps still
+        // get correct running-state and context-menu actions.
+        return runningAppItems.contains { runningItem in
+            RunningApplicationMatcher.matches(
+                item: item,
+                applicationBundleIdentifier: runningItem.bundleIdentifier,
+                applicationBundleURL: runningItem.appURL
+            )
+        }
+    }
+
+    func showAllWindows(_ item: DockItem) {
+        appLauncherService.showAllWindows(item)
+    }
+
+    func hideApplication(_ item: DockItem) {
+        appLauncherService.hide(item)
+    }
+
+    func quit(_ item: DockItem) {
+        appLauncherService.quit(item)
+    }
+
+    func forceQuit(_ item: DockItem) {
+        appLauncherService.forceQuit(item)
+    }
+
     func showInFinder(_ item: DockItem) {
         appLauncherService.showInFinder(item)
     }

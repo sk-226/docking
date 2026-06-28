@@ -4,10 +4,10 @@ import PackageDescription
 let package = Package(
     name: "Docking",
     platforms: [
-        // macOS 14 is the product default from the goal file. Keeping the
-        // minimum here explicit prevents us from accidentally using newer
-        // windowing APIs that would make the personal app fail on Sonoma.
-        .macOS(.v14)
+        // Docking is a personal 0.0.0 app, so the runtime baseline follows the
+        // current Tahoe development target. The explicit string keeps the
+        // manifest simple without adding source-level OS branches.
+        .macOS("26.0")
     ],
     products: [
         .executable(name: "Docking", targets: ["Docking"]),

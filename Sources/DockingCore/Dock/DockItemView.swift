@@ -6,12 +6,10 @@ struct DockItemView: View {
     let item: DockItem
     var isTransientRunningItem = false
     @State private var isHovering = false
+    @State private var confirmsForceQuit = false
 
     private var isRunning: Bool {
-        guard let bundleIdentifier = item.bundleIdentifier else {
-            return false
-        }
-        return model.runningBundleIDs.contains(bundleIdentifier)
+        model.isRunning(item)
     }
 
     private var isActive: Bool {
@@ -52,6 +50,20 @@ struct DockItemView: View {
             Button("Open") {
                 model.launch(item)
             }
+            if isRunning {
+                Button("Show All Windows") {
+                    model.showAllWindows(item)
+                }
+                Button("Hide") {
+                    model.hideApplication(item)
+                }
+                Button("Quit") {
+                    model.quit(item)
+                }
+                Button("Force Quit...", role: .destructive) {
+                    confirmsForceQuit = true
+                }
+            }
             Button("Show in Finder") {
                 model.showInFinder(item)
             }
@@ -69,6 +81,18 @@ struct DockItemView: View {
             Button("Open Control Center") {
                 model.openControlCenterWindow()
             }
+        }
+        .confirmationDialog(
+            "Force quit \(item.title)?",
+            isPresented: $confirmsForceQuit,
+            titleVisibility: .visible
+        ) {
+            Button("Force Quit", role: .destructive) {
+                model.forceQuit(item)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This immediately terminates \(item.title). Unsaved changes in that app may be lost.")
         }
         .accessibilityLabel(item.title)
         .accessibilityValue(accessibilityValue)
