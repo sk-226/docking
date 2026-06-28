@@ -25,7 +25,8 @@ text, or layout.
 - Weather widget with a provider abstraction, WeatherKit-first provider,
   Open-Meteo fallback/manual-city provider, and CoreLocation-based
   current-location flow. It does not show fake production weather. Preview/test
-  mock data is compiled only in `DEBUG`.
+  mock data is compiled only in `DEBUG`. Open-Meteo weather can also show Air
+  Quality when the public air-quality endpoint returns a current AQI value.
 - Single Control Center window for dock sizing, dock position, auto-hide,
   unpinned running-app visibility, keep-above behavior, widgets, weather
   location/unit, calendar lookahead, display choice, accent color, material

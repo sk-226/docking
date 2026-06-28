@@ -738,6 +738,17 @@ func validateWeatherWidgetPresentation() throws {
     try expect(presentation.symbolName == "cloud.rain.fill", "weather widget should use the filled rain symbol for native dock legibility")
 }
 
+func validateOpenMeteoAirQualityLabels() throws {
+    try expect(OpenMeteoAirQualityFormatter.usAQILabel(nil) == nil, "missing AQI should hide the air-quality row")
+    try expect(OpenMeteoAirQualityFormatter.usAQILabel(-1) == nil, "invalid negative AQI should not be shown")
+    try expect(OpenMeteoAirQualityFormatter.usAQILabel(42.4) == "42 Good", "good AQI should include the rounded value and category")
+    try expect(OpenMeteoAirQualityFormatter.usAQILabel(86) == "86 Moderate", "moderate AQI should include the category")
+    try expect(OpenMeteoAirQualityFormatter.usAQILabel(125) == "125 Sensitive", "sensitive-group AQI should stay compact for the widget row")
+    try expect(OpenMeteoAirQualityFormatter.usAQILabel(175) == "175 Unhealthy", "unhealthy AQI should include the category")
+    try expect(OpenMeteoAirQualityFormatter.usAQILabel(250) == "250 Very unhealthy", "very unhealthy AQI should remain readable")
+    try expect(OpenMeteoAirQualityFormatter.usAQILabel(350) == "350 Hazardous", "hazardous AQI should include the category")
+}
+
 @MainActor
 func validateSettingsPersistenceIsDebounced() async throws {
     let suiteName = "docking.validation.debounce.\(UUID().uuidString)"
@@ -1441,6 +1452,7 @@ let validations: [(String, () throws -> Void)] = [
     ("weather dock location display", validateWeatherDockLocationDisplay),
     ("calendar widget presentation", validateCalendarWidgetPresentation),
     ("weather widget presentation", validateWeatherWidgetPresentation),
+    ("open-meteo air quality labels", validateOpenMeteoAirQualityLabels),
     ("accent color options", validateAccentColorOptionsCoverDefault),
     ("weather cache", validateWeatherCache),
     ("restore snapshot", validateRestoreSnapshot)

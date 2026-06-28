@@ -90,12 +90,36 @@ final class OpenMeteoWeatherProvider: WeatherProvider {
         do {
             let (data, _) = try await session.data(from: url)
             let response = try JSONDecoder().decode(ForecastResponse.self, from: data)
-            return response.snapshot(locationName: locationName, unit: unit)
+            // Air quality is useful when the provider has it, but it is not the
+            // weather widget's source of truth. Open-Meteo serves AQI through a
+            // separate endpoint, so we let that request fail quietly and keep
+            // the forecast visible. Showing no AQI row is more honest than
+            // turning a valid weather forecast into a generic provider error.
+            let airQualityLabel = try? await airQualityLabel(latitude: latitude, longitude: longitude)
+            return response.snapshot(locationName: locationName, unit: unit, airQualityLabel: airQualityLabel)
         } catch let error as WeatherProviderError {
             throw error
         } catch {
             throw WeatherProviderError.network(error.localizedDescription)
         }
+    }
+
+    private func airQualityLabel(latitude: Double, longitude: Double) async throws -> String? {
+        var components = URLComponents(string: "https://air-quality-api.open-meteo.com/v1/air-quality")
+        components?.queryItems = [
+            URLQueryItem(name: "latitude", value: "\(latitude)"),
+            URLQueryItem(name: "longitude", value: "\(longitude)"),
+            URLQueryItem(name: "current", value: "us_aqi"),
+            URLQueryItem(name: "timezone", value: "auto")
+        ]
+
+        guard let url = components?.url else {
+            throw WeatherProviderError.providerUnavailable("Air quality request could not be encoded.")
+        }
+
+        let (data, _) = try await session.data(from: url)
+        let response = try JSONDecoder().decode(AirQualityResponse.self, from: data)
+        return OpenMeteoAirQualityFormatter.usAQILabel(response.current?.usAQI)
     }
 }
 
@@ -126,7 +150,7 @@ private struct ForecastResponse: Decodable {
     var hourly: HourlyBlock
     var daily: DailyBlock
 
-    func snapshot(locationName: String, unit: TemperatureUnit) -> WeatherSnapshot {
+    func snapshot(locationName: String, unit: TemperatureUnit, airQualityLabel: String?) -> WeatherSnapshot {
         let code = current.weatherCode
         return WeatherSnapshot(
             locationName: locationName,
@@ -142,8 +166,57 @@ private struct ForecastResponse: Decodable {
             hourly: hourly.items().prefix(6).map { $0 },
             daily: daily.items().prefix(7).map { $0 },
             humidity: current.relativeHumidity,
-            airQualityLabel: nil
+            airQualityLabel: airQualityLabel
         )
+    }
+}
+
+private struct AirQualityResponse: Decodable {
+    var current: AirQualityCurrentBlock?
+}
+
+private struct AirQualityCurrentBlock: Decodable {
+    var usAQI: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case usAQI = "us_aqi"
+    }
+}
+
+enum OpenMeteoAirQualityFormatter {
+    static func usAQILabel(_ value: Double?) -> String? {
+        guard let value else {
+            return nil
+        }
+
+        let rounded = Int(value.rounded())
+        guard rounded >= 0 else {
+            return nil
+        }
+
+        return "\(rounded) \(category(forUSValue: rounded))"
+    }
+
+    private static func category(forUSValue value: Int) -> String {
+        // Open-Meteo exposes several air-quality variables. Docking asks for
+        // the consolidated U.S. AQI because its category bands are familiar,
+        // compact, and global enough for a small widget row. We keep the
+        // original numeric value in the label so users who prefer exact AQI can
+        // still read it, while the category supplies the quick glance.
+        switch value {
+        case ...50:
+            return "Good"
+        case 51...100:
+            return "Moderate"
+        case 101...150:
+            return "Sensitive"
+        case 151...200:
+            return "Unhealthy"
+        case 201...300:
+            return "Very unhealthy"
+        default:
+            return "Hazardous"
+        }
     }
 }
 

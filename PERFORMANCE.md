@@ -37,6 +37,9 @@ not interacting with the dock.
 - WeatherKit is tried before Open-Meteo, but a missing WeatherKit entitlement is
   treated as a provider failure and falls back to Open-Meteo. The fallback still
   uses real forecast data, not mock values.
+- Open-Meteo Air Quality is fetched from the separate air-quality endpoint only
+  during a normal weather refresh. If that optional request fails, Docking hides
+  the AQI row instead of retrying in a loop or failing the whole forecast.
 - Detail panels are lazy: calendar and weather fetches are triggered when the
   widget or panel needs data.
 - Disabling a widget cancels its in-flight refresh and closes its detail panel,
