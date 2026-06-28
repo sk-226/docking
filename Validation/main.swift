@@ -702,6 +702,33 @@ func validateDisabledCalendarIgnoresStoreChanges() async throws {
     try expect(provider.upcomingEventRequestCount == 0, "disabled calendar widget should ignore EventKit store-change notifications")
 }
 
+@MainActor
+func validateCalendarDeniedPublishesPermissionState() async throws {
+    let provider = DenyingCalendarProvider()
+    let viewModel = CalendarWidgetViewModel(provider: provider)
+
+    await viewModel.refreshIfNeeded(settings: .default)
+
+    // Permission denial is an ordinary user choice, not an exceptional app
+    // state. The launch/stale path should therefore publish explicit disabled
+    // copy without probing EventKit again; otherwise a denied Calendar account
+    // can look like an empty day or keep surfacing avoidable provider work.
+    try expect(provider.upcomingEventRequestCount == 0, "denied calendar launch refresh should not request events")
+    try expect(provider.availableCalendarRequestCount == 0, "denied calendar launch refresh should not enumerate calendars")
+    try expect(viewModel.state == .permissionDenied, "denied calendar authorization should publish the event permission state")
+    try expect(viewModel.sourceState == .permissionDenied, "denied calendar authorization should also disable source loading")
+    try expect(viewModel.compactText == ("Off", "Calendar"), "denied calendar compact widget should not look like an empty calendar")
+    try expect(viewModel.nextEventLine == "Calendar access is off", "denied calendar detail header should explain the permission state")
+
+    await viewModel.refresh(settings: .default, reason: "validation-denied")
+    try expect(provider.upcomingEventRequestCount == 1, "manual denied calendar refresh should make one provider attempt")
+    try expect(viewModel.state == .permissionDenied, "manual denied calendar refresh should keep the permission state")
+
+    await viewModel.refreshAvailableCalendars(settings: .default)
+    try expect(provider.availableCalendarRequestCount == 1, "manual denied source refresh should make one provider attempt")
+    try expect(viewModel.sourceState == .permissionDenied, "manual denied source refresh should keep source permissions explicit")
+}
+
 func validateAccentColorOptionsCoverDefault() throws {
     let rawValues = Set(DockingAccentColor.allCases.map(\.rawValue))
     try expect(rawValues.contains(DockingSettings.default.accentColorName), "default accent color should be a selectable option")
@@ -874,6 +901,60 @@ func validateWeatherCurrentLocationFallsBackToManualCity() async throws {
     try expect(viewModel.snapshot?.locationName == "Tokyo fallback", "manual weather fallback should publish the fallback city snapshot")
 }
 
+@MainActor
+func validateWeatherLocationDeniedWithoutFallbackShowsDeniedState() async throws {
+    let provider = ThrowingWeatherProvider(error: WeatherProviderError.locationDenied)
+    let cacheURL = FileManager.default.temporaryDirectory.appendingPathComponent("WeatherLocationDeniedValidation-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: cacheURL) }
+
+    let viewModel = WeatherWidgetViewModel(
+        provider: provider,
+        cache: WeatherCache(fileURL: cacheURL)
+    )
+    var settings = DockingSettings.default
+    settings.weatherEnabled = true
+    settings.weatherUsesCurrentLocation = true
+    settings.weatherManualLocation = "   "
+
+    await viewModel.refresh(settings: settings, force: true)
+
+    // A denied current-location request should stay visibly denied when there
+    // is no user-provided fallback city. Falling back to provider fixtures or
+    // an unrelated default city would make the widget appear to work while
+    // hiding the privacy/configuration problem the user needs to resolve.
+    try expect(viewModel.state == .locationDenied, "location-denied weather without fallback should publish the denied state")
+    try expect(viewModel.snapshot == nil, "location-denied weather without cache should not fabricate a snapshot")
+    try expect(viewModel.compactText == ("--", "Weather", "cloud"), "location-denied compact weather should stay neutral without fake values")
+}
+
+@MainActor
+func validateWeatherLocationDeniedExplainsCachedData() async throws {
+    let provider = ThrowingWeatherProvider(error: WeatherProviderError.locationDenied)
+    let cacheURL = FileManager.default.temporaryDirectory.appendingPathComponent("WeatherLocationDeniedCachedValidation-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: cacheURL) }
+
+    let cache = WeatherCache(fileURL: cacheURL)
+    cache.save(validationWeatherSnapshot(locationName: "Cached City"))
+
+    let viewModel = WeatherWidgetViewModel(provider: provider, cache: cache)
+    var settings = DockingSettings.default
+    settings.weatherEnabled = true
+    settings.weatherUsesCurrentLocation = true
+    settings.weatherManualLocation = "   "
+
+    await viewModel.refresh(settings: settings, force: true)
+
+    // Cached weather is useful during a permission failure, but only if the UI
+    // labels it as stale. We keep this behavior separate from the no-cache
+    // denial test because showing old real data and showing no data are two
+    // different product states with different failure modes.
+    try expect(
+        viewModel.state == .stale("Location access is denied. Showing cached weather."),
+        "location-denied weather with cache should explain that the displayed data is stale"
+    )
+    try expect(viewModel.snapshot?.locationName == "Cached City", "location-denied weather with cache should keep the cached location")
+}
+
 private struct ThrowingWeatherProvider: WeatherProvider {
     let error: Error
 
@@ -987,6 +1068,26 @@ private final class CountingCalendarProvider: CalendarProviding {
     func upcomingEvents(lookaheadDays: Int, maxEvents: Int, selectedCalendarIDs: [String]) async throws -> [CalendarEventSummary] {
         upcomingEventRequestCount += 1
         return []
+    }
+}
+
+private final class DenyingCalendarProvider: CalendarProviding {
+    let changeNotificationName = Notification.Name("DenyingCalendarProviderChanged")
+    var changeNotificationObject: Any? {
+        nil
+    }
+    let authorizationState: CalendarAuthorizationState = .denied
+    private(set) var upcomingEventRequestCount = 0
+    private(set) var availableCalendarRequestCount = 0
+
+    func availableCalendars() async throws -> [CalendarSourceSummary] {
+        availableCalendarRequestCount += 1
+        throw CalendarProviderError.denied
+    }
+
+    func upcomingEvents(lookaheadDays: Int, maxEvents: Int, selectedCalendarIDs: [String]) async throws -> [CalendarEventSummary] {
+        upcomingEventRequestCount += 1
+        throw CalendarProviderError.denied
     }
 }
 
@@ -1121,12 +1222,15 @@ let asyncValidations: [(String, () async throws -> Void)] = [
     ("explicit app reorder controls", { try await validateExplicitAppReorderControls() }),
     ("calendar launch does not request permission", { try await validateCalendarLaunchDoesNotRequestPermission() }),
     ("disabled calendar ignores store changes", { try await validateDisabledCalendarIgnoresStoreChanges() }),
+    ("calendar denied permission state", { try await validateCalendarDeniedPublishesPermissionState() }),
     ("weather fresh cache avoids passive refresh", { try await validateWeatherFreshCacheDoesNotRefreshProvider() }),
     ("weather provider fallback", validateCompositeWeatherFallback),
     ("weather provider permission boundary", validateCompositeWeatherDoesNotHideLocationDenial),
     ("weather manual location missing stays local", { try await validateWeatherManualLocationMissingStaysLocal() }),
     ("weather manual location stale message", { try await validateWeatherManualLocationMissingExplainsCachedData() }),
-    ("weather current location falls back to manual city", { try await validateWeatherCurrentLocationFallsBackToManualCity() })
+    ("weather current location falls back to manual city", { try await validateWeatherCurrentLocationFallsBackToManualCity() }),
+    ("weather location denied state", { try await validateWeatherLocationDeniedWithoutFallbackShowsDeniedState() }),
+    ("weather location denied stale message", { try await validateWeatherLocationDeniedExplainsCachedData() })
 ]
 
 do {
