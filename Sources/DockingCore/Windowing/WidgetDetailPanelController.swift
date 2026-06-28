@@ -7,22 +7,41 @@ final class WidgetDetailPanelController {
     private var localMonitor: Any?
     private var globalMonitor: Any?
     private var visibleKind: DockWidgetKind?
+    private var recentlyDismissedKind: DockWidgetKind?
+    private var recentlyDismissedAt: TimeInterval = 0
+    private var onClose: (() -> Void)?
     private static let animationDuration: TimeInterval = 0.12
+    private nonisolated static let retoggleSuppressionInterval: TimeInterval = 0.35
 
-    func toggle(kind: DockWidgetKind, model: DockingAppModel, dockFrame: NSRect?, anchorFrame: NSRect?) {
+    var isVisible: Bool {
+        panel?.isVisible == true
+    }
+
+    func toggle(kind: DockWidgetKind, model: DockingAppModel, dockFrame: NSRect?, anchorFrame: NSRect?, onClose: @escaping () -> Void) {
         if visibleKind == kind {
             close()
             return
         }
-        show(kind: kind, model: model, dockFrame: dockFrame, anchorFrame: anchorFrame)
+        if Self.shouldSuppressImmediateRetoggle(
+            recentlyDismissedKind: recentlyDismissedKind,
+            dismissedAt: recentlyDismissedAt,
+            requestedKind: kind,
+            now: ProcessInfo.processInfo.systemUptime
+        ) {
+            recentlyDismissedKind = nil
+            return
+        }
+        show(kind: kind, model: model, dockFrame: dockFrame, anchorFrame: anchorFrame, onClose: onClose)
     }
 
-    func show(kind: DockWidgetKind, model: DockingAppModel, dockFrame: NSRect?, anchorFrame: NSRect?) {
+    func show(kind: DockWidgetKind, model: DockingAppModel, dockFrame: NSRect?, anchorFrame: NSRect?, onClose: @escaping () -> Void) {
         // Switching directly from one widget to another should feel immediate.
         // We skip the close animation in this path so the old panel cannot fade
         // over the newly selected panel for a few frames.
-        close(animated: false)
+        close(animated: false, rememberForRetoggleSuppression: false, notifyClose: false)
         visibleKind = kind
+        recentlyDismissedKind = nil
+        self.onClose = onClose
 
         let size = CGSize(width: 380, height: kind == .calendar ? 430 : 380)
         let panel = makePanel(kind: kind, model: model)
@@ -42,10 +61,17 @@ final class WidgetDetailPanelController {
     }
 
     func close() {
-        close(animated: true)
+        close(animated: true, rememberForRetoggleSuppression: false, notifyClose: true)
     }
 
-    private func close(animated: Bool) {
+    private func close(animated: Bool, rememberForRetoggleSuppression: Bool, notifyClose: Bool) {
+        if rememberForRetoggleSuppression, let visibleKind {
+            recentlyDismissedKind = visibleKind
+            recentlyDismissedAt = ProcessInfo.processInfo.systemUptime
+        } else if !rememberForRetoggleSuppression {
+            recentlyDismissedKind = nil
+        }
+
         if let localMonitor {
             NSEvent.removeMonitor(localMonitor)
         }
@@ -57,8 +83,13 @@ final class WidgetDetailPanelController {
         visibleKind = nil
         let panelToClose = panel
         panel = nil
+        let closeHandler = notifyClose ? onClose : nil
+        if notifyClose {
+            onClose = nil
+        }
 
         guard let panelToClose else {
+            closeHandler?()
             return
         }
 
@@ -70,6 +101,7 @@ final class WidgetDetailPanelController {
               panelToClose.isVisible,
               !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
             panelToClose.close()
+            closeHandler?()
             return
         }
 
@@ -79,6 +111,7 @@ final class WidgetDetailPanelController {
             panelToClose.animator().alphaValue = 0
         } completionHandler: {
             panelToClose.close()
+            closeHandler?()
         }
     }
 
@@ -126,7 +159,7 @@ final class WidgetDetailPanelController {
     private func installDismissMonitors(panel: NSPanel, anchorFrame: NSRect?) {
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown]) { [weak self, weak panel] event in
             if event.type == .keyDown, event.keyCode == 53 {
-                self?.close()
+                self?.close(animated: true, rememberForRetoggleSuppression: false, notifyClose: true)
                 return nil
             }
 
@@ -136,7 +169,7 @@ final class WidgetDetailPanelController {
                    panelFrame: panel.frame,
                    anchorFrame: anchorFrame
                ) {
-                self?.close()
+                self?.close(animated: true, rememberForRetoggleSuppression: true, notifyClose: true)
             }
             return event
         }
@@ -148,9 +181,24 @@ final class WidgetDetailPanelController {
                    panelFrame: panel.frame,
                    anchorFrame: anchorFrame
                ) {
-                self?.close()
+                self?.close(animated: true, rememberForRetoggleSuppression: true, notifyClose: true)
             }
         }
+    }
+
+    nonisolated static func shouldSuppressImmediateRetoggle(
+        recentlyDismissedKind: DockWidgetKind?,
+        dismissedAt: TimeInterval,
+        requestedKind: DockWidgetKind,
+        now: TimeInterval
+    ) -> Bool {
+        // Event monitors see the pointer event before SwiftUI buttons do. If
+        // that pointer event dismisses a visible widget panel, the button action
+        // for the same widget can arrive a few milliseconds later and would
+        // otherwise reopen the panel. The short uptime-based window is not user
+        // visible; it only connects the two callbacks that belong to the same
+        // physical click. Uptime avoids wall-clock changes affecting UI logic.
+        recentlyDismissedKind == requestedKind && now - dismissedAt <= retoggleSuppressionInterval
     }
 
     nonisolated static func shouldDismissPointerEvent(pointerLocation: NSPoint, panelFrame: NSRect, anchorFrame: NSRect?) -> Bool {

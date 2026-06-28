@@ -106,6 +106,33 @@ func validateWidgetPanelDismissHitTesting() throws {
         ),
         "ordinary outside clicks should still dismiss widget detail panels"
     )
+    try expect(
+        WidgetDetailPanelController.shouldSuppressImmediateRetoggle(
+            recentlyDismissedKind: .weather,
+            dismissedAt: 100,
+            requestedKind: .weather,
+            now: 100.1
+        ),
+        "same-click widget dismissal should not immediately reopen the same panel"
+    )
+    try expect(
+        !WidgetDetailPanelController.shouldSuppressImmediateRetoggle(
+            recentlyDismissedKind: .weather,
+            dismissedAt: 100,
+            requestedKind: .calendar,
+            now: 100.1
+        ),
+        "same-click suppression should not block switching directly to a different widget"
+    )
+    try expect(
+        !WidgetDetailPanelController.shouldSuppressImmediateRetoggle(
+            recentlyDismissedKind: .weather,
+            dismissedAt: 100,
+            requestedKind: .weather,
+            now: 101
+        ),
+        "same-click suppression should expire quickly so later widget opens still work"
+    )
 }
 
 func validateSpecificDisplaySelection() throws {
@@ -700,6 +727,30 @@ func validateWeatherManualLocationMissingStaysLocal() async throws {
 }
 
 @MainActor
+func validateWeatherManualLocationMissingExplainsCachedData() async throws {
+    let provider = CountingWeatherProvider()
+    let cacheURL = FileManager.default.temporaryDirectory.appendingPathComponent("WeatherManualMissingCachedValidation-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: cacheURL) }
+
+    let cache = WeatherCache(fileURL: cacheURL)
+    cache.save(validationWeatherSnapshot(locationName: "Cached City"))
+
+    let viewModel = WeatherWidgetViewModel(provider: provider, cache: cache)
+    var settings = DockingSettings.default
+    settings.weatherEnabled = true
+    settings.weatherUsesCurrentLocation = false
+    settings.weatherManualLocation = "   "
+
+    await viewModel.refresh(settings: settings, force: true)
+
+    try expect(provider.requestCount == 0, "missing manual weather location should not call provider even when cached weather exists")
+    try expect(
+        viewModel.state == .stale("Showing cached weather. Choose a city in Control Center to update."),
+        "cached weather with a missing manual city should explain both the stale data and the needed setting"
+    )
+}
+
+@MainActor
 func validateWeatherCurrentLocationFallsBackToManualCity() async throws {
     let provider = CurrentLocationDeniedManualWeatherProvider()
     let cacheURL = FileManager.default.temporaryDirectory.appendingPathComponent("WeatherManualFallbackValidation-\(UUID().uuidString).json")
@@ -970,6 +1021,7 @@ let asyncValidations: [(String, () async throws -> Void)] = [
     ("weather provider fallback", validateCompositeWeatherFallback),
     ("weather provider permission boundary", validateCompositeWeatherDoesNotHideLocationDenial),
     ("weather manual location missing stays local", { try await validateWeatherManualLocationMissingStaysLocal() }),
+    ("weather manual location stale message", { try await validateWeatherManualLocationMissingExplainsCachedData() }),
     ("weather current location falls back to manual city", { try await validateWeatherCurrentLocationFallsBackToManualCity() })
 ]
 

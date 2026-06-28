@@ -6,12 +6,14 @@ final class DockPanelController {
     private var panel: NSPanel?
     private let autoHideController = AutoHideController()
     private var revealScreen: NSScreen?
+    private var autoHideGeneration = 0
 
     var frame: NSRect? {
         panel?.frame
     }
 
     func show(model: DockingAppModel) {
+        cancelScheduledAutoHide()
         let panel = panel ?? makePanel(model: model)
         self.panel = panel
         // Manual "Show Dock" must size the panel from the same visible model as
@@ -23,14 +25,17 @@ final class DockPanelController {
     }
 
     func hide() {
+        cancelScheduledAutoHide()
         panel?.orderOut(nil)
     }
 
     func orderFront() {
+        cancelScheduledAutoHide()
         panel?.orderFrontRegardless()
     }
 
     func close() {
+        cancelScheduledAutoHide()
         autoHideController.close()
         panel?.close()
         panel = nil
@@ -75,6 +80,7 @@ final class DockPanelController {
             return
         }
 
+        cancelScheduledAutoHide()
         revealScreen = screen
         let size = DockLayout.panelSize(itemCount: itemCount, widgetCount: widgetCount, settings: settings)
         let frame = ScreenPlacementService.dockFrame(size: size, on: screen ?? ScreenPlacementService.dockScreen(for: settings), position: settings.dockPosition)
@@ -87,14 +93,28 @@ final class DockPanelController {
             return
         }
 
+        autoHideGeneration += 1
+        let generation = autoHideGeneration
         let delay = model.settings.autoHideDelay
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            guard model.settings.dockVisibility == .autoHide, !model.isPointerInsideDock else {
+            guard self?.autoHideGeneration == generation,
+                  model.settings.dockVisibility == .autoHide,
+                  !model.isPointerInsideDock else {
                 return
             }
             self?.hide()
         }
+    }
+
+    func cancelScheduledAutoHide() {
+        // Auto-hide scheduling is intentionally timer-light, but Swift Tasks
+        // cannot be revoked once we have let them go. A generation token makes
+        // old pointer-exit hides harmless after an explicit Show Dock, menu
+        // command, or edge-trigger reveal. Without this, a stale hide could run
+        // milliseconds after the user showed the dock and make widgets appear
+        // unclickable because the panel was already ordered out.
+        autoHideGeneration += 1
     }
 
     private func makePanel(model: DockingAppModel) -> NSPanel {

@@ -60,6 +60,13 @@ public final class DockingAppModel: ObservableObject {
     private var environmentObserverTokens: [(NotificationCenter, NSObjectProtocol)] = []
     private var pendingSettingsSaveTask: Task<Void, Never>?
     private var widgetFrames: [DockWidgetKind: NSRect] = [:]
+    // Auto-hide should hide after pointer exit, but an explicit Show Dock
+    // button/menu command is different from a passive edge reveal. The user has
+    // asked to see the dock, so a previously scheduled hide must not win while
+    // they are still moving from Control Center or the menu toward the dock.
+    // This flag is cleared as soon as the pointer actually enters or exits the
+    // dock region, returning control to the normal auto-hide lifecycle.
+    private var holdsDockAfterExplicitShow = false
     private static let settingsSaveDelayNanoseconds: UInt64 = 350_000_000
 
     var enabledWidgetCount: Int {
@@ -164,6 +171,7 @@ public final class DockingAppModel: ObservableObject {
     }
 
     public func showDock() {
+        holdsDockAfterExplicitShow = true
         dockPanelController.show(model: self)
     }
 
@@ -182,6 +190,7 @@ public final class DockingAppModel: ObservableObject {
     }
 
     public func hideDock() {
+        holdsDockAfterExplicitShow = false
         dockPanelController.hide()
     }
 
@@ -194,11 +203,16 @@ public final class DockingAppModel: ObservableObject {
 
     func pointerEnteredDock() {
         isPointerInsideDock = true
-        showDock()
+        holdsDockAfterExplicitShow = false
+        dockPanelController.show(model: self)
     }
 
     func pointerExitedDock() {
         isPointerInsideDock = false
+        holdsDockAfterExplicitShow = false
+        guard !widgetDetailPanelController.isVisible else {
+            return
+        }
         dockPanelController.scheduleAutoHide(model: self)
     }
 
@@ -360,8 +374,26 @@ public final class DockingAppModel: ObservableObject {
             kind: kind,
             model: self,
             dockFrame: dockPanelController.frame,
-            anchorFrame: widgetFrames[kind]
+            anchorFrame: widgetFrames[kind],
+            onClose: { [weak self] in
+                guard let self else {
+                    return
+                }
+                if self.settings.dockVisibility == .autoHide,
+                   !self.isPointerInsideDock,
+                   !self.holdsDockAfterExplicitShow {
+                    self.dockPanelController.scheduleAutoHide(model: self)
+                }
+            }
         )
+        if widgetDetailPanelController.isVisible {
+            // A widget detail panel is anchored to the Dock. Keeping the Dock
+            // visible while the panel is open preserves the user's path back to
+            // the same widget, which is the intended close control. Letting
+            // auto-hide order the Dock out underneath the panel made the
+            // "click the widget again" behavior depend on timing.
+            dockPanelController.cancelScheduledAutoHide()
+        }
     }
 
     func updateWidgetFrame(kind: DockWidgetKind, frame: NSRect) {
@@ -612,7 +644,7 @@ public final class DockingAppModel: ObservableObject {
             // hidden and be revived by the edge trigger, matching standard Dock
             // behavior and avoiding a resident overlay that covers workspace
             // content immediately after launch.
-            if !isPointerInsideDock {
+            if !isPointerInsideDock && !holdsDockAfterExplicitShow && !widgetDetailPanelController.isVisible {
                 dockPanelController.hide()
             }
         case .alwaysVisible:

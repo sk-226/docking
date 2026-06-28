@@ -20,6 +20,7 @@ final class WeatherWidgetViewModel: ObservableObject {
     private let cache: WeatherCache
     private var refreshTask: Task<Void, Never>?
     private var refreshGeneration = 0
+    private static let missingManualLocationWithCacheMessage = "Showing cached weather. Choose a city in Control Center to update."
 
     init(provider: WeatherProvider, cache: WeatherCache = WeatherCache()) {
         self.provider = provider
@@ -95,7 +96,11 @@ final class WeatherWidgetViewModel: ObservableObject {
             refreshGeneration += 1
             refreshTask?.cancel()
             refreshTask = nil
-            state = snapshot == nil ? .manualLocationNotSet : .stale("Choose a city to update weather.")
+            // A cached forecast is still useful, but the user also needs to
+            // know why it cannot refresh. The stale message therefore names
+            // both facts instead of showing a bare "choose a city" prompt next
+            // to real weather data, which looked like a contradictory state.
+            state = snapshot == nil ? .manualLocationNotSet : .stale(Self.missingManualLocationWithCacheMessage)
             return
         }
 
@@ -154,7 +159,9 @@ final class WeatherWidgetViewModel: ObservableObject {
                 guard !Task.isCancelled else {
                     return
                 }
-                await MainActor.run { self.state = self.snapshot == nil ? .manualLocationNotSet : .stale("Choose a city to update weather.") }
+                await MainActor.run {
+                    self.state = self.snapshot == nil ? .manualLocationNotSet : .stale(Self.missingManualLocationWithCacheMessage)
+                }
             } catch WeatherProviderError.locationPermissionNeeded {
                 guard !Task.isCancelled else {
                     return

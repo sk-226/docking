@@ -14,6 +14,7 @@ swift build -c release --product Docking --scratch-path /private/tmp/docking-app
 ./script/build_and_run.sh --verify
 /usr/libexec/PlistBuddy -c Print:CFBundleShortVersionString dist/Docking.app/Contents/Info.plist
 /usr/libexec/PlistBuddy -c Print:CFBundleVersion dist/Docking.app/Contents/Info.plist
+/usr/libexec/PlistBuddy -c Print:LSMinimumSystemVersion dist/Docking.app/Contents/Info.plist
 rg -n "#available|backward|compatib|decodeIfPresent|legacy|deprecated|requestAccess\\(to:" Sources Validation README.md PERFORMANCE.md Package.swift script
 ```
 
@@ -28,6 +29,7 @@ Expected results:
 - Release build succeeds without relying on DEBUG-only mock weather data.
 - `--verify` exits successfully and leaves a `Docking` process running.
 - Both bundle version values are `0.0.0`.
+- The bundle minimum system version is `26.0`.
 - The source/docs search returns no matches. `QA.md` is intentionally excluded
   because it documents the search expression itself.
 
@@ -39,13 +41,15 @@ Expected results:
 | Calendar permission not requested while disabled | Turn Calendar widget off, reopen Control Center > Widgets. | No Calendar permission prompt appears. | Not yet manually verified |
 | Calendar permission granted | Turn Calendar widget on and grant Calendar access. | Detail panel shows grouped events or a clear empty state. | Not yet manually verified |
 | Calendar permission denied | Deny Calendar access in System Settings, then open the widget. | Detail panel shows a permission state and does not crash. | Not yet manually verified |
-| Weather manual city | Disable current location, set a city such as `Tokyo`, open Weather. | Real weather loads or a provider/network error is shown with no mock values. | Not yet manually verified |
+| Weather manual city | Disable current location, set a city such as `Tokyo`, open Weather. | Real weather loads or a provider/network error is shown with no mock values. | Passed 2026-06-28 via Computer Use: manual city `Tokyo` showed real weather for `Tokyo, Tokyo, Japan`, updated at 19:05, with temperature, condition, hourly/daily forecast, and humidity. Missing manual city with cached data now shows a stale-cache message instead of a contradictory bare city prompt. |
 | Weather location denial | Enable current location and deny Location Services. | Weather shows the location-denied state and does not silently fall back to fake data. | Not yet manually verified |
 | App launcher and process actions | Add an `.app`, launch it from Docking, right-click it, use Show All Windows and Hide, use Quit or Force Quit on a disposable app, remove it, reset the list. | Icon loads once, app opens through `NSWorkspace`, running indicator updates, Show All Windows activates the app, Hide hides it, Quit requests graceful termination, and Force Quit shows a confirmation before terminating. | Passed 2026-06-28 via Computer Use: Finder menu exposed Open, Show All Windows, Hide, Quit, Force Quit, Finder reveal, removal, and Control Center actions; disposable DockingProbe appeared as an unpinned running app, Force Quit showed confirmation, then the app disappeared and `pgrep -x DockingProbe` had no match. |
 | Unpinned running apps | Launch an app that is not kept in Docking, such as Zed, then toggle Control Center > General > Unpinned running apps. | The running app appears once in a separated section when enabled and disappears when hidden; pinned apps are not duplicated. | Passed 2026-06-28 via Computer Use: Overview showed 5 running unpinned apps; General showed `Show separated`; Dock AX tree showed Zed once in the transient section. |
 | Dock accessibility | Show the Dock and inspect the accessibility tree. | Each dock item exposes its own name, running state, and button role; the dock group label does not replace child labels. | Passed 2026-06-28 via Computer Use: dock items reported `button` with app-specific descriptions such as Finder, Zed, Calendar, Weather, and Add application. |
+| Widget panel toggle | Open Calendar or Weather from Docking's Dock, then click the same widget again. | Detail panel opens without crashing; clicking the same widget closes it; Dock remains reachable while the panel is open. | Passed 2026-06-28: Computer Use confirmed the Weather detail panel opens through the same model action, and the user verified that clicking the widget again closes the panel. Validation covers same-click retoggle suppression so outside-click dismissal cannot immediately reopen the same widget. |
 | Reorder/drop | Reorder apps inside the dock and drop an external `.app`. | Ordering persists and non-application drops are ignored. | Not yet manually verified |
 | Auto-hide | Enable auto-hide and move the pointer away, then to the screen edge. | Dock hides after the configured delay and reappears through the edge trigger. | Not yet manually verified |
+| Explicit Show Dock in auto-hide | Enable auto-hide, press Show Dock, close Control Center, and wait beyond the configured delay. | A stale auto-hide task must not immediately hide a dock the user explicitly asked to show. | Passed 2026-06-28 via Computer Use: pressing Show Dock in auto-hide mode, closing Control Center, and waiting beyond the 0.7s delay left the Docking Dock visible and accessible. |
 | Keep above windows | Toggle Control Center > General > Keep above other windows off and on. | Docking uses ordinary window level when off and floating dock level when on, without stealing focus. | Not yet manually verified |
 | Spaces/full-screen | Toggle all-Spaces/full-screen settings and move through Spaces/full-screen apps. | Dock remains available without stealing focus. | Not yet manually verified |
 | Multiple displays | Test main, pointer, and specific display modes. | Dock stays inside the selected display's visible frame and falls back safely if disconnected. | Not yet manually verified |
