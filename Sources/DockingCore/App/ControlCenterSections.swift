@@ -6,124 +6,302 @@ struct GeneralControlCenterSection: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 22) {
                 Text("General")
                     .font(.headline)
-                Toggle(
-                    "Launch at login",
-                    isOn: Binding(
-                        get: { model.settings.launchAtLogin },
-                        set: { model.setLaunchAtLogin($0) }
-                    )
-                )
-                Text(model.launchAtLoginStatusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Toggle("Show menu bar icon", isOn: $model.settings.showMenuBarIcon)
 
-                Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 12) {
-                    GridRow {
-                        Text("Dock visibility")
-                        Picker("Dock visibility", selection: $model.settings.dockVisibility) {
-                            ForEach(DockVisibilityMode.allCases) { mode in
-                                Text(mode.label).tag(mode)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.segmented)
-                    }
-
-                    if model.settings.dockVisibility == .autoHide {
-                        GridRow {
-                            Text("Auto-hide delay")
-                            HStack(spacing: 10) {
-                                Slider(
-                                    value: $model.settings.autoHideDelay,
-                                    in: DockingSettingLimits.autoHideDelay,
-                                    step: DockingSettingLimits.autoHideDelayStep
-                                )
-                                .frame(width: 240)
-                                Text(DockingFormatters.seconds(model.settings.autoHideDelay))
-                                    .monospacedDigit()
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 64, alignment: .trailing)
-                            }
-                        }
-                    }
-
-                    GridRow {
-                        Color.clear
-                            .frame(width: 1, height: 1)
-                        Button("Match Apple Dock visibility") {
-                            model.matchAppleDockVisibility()
-                        }
-                    }
-                }
-                Text(model.appleDockVisibilityStatusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 12) {
-                    GridRow {
-                        Text("Unpinned running apps")
-                        Picker("Unpinned running apps", selection: $model.settings.unpinnedRunningAppVisibility) {
-                            ForEach(UnpinnedRunningAppVisibility.allCases) { visibility in
-                                Text(visibility.label).tag(visibility)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.segmented)
-                        .frame(width: 220, alignment: .leading)
-                    }
-                }
-                Toggle("Keep above other windows", isOn: $model.settings.keepAboveOtherWindows)
-                Text("Turn this off if you want Docking to behave like an ordinary overlay while testing another full-screen or always-on-top workflow.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Toggle("Show on all Spaces", isOn: $model.settings.showOnAllSpaces)
-                Toggle("Show on full-screen spaces", isOn: $model.settings.showOnFullScreenSpaces)
-
-                Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 12) {
-                    GridRow {
-                        Text("Position")
-                        Picker("Position", selection: $model.settings.dockPosition) {
-                            ForEach(DockPosition.allCases) { position in
-                                Text(position.label).tag(position)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 220, alignment: .leading)
-                    }
-
-                    GridRow {
-                        Text("Display")
-                        Picker("Display", selection: $model.settings.displayMode) {
-                            ForEach(DockDisplayMode.allCases) { mode in
-                                Text(mode.label).tag(mode)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 220, alignment: .leading)
-                    }
-                }
-                if model.settings.displayMode == .specific {
-                    Picker(
-                        "Selected display",
-                        selection: Binding(
-                            get: { model.settings.dockDisplayID ?? model.availableDisplays.first?.id ?? 0 },
-                            set: { model.settings.dockDisplayID = $0 == 0 ? nil : $0 }
+                ControlCenterSettingsGroup("Startup") {
+                    Toggle(
+                        "Launch at login",
+                        isOn: Binding(
+                            get: { model.settings.launchAtLogin },
+                            set: { model.setLaunchAtLogin($0) }
                         )
-                    ) {
-                        ForEach(model.availableDisplays) { display in
-                            Text("\(display.name) · \(display.frameDescription)").tag(display.id)
+                    )
+                    ControlCenterHelpText(model.launchAtLoginStatusMessage)
+                    Toggle("Show menu bar icon", isOn: $model.settings.showMenuBarIcon)
+                }
+
+                ControlCenterSettingsGroup("Dock behavior") {
+                    Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 12) {
+                        GridRow {
+                            Text("Visibility")
+                                .frame(width: 150, alignment: .leading)
+                            Picker("Dock visibility", selection: $model.settings.dockVisibility) {
+                                ForEach(DockVisibilityMode.allCases) { mode in
+                                    Text(mode.label).tag(mode)
+                                }
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.segmented)
+                            .frame(width: 240, alignment: .leading)
+                        }
+
+                        if model.settings.dockVisibility == .autoHide {
+                            GridRow {
+                                Text("Hide delay")
+                                    .frame(width: 150, alignment: .leading)
+                                HStack(spacing: 10) {
+                                    Slider(
+                                        value: $model.settings.autoHideDelay,
+                                        in: DockingSettingLimits.autoHideDelay,
+                                        step: DockingSettingLimits.autoHideDelayStep
+                                    )
+                                    .frame(width: 240)
+                                    Text(DockingFormatters.seconds(model.settings.autoHideDelay))
+                                        .monospacedDigit()
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 64, alignment: .trailing)
+                                }
+                            }
+                        }
+
+                        GridRow {
+                            Color.clear
+                                .frame(width: 1, height: 1)
+                            Button("Match Apple Dock visibility") {
+                                model.matchAppleDockVisibility()
+                            }
                         }
                     }
+                    ControlCenterHelpText(model.appleDockVisibilityStatusMessage)
+                }
+
+                ControlCenterSettingsGroup("Placement") {
+                    Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 12) {
+                        GridRow {
+                            Text("Dock edge")
+                                .frame(width: 150, alignment: .leading)
+                            Picker("Dock edge", selection: dockEdge) {
+                                ForEach(DockEdgeChoice.allCases) { edge in
+                                    Text(edge.label).tag(edge)
+                                }
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.segmented)
+                            .frame(width: 240, alignment: .leading)
+                        }
+
+                        if model.settings.dockPosition.isBottom {
+                            GridRow {
+                                Text("Bottom alignment")
+                                    .frame(width: 150, alignment: .leading)
+                                Picker("Bottom alignment", selection: bottomAlignment) {
+                                    ForEach(BottomDockAlignment.allCases) { alignment in
+                                        Text(alignment.label).tag(alignment)
+                                    }
+                                }
+                                .labelsHidden()
+                                .pickerStyle(.segmented)
+                                .frame(width: 240, alignment: .leading)
+                            }
+                        }
+
+                        GridRow {
+                            Text("Placement display")
+                                .frame(width: 150, alignment: .leading)
+                            Picker("Placement display", selection: $model.settings.displayMode) {
+                                ForEach(DockDisplayMode.allCases) { mode in
+                                    Text(mode.label).tag(mode)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 240, alignment: .leading)
+                        }
+                    }
+
+                    if model.settings.displayMode == .specific {
+                        Picker(
+                            "Selected display",
+                            selection: Binding(
+                                get: { model.settings.dockDisplayID ?? model.availableDisplays.first?.id ?? 0 },
+                                set: { model.settings.dockDisplayID = $0 == 0 ? nil : $0 }
+                            )
+                        ) {
+                            ForEach(model.availableDisplays) { display in
+                                Text("\(display.name) · \(display.frameDescription)").tag(display.id)
+                            }
+                        }
+                    }
+                    ControlCenterHelpText(placementHelpText)
+                }
+
+                ControlCenterSettingsGroup("Spaces") {
+                    Toggle("Keep above app windows", isOn: $model.settings.keepAboveOtherWindows)
+                    Toggle("Available on every desktop", isOn: $model.settings.showOnAllSpaces)
+                    Toggle("Available over full-screen apps", isOn: $model.settings.showOnFullScreenSpaces)
+                    ControlCenterHelpText("These options control whether Docking behaves like system chrome or like an ordinary app overlay.")
+                }
+
+                ControlCenterSettingsGroup("Running apps") {
+                    Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 12) {
+                        GridRow {
+                            Text("Apps not pinned")
+                                .frame(width: 150, alignment: .leading)
+                            Picker("Apps not pinned", selection: $model.settings.unpinnedRunningAppVisibility) {
+                                ForEach(UnpinnedRunningAppVisibility.allCases) { visibility in
+                                    Text(visibility.label).tag(visibility)
+                                }
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.segmented)
+                            .frame(width: 240, alignment: .leading)
+                        }
+                    }
+                    ControlCenterHelpText("Open apps that are not permanently kept in Docking can appear in a separated running-app area, or stay hidden until you pin them.")
                 }
             }
             .padding()
-            .frame(maxWidth: 560, alignment: .topLeading)
+            .frame(maxWidth: 680, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var dockEdge: Binding<DockEdgeChoice> {
+        Binding(
+            get: { DockEdgeChoice(position: model.settings.dockPosition) },
+            set: { edge in
+                // The renderer still wants one concrete DockPosition, but users
+                // reason about this as two separate questions: which screen edge
+                // owns the dock, and how a bottom dock is aligned. Splitting the
+                // controls avoids a misleading "Position" menu where "Bottom
+                // center" appears to decide multi-display behavior even though
+                // bottom auto-hide intentionally reveals from every display.
+                switch edge {
+                case .bottom:
+                    model.settings.dockPosition = bottomAlignment.wrappedValue.position
+                case .left:
+                    model.settings.dockPosition = .left
+                case .right:
+                    model.settings.dockPosition = .right
+                }
+            }
+        )
+    }
+
+    private var bottomAlignment: Binding<BottomDockAlignment> {
+        Binding(
+            get: { BottomDockAlignment(position: model.settings.dockPosition) },
+            set: { alignment in
+                model.settings.dockPosition = alignment.position
+            }
+        )
+    }
+
+    private var placementHelpText: String {
+        if model.settings.dockPosition.isBottom, model.settings.dockVisibility == .autoHide {
+            return "Bottom auto-hide can be revealed from the bottom edge of every display. Placement display sets the default anchor before a reveal and for manual Show Dock."
+        }
+
+        if model.settings.dockPosition.isBottom {
+            return "Placement display sets where the always-visible bottom dock stays."
+        }
+
+        return "Side docks stay on one display so their edge trigger does not intercept gestures on every monitor."
+    }
+}
+
+private struct ControlCenterSettingsGroup<Content: View>: View {
+    let title: String
+    private let content: () -> Content
+
+    init(_ title: String, @ViewBuilder content: @escaping () -> Content) {
+        self.title = title
+        self.content = content
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            content()
+        }
+    }
+}
+
+private struct ControlCenterHelpText: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private enum DockEdgeChoice: String, CaseIterable, Identifiable {
+    case bottom
+    case left
+    case right
+
+    var id: String { rawValue }
+
+    init(position: DockPosition) {
+        switch position {
+        case .bottomCenter, .bottomLeft, .bottomRight:
+            self = .bottom
+        case .left:
+            self = .left
+        case .right:
+            self = .right
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .bottom:
+            return "Bottom"
+        case .left:
+            return "Left"
+        case .right:
+            return "Right"
+        }
+    }
+}
+
+private enum BottomDockAlignment: String, CaseIterable, Identifiable {
+    case left
+    case center
+    case right
+
+    var id: String { rawValue }
+
+    init(position: DockPosition) {
+        switch position {
+        case .bottomLeft:
+            self = .left
+        case .bottomRight:
+            self = .right
+        case .bottomCenter, .left, .right:
+            self = .center
+        }
+    }
+
+    var position: DockPosition {
+        switch self {
+        case .left:
+            return .bottomLeft
+        case .center:
+            return .bottomCenter
+        case .right:
+            return .bottomRight
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .left:
+            return "Left"
+        case .center:
+            return "Center"
+        case .right:
+            return "Right"
+        }
     }
 }
 

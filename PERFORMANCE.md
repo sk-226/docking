@@ -73,11 +73,11 @@ Check Spaces/full-screen behavior:
 
 Check display mode:
 
-1. In Control Center > General, switch Display between "Main display" and "Display with
-   pointer".
+1. In Control Center > General, switch Placement display between "Main display"
+   and "Follow pointer".
 2. Move the pointer to another display and show the dock.
 3. Confirm the panel is placed on the selected display mode.
-4. If more than one display is connected, select "Specific display" and choose a
+4. If more than one display is connected, select "Chosen display" and choose a
    display from the list.
 5. Disconnect that display and confirm Docking falls back to the main display.
 

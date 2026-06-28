@@ -156,8 +156,10 @@ above.
   macOS's actual Login Items state and shows the error.
 - Widget detail panels use reported widget screen frames when available, with a
   dock-centered fallback during early layout.
-- Display selection supports "Main display", "Display with pointer", and a
-  specific connected display by `NSScreen` display ID. If that display
-  disappears, Docking falls back to the main display.
+- Placement display supports "Main display", "Follow pointer", and a chosen
+  connected display by `NSScreen` display ID. Bottom auto-hide still reveals
+  from every display edge; this setting controls the default anchor and
+  non-bottom placement. If a chosen display disappears, Docking falls back to the
+  main display.
 - Full-screen Spaces and multi-display behavior use conservative panel
   collection behavior and still need manual QA on the target machine.

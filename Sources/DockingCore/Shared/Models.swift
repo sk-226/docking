@@ -89,9 +89,9 @@ enum DockDisplayMode: String, CaseIterable, Codable, Identifiable {
         case .main:
             return "Main display"
         case .pointer:
-            return "Display with pointer"
+            return "Follow pointer"
         case .specific:
-            return "Specific display"
+            return "Chosen display"
         }
     }
 }

@@ -58,8 +58,6 @@ final class MenuBarStatusController: NSObject {
         openCalendarItem = calendarItem
         openWeatherItem = weatherItem
         menu.addItem(.separator())
-        menu.addItem(menuItem("Restore macOS Dock", action: #selector(restoreDock)))
-        menu.addItem(.separator())
         menu.addItem(menuItem("Quit Docking", action: #selector(quit)))
 
         return menu
@@ -89,10 +87,6 @@ final class MenuBarStatusController: NSObject {
 
     @objc private func openWeatherWidget() {
         model?.openWeatherPanel()
-    }
-
-    @objc private func restoreDock() {
-        model?.restoreOriginalDockSettings()
     }
 
     @objc private func quit() {
