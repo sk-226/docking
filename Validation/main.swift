@@ -656,6 +656,29 @@ func validateWeatherManualLocationMissingStaysLocal() async throws {
     try expect(viewModel.state == .manualLocationNotSet, "missing manual weather location should show local configuration state")
 }
 
+@MainActor
+func validateWeatherCurrentLocationFallsBackToManualCity() async throws {
+    let provider = CurrentLocationDeniedManualWeatherProvider()
+    let cacheURL = FileManager.default.temporaryDirectory.appendingPathComponent("WeatherManualFallbackValidation-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: cacheURL) }
+
+    let viewModel = WeatherWidgetViewModel(
+        provider: provider,
+        cache: WeatherCache(fileURL: cacheURL)
+    )
+    var settings = DockingSettings.default
+    settings.weatherEnabled = true
+    settings.weatherUsesCurrentLocation = true
+    settings.weatherManualLocation = "Tokyo"
+
+    await viewModel.refresh(settings: settings, force: true)
+
+    try expect(provider.requests.map(\.usesCurrentLocation) == [true, false], "weather should retry the manual city after current-location denial")
+    try expect(provider.requests.last?.manualLocation == "Tokyo", "manual weather fallback should preserve the configured city")
+    try expect(viewModel.state == .loaded, "manual weather fallback should publish loaded weather instead of a location-denied state")
+    try expect(viewModel.snapshot?.locationName == "Tokyo fallback", "manual weather fallback should publish the fallback city snapshot")
+}
+
 private struct ThrowingWeatherProvider: WeatherProvider {
     let error: Error
 
@@ -678,6 +701,23 @@ private final class CountingWeatherProvider: WeatherProvider {
     func fetchWeather(configuration: WeatherRequestConfiguration) async throws -> WeatherSnapshot {
         requestCount += 1
         return validationWeatherSnapshot(locationName: "Counting")
+    }
+}
+
+private final class CurrentLocationDeniedManualWeatherProvider: WeatherProvider {
+    private(set) var requests: [WeatherRequestConfiguration] = []
+
+    func fetchWeather(configuration: WeatherRequestConfiguration) async throws -> WeatherSnapshot {
+        requests.append(configuration)
+        if configuration.usesCurrentLocation {
+            throw WeatherProviderError.locationDenied
+        }
+
+        guard configuration.manualLocation?.nilIfBlank != nil else {
+            throw WeatherProviderError.manualLocationMissing
+        }
+
+        return validationWeatherSnapshot(locationName: "Tokyo fallback")
     }
 }
 
@@ -885,7 +925,8 @@ let asyncValidations: [(String, () async throws -> Void)] = [
     ("disabled calendar ignores store changes", { try await validateDisabledCalendarIgnoresStoreChanges() }),
     ("weather provider fallback", validateCompositeWeatherFallback),
     ("weather provider permission boundary", validateCompositeWeatherDoesNotHideLocationDenial),
-    ("weather manual location missing stays local", { try await validateWeatherManualLocationMissingStaysLocal() })
+    ("weather manual location missing stays local", { try await validateWeatherManualLocationMissingStaysLocal() }),
+    ("weather current location falls back to manual city", { try await validateWeatherCurrentLocationFallsBackToManualCity() })
 ]
 
 do {

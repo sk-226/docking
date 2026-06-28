@@ -107,18 +107,49 @@ final class WeatherWidgetViewModel: ObservableObject {
             usesCurrentLocation: settings.weatherUsesCurrentLocation,
             unit: settings.weatherUnit
         )
+        let manualFallbackConfiguration = Self.manualFallbackConfiguration(from: settings)
 
-        let task = Task { [provider, cache] in
-            do {
-                let loaded = try await provider.fetchWeather(configuration: configuration)
-                guard !Task.isCancelled else {
-                    return
-                }
+        let task = Task { [provider, cache, manualFallbackConfiguration] in
+            func publish(_ loaded: WeatherSnapshot) async {
                 await MainActor.run {
                     self.snapshot = loaded
                     self.state = .loaded
                     cache.save(loaded)
                 }
+            }
+
+            func publishManualFallbackOrLocationState(
+                emptyState: WeatherWidgetState,
+                staleMessage: String
+            ) async {
+                guard let manualFallbackConfiguration else {
+                    await MainActor.run { self.state = self.snapshot == nil ? emptyState : .stale(staleMessage) }
+                    return
+                }
+
+                do {
+                    let loaded = try await provider.fetchWeather(configuration: manualFallbackConfiguration)
+                    guard !Task.isCancelled else {
+                        return
+                    }
+                    await publish(loaded)
+                } catch {
+                    guard !Task.isCancelled else {
+                        return
+                    }
+                    await MainActor.run {
+                        let message = "Current location could not be used, and manual city fallback also failed. \(error.localizedDescription)"
+                        self.state = self.snapshot == nil ? .error(message) : .stale(message)
+                    }
+                }
+            }
+
+            do {
+                let loaded = try await provider.fetchWeather(configuration: configuration)
+                guard !Task.isCancelled else {
+                    return
+                }
+                await publish(loaded)
             } catch WeatherProviderError.manualLocationMissing {
                 guard !Task.isCancelled else {
                     return
@@ -128,12 +159,18 @@ final class WeatherWidgetViewModel: ObservableObject {
                 guard !Task.isCancelled else {
                     return
                 }
-                await MainActor.run { self.state = self.snapshot == nil ? .locationPermissionNeeded : .stale("Location access is needed to update weather.") }
+                await publishManualFallbackOrLocationState(
+                    emptyState: .locationPermissionNeeded,
+                    staleMessage: "Location access is needed to update weather."
+                )
             } catch WeatherProviderError.locationDenied {
                 guard !Task.isCancelled else {
                     return
                 }
-                await MainActor.run { self.state = self.snapshot == nil ? .locationDenied : .stale("Location access is denied. Showing cached weather.") }
+                await publishManualFallbackOrLocationState(
+                    emptyState: .locationDenied,
+                    staleMessage: "Location access is denied. Showing cached weather."
+                )
             } catch {
                 guard !Task.isCancelled else {
                     return
@@ -172,5 +209,24 @@ final class WeatherWidgetViewModel: ObservableObject {
             return
         }
         refreshTask = nil
+    }
+
+    private static func manualFallbackConfiguration(from settings: DockingSettings) -> WeatherRequestConfiguration? {
+        guard settings.weatherUsesCurrentLocation,
+              settings.weatherManualLocation.nilIfBlank != nil else {
+            return nil
+        }
+
+        // The Weather settings intentionally let users keep a manual city even
+        // while "Use current location" is enabled. That city is not redundant:
+        // it is the privacy-preserving fallback when CoreLocation is denied,
+        // disabled, or unavailable. We build a second provider request instead
+        // of special-casing Open-Meteo here so WeatherKit, Open-Meteo, and any
+        // future provider keep one shared request contract.
+        return WeatherRequestConfiguration(
+            manualLocation: settings.weatherManualLocation,
+            usesCurrentLocation: false,
+            unit: settings.weatherUnit
+        )
     }
 }

@@ -247,6 +247,10 @@ struct WidgetsControlCenterSection: View {
                             .textFieldStyle(.roundedBorder)
                             .frame(maxWidth: 280)
                     }
+                    Text("Manual location is used for weather without Location Services, and as the fallback if current-location weather is unavailable.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     Picker("Temperature unit", selection: $model.settings.weatherUnit) {
                         ForEach(TemperatureUnit.allCases) { unit in

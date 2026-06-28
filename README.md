@@ -104,6 +104,8 @@ Weather can use either a manual city or current location:
 - Manual city can fall back to Open-Meteo geocoding and forecast APIs.
 - Current location asks CoreLocation for a one-shot coarse location, then uses
   that coordinate with WeatherKit or Open-Meteo forecast data.
+- If current location is unavailable and a manual city is set, Docking retries
+  with that manual city instead of leaving the widget stuck on a location error.
 - WeatherKit requires the appropriate Apple entitlement in real distribution.
   Unsigned SwiftPM bundles usually fall back to Open-Meteo.
 
