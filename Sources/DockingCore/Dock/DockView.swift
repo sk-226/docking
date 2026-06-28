@@ -80,7 +80,12 @@ struct DockView: View {
             }
         }
         .onDrop(of: [.fileURL], delegate: DockExternalAppDropDelegate(model: model))
-        .accessibilityLabel("Docking")
+        // The dock container should be discoverable as a group without
+        // replacing the names of every child button. `.contain` preserves
+        // child controls, while the explicit label gives VoiceOver a sensible
+        // group name when entering the dock.
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Docking Dock")
     }
 
     private func dockDivider(isVertical: Bool) -> some View {
