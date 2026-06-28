@@ -39,8 +39,12 @@ struct CalendarDetailPanelView: View {
     private var content: some View {
         switch model.calendarViewModel.state {
         case .idle, .loading:
-            ProgressView("Loading events...")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if model.calendarViewModel.events.isEmpty {
+                ProgressView("Loading events...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                calendarEventsList
+            }
         case .permissionNotDetermined:
             PermissionStateView(
                 systemImage: "calendar.badge.exclamationmark",
@@ -60,26 +64,40 @@ struct CalendarDetailPanelView: View {
                 message: "No events were found in the configured lookahead window."
             )
         case .loaded:
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    ForEach(Array(CalendarGrouping.groupEvents(model.calendarViewModel.events).enumerated()), id: \.offset) { _, group in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(group.title)
-                                .font(.headline)
-                            ForEach(group.events) { event in
-                                CalendarEventRow(event: event, showLocation: model.settings.calendarShowsLocation)
-                            }
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            calendarEventsList
         case .error(let message):
             PermissionStateView(
                 systemImage: "exclamationmark.triangle",
                 title: "Calendar could not load",
                 message: message
             )
+        }
+    }
+
+    private var calendarEventsList: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if model.calendarViewModel.state == .loading {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Updating events...")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                ForEach(Array(CalendarGrouping.groupEvents(model.calendarViewModel.events).enumerated()), id: \.offset) { _, group in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(group.title)
+                            .font(.headline)
+                        ForEach(group.events) { event in
+                            CalendarEventRow(event: event, showLocation: model.settings.calendarShowsLocation)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
