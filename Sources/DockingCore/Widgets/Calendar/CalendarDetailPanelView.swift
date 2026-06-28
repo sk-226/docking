@@ -7,7 +7,7 @@ struct CalendarDetailPanelView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Upcoming")
+                    Text("Calendar")
                         .font(.title2.weight(.semibold))
                     Text(model.calendarViewModel.nextEventLine)
                         .font(.subheadline)
@@ -89,8 +89,15 @@ struct CalendarDetailPanelView: View {
 
                 ForEach(Array(CalendarGrouping.groupEvents(model.calendarViewModel.events).enumerated()), id: \.offset) { _, group in
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(group.title)
-                            .font(.headline)
+                        HStack(spacing: 8) {
+                            Text(group.title)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            Rectangle()
+                                .fill(.secondary.opacity(0.18))
+                                .frame(height: 1)
+                        }
+
                         ForEach(group.events) { event in
                             CalendarEventRow(event: event, showLocation: model.settings.calendarShowsLocation)
                         }
@@ -107,27 +114,53 @@ private struct CalendarEventRow: View {
     let showLocation: Bool
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(DockingFormatters.timeFormatter.string(from: event.startDate))
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                Text(DockingFormatters.durationString(from: event.startDate, to: event.endDate))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(width: 58, alignment: .trailing)
+
             RoundedRectangle(cornerRadius: 2)
                 .fill(Color.accentColor)
-                .frame(width: 3)
+                .frame(width: 3, height: 34)
+                .padding(.top, 1)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(event.calendarName)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
                 Text(event.title)
                     .font(.body.weight(.medium))
                     .lineLimit(2)
-                Text("\(DockingFormatters.timeFormatter.string(from: event.startDate))-\(DockingFormatters.timeFormatter.string(from: event.endDate)) · \(DockingFormatters.durationString(from: event.startDate, to: event.endDate))")
+
+                Text(metadataText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                if showLocation, let location = event.location?.nilIfBlank {
-                    Label(location, systemImage: "mappin.and.ellipse")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // The row intentionally avoids a card background. A schedule panel is
+        // scanned repeatedly, and carding every event made the small popover
+        // feel heavier than macOS Calendar's list surfaces. The thin accent
+        // rail supplies grouping without adding another rounded rectangle.
+        .padding(.vertical, 3)
+    }
+
+    private var metadataText: String {
+        var pieces = [
+            "Until \(DockingFormatters.timeFormatter.string(from: event.endDate))",
+            event.calendarName
+        ].compactMap { $0.nilIfBlank }
+
+        if showLocation, let location = event.location?.nilIfBlank {
+            pieces.append(location)
+        }
+
+        return pieces.joined(separator: " · ")
     }
 }

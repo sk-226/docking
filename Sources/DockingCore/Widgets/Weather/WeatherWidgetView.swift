@@ -35,14 +35,14 @@ private struct WeatherDockContent: View {
 
     var body: some View {
         if isDetailed {
-            HStack(alignment: .center, spacing: 10) {
+            HStack(alignment: .center, spacing: 7) {
                 primaryStack
 
                 if !presentation.detailLines.isEmpty {
                     VStack(alignment: .leading, spacing: 2) {
                         ForEach(Array(presentation.detailLines.prefix(3).enumerated()), id: \.offset) { index, line in
                             Text(line)
-                                .font(.system(size: index == 0 ? 10 : 9, weight: .medium))
+                                .font(.system(size: index == 0 ? 10.5 : 9.5, weight: .medium))
                                 .foregroundStyle(index == 0 ? .primary : .secondary)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.7)
@@ -60,14 +60,14 @@ private struct WeatherDockContent: View {
     private var primaryStack: some View {
         VStack(alignment: .leading, spacing: isDetailed ? 2 : 1) {
             Text(presentation.primary)
-                .font(.system(size: isDetailed ? 22 : 18, weight: .bold, design: .rounded))
+                .font(.system(size: isDetailed ? 21 : 18, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
                 .allowsTightening(true)
 
             Text(presentation.secondary)
-                .font(.system(size: isDetailed ? 12 : 10, weight: .semibold))
+                .font(.system(size: isDetailed ? 11.5 : 10, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
@@ -122,6 +122,8 @@ struct WeatherDockPresentation {
             metrics.append("Humidity \(percent)%")
         } else if let feelsLike = snapshot.current.feelsLike {
             metrics.append("Feels \(DockingFormatters.temperature(feelsLike, unit: snapshot.unit))")
+        } else if settings.weatherShowsAQI, let airQualityLabel = snapshot.airQualityLabel?.nilIfBlank {
+            metrics.append("AQI \(airQualityLabel)")
         }
 
         // Weather widgets need a different hierarchy from Calendar widgets:

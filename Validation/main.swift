@@ -564,6 +564,7 @@ func validateDefaultSettingsFitEditableRanges() throws {
     try expect(WidgetSizePreset.detailed.width(iconSize: settings.iconSize) > WidgetSizePreset.standard.width(iconSize: settings.iconSize), "detailed widget preset should expose a wider dock tile")
     try expect(WidgetSizePreset.compact.width(iconSize: settings.iconSize) < WidgetSizePreset.standard.width(iconSize: settings.iconSize), "compact widget preset should remain narrower than standard")
     try expect(WidgetSizePreset.detailed.width(iconSize: settings.iconSize) >= 180, "detailed widget preset should have enough horizontal room for side-by-side context")
+    try expect(WidgetSizePreset.detailed.width(iconSize: settings.iconSize) <= 205, "default detailed widget width should not create unowned blank space around concise weather context")
     var detailedWidgets = settings
     detailedWidgets.calendarWidgetSizePreset = .detailed
     detailedWidgets.weatherWidgetSizePreset = .detailed
@@ -640,6 +641,47 @@ func validateWeatherDockLocationDisplay() throws {
         WeatherDockLocationDisplay.name(snapshotLocationName: "Setagaya City, Tokyo, Japan", settings: currentLocationSettings) == "Setagaya",
         "manual fallback weather should still use the user's concise city label when the snapshot matches it"
     )
+}
+
+func validateCalendarWidgetPresentation() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .autoupdatingCurrent
+    let start = calendar.date(from: DateComponents(year: 2026, month: 6, day: 28, hour: 13, minute: 40))!
+    let end = calendar.date(from: DateComponents(year: 2026, month: 6, day: 28, hour: 17, minute: 30))!
+    let event = CalendarEventSummary(
+        id: "validation",
+        title: "Design review",
+        calendarName: "Work",
+        startDate: start,
+        endDate: end,
+        location: "Studio"
+    )
+
+    let presentation = CalendarDockPresentation(
+        event: event,
+        state: .loaded,
+        showsLocation: true,
+        calendar: calendar,
+        now: start
+    )
+    try expect(presentation.compactPrimary == "13:40", "compact calendar widget should preserve the next event start time")
+    try expect(presentation.primary == "13:40-17:30", "standard/detailed calendar widget should show the event range when space allows")
+    try expect(presentation.secondary == "Design review", "calendar widget should keep the event title as the second read")
+    try expect(presentation.tertiary?.contains("Today") == true, "detailed calendar widget should spend width on day context")
+    try expect(presentation.tertiary?.contains("Studio") == true, "detailed calendar widget should prefer location when the user enabled it")
+
+    let calendarOnlyPresentation = CalendarDockPresentation(
+        event: event,
+        state: .loaded,
+        showsLocation: false,
+        calendar: calendar,
+        now: start
+    )
+    try expect(calendarOnlyPresentation.tertiary?.contains("Work") == true, "calendar widget should fall back to calendar name when location is hidden")
+
+    let emptyPresentation = CalendarDockPresentation(event: nil, state: .empty, showsLocation: true, calendar: calendar, now: start)
+    try expect(emptyPresentation.primary == "Today", "empty calendar widget should stay calm instead of showing a diagnostic label")
+    try expect(emptyPresentation.secondary == "No events", "empty calendar widget should tell the user the schedule is clear")
 }
 
 func validateWeatherWidgetPresentation() throws {
@@ -1331,6 +1373,7 @@ let validations: [(String, () throws -> Void)] = [
     ("dock widget metrics", validateDockWidgetMetrics),
     ("dock item termination menu policy", validateDockItemTerminationMenuPolicy),
     ("weather dock location display", validateWeatherDockLocationDisplay),
+    ("calendar widget presentation", validateCalendarWidgetPresentation),
     ("weather widget presentation", validateWeatherWidgetPresentation),
     ("accent color options", validateAccentColorOptionsCoverDefault),
     ("weather cache", validateWeatherCache),

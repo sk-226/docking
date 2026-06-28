@@ -309,12 +309,13 @@ enum WidgetSizePreset: String, CaseIterable, Identifiable, Codable {
             return max(88, iconSize * 1.9)
         case .detailed:
             // Detailed widgets should earn their space with side-by-side
-            // context, not taller rows. The width is still calibrated from the
-            // current icon rhythm, but it deliberately leaves enough room for
-            // a weather icon, primary reading, and supporting context without
-            // shrinking text back into the unreadable state the wider preset
-            // is meant to solve.
-            return max(220, iconSize * 4.8)
+            // context, not taller rows. The width is calibrated from the icon
+            // rhythm, but we cap the default footprint to roughly the amount
+            // of useful context the tile can actually explain. A wider value
+            // looked generous at first, but it created blank, unowned space in
+            // Weather; the widget should feel intentionally dense before the
+            // user clicks through to the full panel.
+            return max(196, iconSize * 4.25)
         }
     }
 }

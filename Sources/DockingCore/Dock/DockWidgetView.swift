@@ -107,6 +107,15 @@ struct DockWidgetIconStyle {
         renderingMode: .multicolor,
         foreground: .system
     )
+
+    static let calendar = DockWidgetIconStyle(
+        renderingMode: .palette,
+        // Calendar needs a stronger identity than the neutral gray default,
+        // but Docking should not mimic or bundle Apple's Calendar.app artwork.
+        // A red SF Symbol palette gives the expected macOS calendar cue while
+        // keeping the widget clearly inside Docking's own UI system.
+        foreground: .palette(.red, .gray)
+    )
 }
 
 enum DockWidgetIconForeground {
