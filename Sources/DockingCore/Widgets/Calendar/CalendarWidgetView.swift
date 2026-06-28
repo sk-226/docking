@@ -141,6 +141,16 @@ struct CalendarDockPresentation {
                 primary = "Calendar"
                 secondary = "Access off"
                 detailLines = ["Permission", "System Settings"]
+            case .permissionRestricted:
+                compactPrimary = "Off"
+                primary = "Calendar"
+                secondary = "Restricted"
+                detailLines = ["Permission", "Policy"]
+            case .permissionWriteOnly:
+                compactPrimary = "Off"
+                primary = "Calendar"
+                secondary = "Write-only"
+                detailLines = ["Permission", "Full access"]
             case .loading:
                 compactPrimary = "..."
                 primary = "Loading"

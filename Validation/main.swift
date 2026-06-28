@@ -865,7 +865,10 @@ func validateDisabledCalendarIgnoresStoreChanges() async throws {
 
 @MainActor
 func validateCalendarDeniedPublishesPermissionState() async throws {
-    let provider = DenyingCalendarProvider()
+    let provider = ThrowingCalendarProvider(
+        authorizationState: .denied,
+        error: CalendarProviderError.denied
+    )
     let viewModel = CalendarWidgetViewModel(provider: provider)
 
     await viewModel.refreshIfNeeded(settings: .default)
@@ -888,6 +891,63 @@ func validateCalendarDeniedPublishesPermissionState() async throws {
     await viewModel.refreshAvailableCalendars(settings: .default)
     try expect(provider.availableCalendarRequestCount == 1, "manual denied source refresh should make one provider attempt")
     try expect(viewModel.sourceState == .permissionDenied, "manual denied source refresh should keep source permissions explicit")
+}
+
+@MainActor
+func validateCalendarRestrictedPublishesPermissionState() async throws {
+    let provider = ThrowingCalendarProvider(
+        authorizationState: .restricted,
+        error: CalendarProviderError.restricted
+    )
+    let viewModel = CalendarWidgetViewModel(provider: provider)
+
+    await viewModel.refreshIfNeeded(settings: .default)
+
+    // System policy restrictions are not fetch errors. They need their own
+    // state so the dock tile, detail panel, and source picker can all explain
+    // why Calendar data is unavailable without implying that retrying will fix
+    // a managed/privacy-policy decision.
+    try expect(provider.upcomingEventRequestCount == 0, "restricted calendar launch refresh should not request events")
+    try expect(viewModel.state == .permissionRestricted, "restricted calendar authorization should publish a permission state")
+    try expect(viewModel.sourceState == .permissionRestricted, "restricted calendar authorization should disable source loading")
+    try expect(viewModel.compactText == ("Off", "Calendar"), "restricted calendar compact widget should not look empty")
+    try expect(viewModel.nextEventLine == "Calendar access is restricted", "restricted calendar header should explain the policy state")
+
+    await viewModel.refresh(settings: .default, reason: "validation-restricted")
+    try expect(provider.upcomingEventRequestCount == 1, "manual restricted calendar refresh should make one provider attempt")
+    try expect(viewModel.state == .permissionRestricted, "manual restricted calendar refresh should keep the permission state")
+
+    await viewModel.refreshAvailableCalendars(settings: .default)
+    try expect(provider.availableCalendarRequestCount == 1, "manual restricted source refresh should make one provider attempt")
+    try expect(viewModel.sourceState == .permissionRestricted, "manual restricted source refresh should keep source permissions explicit")
+}
+
+@MainActor
+func validateCalendarWriteOnlyPublishesPermissionState() async throws {
+    let provider = ThrowingCalendarProvider(
+        authorizationState: .writeOnly,
+        error: CalendarProviderError.writeOnly
+    )
+    let viewModel = CalendarWidgetViewModel(provider: provider)
+
+    await viewModel.refreshIfNeeded(settings: .default)
+
+    // Write-only Calendar access can happen on current macOS privacy APIs. A
+    // widget that reads events cannot use it, so keep it out of the generic
+    // error path and tell the user full access is required.
+    try expect(provider.upcomingEventRequestCount == 0, "write-only calendar launch refresh should not request events")
+    try expect(viewModel.state == .permissionWriteOnly, "write-only calendar authorization should publish a permission state")
+    try expect(viewModel.sourceState == .permissionWriteOnly, "write-only calendar authorization should disable source loading")
+    try expect(viewModel.compactText == ("Off", "Calendar"), "write-only calendar compact widget should not look empty")
+    try expect(viewModel.nextEventLine == "Calendar access is write-only", "write-only calendar header should explain full access is required")
+
+    await viewModel.refresh(settings: .default, reason: "validation-write-only")
+    try expect(provider.upcomingEventRequestCount == 1, "manual write-only calendar refresh should make one provider attempt")
+    try expect(viewModel.state == .permissionWriteOnly, "manual write-only calendar refresh should keep the permission state")
+
+    await viewModel.refreshAvailableCalendars(settings: .default)
+    try expect(provider.availableCalendarRequestCount == 1, "manual write-only source refresh should make one provider attempt")
+    try expect(viewModel.sourceState == .permissionWriteOnly, "manual write-only source refresh should keep source permissions explicit")
 }
 
 func validateAccentColorOptionsCoverDefault() throws {
@@ -1232,23 +1292,29 @@ private final class CountingCalendarProvider: CalendarProviding {
     }
 }
 
-private final class DenyingCalendarProvider: CalendarProviding {
-    let changeNotificationName = Notification.Name("DenyingCalendarProviderChanged")
+private final class ThrowingCalendarProvider: CalendarProviding {
+    let changeNotificationName = Notification.Name("ThrowingCalendarProviderChanged")
     var changeNotificationObject: Any? {
         nil
     }
-    let authorizationState: CalendarAuthorizationState = .denied
+    let authorizationState: CalendarAuthorizationState
+    let error: CalendarProviderError
     private(set) var upcomingEventRequestCount = 0
     private(set) var availableCalendarRequestCount = 0
 
+    init(authorizationState: CalendarAuthorizationState, error: CalendarProviderError) {
+        self.authorizationState = authorizationState
+        self.error = error
+    }
+
     func availableCalendars() async throws -> [CalendarSourceSummary] {
         availableCalendarRequestCount += 1
-        throw CalendarProviderError.denied
+        throw error
     }
 
     func upcomingEvents(lookaheadDays: Int, maxEvents: Int, selectedCalendarIDs: [String]) async throws -> [CalendarEventSummary] {
         upcomingEventRequestCount += 1
-        throw CalendarProviderError.denied
+        throw error
     }
 }
 
@@ -1388,6 +1454,8 @@ let asyncValidations: [(String, () async throws -> Void)] = [
     ("calendar launch does not request permission", { try await validateCalendarLaunchDoesNotRequestPermission() }),
     ("disabled calendar ignores store changes", { try await validateDisabledCalendarIgnoresStoreChanges() }),
     ("calendar denied permission state", { try await validateCalendarDeniedPublishesPermissionState() }),
+    ("calendar restricted permission state", { try await validateCalendarRestrictedPublishesPermissionState() }),
+    ("calendar write-only permission state", { try await validateCalendarWriteOnlyPublishesPermissionState() }),
     ("weather fresh cache avoids passive refresh", { try await validateWeatherFreshCacheDoesNotRefreshProvider() }),
     ("weather provider fallback", validateCompositeWeatherFallback),
     ("weather provider permission boundary", validateCompositeWeatherDoesNotHideLocationDenial),

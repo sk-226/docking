@@ -57,6 +57,18 @@ struct CalendarDetailPanelView: View {
                 title: "Calendar access is off",
                 message: "Enable Calendar access in System Settings to show events."
             )
+        case .permissionRestricted:
+            PermissionStateView(
+                systemImage: "lock.trianglebadge.exclamationmark",
+                title: "Calendar access is restricted",
+                message: "macOS policy is preventing readable Calendar access. Check Screen Time, device management, or Calendar privacy settings."
+            )
+        case .permissionWriteOnly:
+            PermissionStateView(
+                systemImage: "calendar.badge.exclamationmark",
+                title: "Calendar access is write-only",
+                message: "Docking needs full Calendar access to read upcoming events. Enable full access in System Settings."
+            )
         case .empty:
             PermissionStateView(
                 systemImage: "calendar",

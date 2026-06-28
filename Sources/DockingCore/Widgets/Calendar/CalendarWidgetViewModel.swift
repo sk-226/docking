@@ -5,6 +5,8 @@ enum CalendarWidgetState: Equatable {
     case loading
     case permissionNotDetermined
     case permissionDenied
+    case permissionRestricted
+    case permissionWriteOnly
     case empty
     case loaded
     case error(String)
@@ -15,6 +17,8 @@ enum CalendarSourceState: Equatable {
     case loading
     case loaded
     case permissionDenied
+    case permissionRestricted
+    case permissionWriteOnly
     case error(String)
 }
 
@@ -59,7 +63,7 @@ final class CalendarWidgetViewModel: ObservableObject {
             switch state {
             case .permissionNotDetermined:
                 return ("Access", "Calendar")
-            case .permissionDenied:
+            case .permissionDenied, .permissionRestricted, .permissionWriteOnly:
                 return ("Off", "Calendar")
             case .loading:
                 return ("...", "Events")
@@ -80,6 +84,10 @@ final class CalendarWidgetViewModel: ObservableObject {
                 return "Calendar access has not been granted yet"
             case .permissionDenied:
                 return "Calendar access is off"
+            case .permissionRestricted:
+                return "Calendar access is restricted"
+            case .permissionWriteOnly:
+                return "Calendar access is write-only"
             case .empty:
                 return "No upcoming events"
             case .loading:
@@ -162,6 +170,16 @@ final class CalendarWidgetViewModel: ObservableObject {
                     return
                 }
                 await MainActor.run { self.state = .permissionDenied }
+            } catch CalendarProviderError.restricted {
+                guard !Task.isCancelled else {
+                    return
+                }
+                await MainActor.run { self.state = .permissionRestricted }
+            } catch CalendarProviderError.writeOnly {
+                guard !Task.isCancelled else {
+                    return
+                }
+                await MainActor.run { self.state = .permissionWriteOnly }
             } catch {
                 guard !Task.isCancelled else {
                     return
@@ -223,6 +241,16 @@ final class CalendarWidgetViewModel: ObservableObject {
                     return
                 }
                 await MainActor.run { self.sourceState = .permissionDenied }
+            } catch CalendarProviderError.restricted {
+                guard !Task.isCancelled else {
+                    return
+                }
+                await MainActor.run { self.sourceState = .permissionRestricted }
+            } catch CalendarProviderError.writeOnly {
+                guard !Task.isCancelled else {
+                    return
+                }
+                await MainActor.run { self.sourceState = .permissionWriteOnly }
             } catch {
                 guard !Task.isCancelled else {
                     return
@@ -268,11 +296,16 @@ final class CalendarWidgetViewModel: ObservableObject {
             state = .permissionDenied
             sourceState = .permissionDenied
         case .restricted:
-            state = .error(CalendarProviderError.restricted.localizedDescription)
-            sourceState = .error(CalendarProviderError.restricted.localizedDescription)
+            // Restricted/write-only are permission outcomes, not provider
+            // failures. Treating them as `.error` made the widget look broken
+            // even though the user or system policy simply has not granted
+            // readable Calendar access. Dedicated states let every surface show
+            // actionable permission copy without retrying aggressively.
+            state = .permissionRestricted
+            sourceState = .permissionRestricted
         case .writeOnly:
-            state = .error(CalendarProviderError.writeOnly.localizedDescription)
-            sourceState = .error(CalendarProviderError.writeOnly.localizedDescription)
+            state = .permissionWriteOnly
+            sourceState = .permissionWriteOnly
         case .granted:
             break
         }

@@ -14,8 +14,10 @@ swift build -c release --product Docking --scratch-path /private/tmp/docking-app
 ./script/build_and_run.sh --verify
 /usr/libexec/PlistBuddy -c Print:CFBundleShortVersionString dist/Docking.app/Contents/Info.plist
 /usr/libexec/PlistBuddy -c Print:CFBundleVersion dist/Docking.app/Contents/Info.plist
+/usr/libexec/PlistBuddy -c Print:CFBundleIdentifier dist/Docking.app/Contents/Info.plist
 /usr/libexec/PlistBuddy -c Print:LSMinimumSystemVersion dist/Docking.app/Contents/Info.plist
 rg -n "#available|backward|compatib|decodeIfPresent|legacy|deprecated|requestAccess\\(to:" Sources Validation README.md PERFORMANCE.md Package.swift script
+rg -n "s[u]gu|/U[s]ers/|com\\.s[u]gu\\.docking" -g '!dist/**' -g '!.git/**' .
 ```
 
 The scratch paths intentionally use the lowercase `docking-app` internal name.
@@ -29,9 +31,13 @@ Expected results:
 - Release build succeeds without relying on DEBUG-only mock weather data.
 - `--verify` exits successfully and leaves a `Docking` process running.
 - Both bundle version values are `0.0.0`.
+- The bundle identifier is `app.docking.docking`.
 - The bundle minimum system version is `26.0`.
 - The source/docs search returns no matches. `QA.md` is intentionally excluded
   because it documents the search expression itself.
+- The user-specific identifier/path search returns no matches. It intentionally
+  excludes build output and `.git` so the check covers authored project files,
+  not previous binaries or history.
 
 ## Manual gates before GitHub cutover
 
@@ -40,7 +46,7 @@ Expected results:
 | First launch | Run `./script/build_and_run.sh --verify`, then open Control Center from the app menu and menu bar item. | Dock panel appears, menu bar item works, Control Center opens without crash. | Passed 2026-06-28 via `--verify` and Computer Use: Overview, app menu, and Control Center opened without crash. |
 | Calendar permission not requested while disabled | Turn Calendar widget off, reopen Control Center > Widgets. | No Calendar permission prompt appears. | Passed 2026-06-28 via Computer Use: disabling the Calendar widget kept the Widgets tab stable, disabled the Load button, showed `Enable the Calendar widget to choose calendars.`, and did not show a macOS permission prompt. Validation also covers disabled direct refresh/source load/store-change paths. |
 | Calendar permission granted | Turn Calendar widget on and grant Calendar access. | Detail panel shows grouped events or a clear empty state. | Not yet manually verified |
-| Calendar permission denied | Deny Calendar access in System Settings, then open the widget. | Detail panel shows a permission state and does not crash. | Partially covered 2026-06-28 by validation: denied authorization publishes `permissionDenied`, compact text becomes `Off` / `Calendar`, detail copy becomes `Calendar access is off`, source loading stays permission-denied, and direct denied refreshes do not crash. Live System Settings denial is still not yet manually verified. |
+| Calendar permission denied | Deny Calendar access in System Settings, then open the widget. | Detail panel shows a permission state and does not crash. | Partially covered 2026-06-29 by validation: denied authorization publishes `permissionDenied`, restricted publishes `permissionRestricted`, write-only publishes `permissionWriteOnly`, compact text becomes `Off` / `Calendar`, detail/source copy stays permission-specific, and direct refresh/source loading do not crash. Live System Settings denial is still not yet manually verified. |
 | Weather manual city | Disable current location, set a city such as `Tokyo`, open Weather. | Real weather loads or a provider/network error is shown with no mock values. | Passed 2026-06-28 via Computer Use: manual city `Tokyo` showed real weather for `Tokyo, Tokyo, Japan`, updated at 19:05, with temperature, condition, hourly/daily forecast, and humidity. Missing manual city with cached data now shows a stale-cache message instead of a contradictory bare city prompt. |
 | Weather location denial | Enable current location and deny Location Services. | Weather shows the location-denied state and does not silently fall back to fake data. | Partially covered 2026-06-28 by validation: current-location denial with no manual fallback publishes `locationDenied` and no fabricated snapshot; with cached weather it shows stale cached data; with a manual city it falls back to the configured city. Live Location Services denial is still not yet manually verified. |
 | App launcher and process actions | Add an `.app`, launch it from Docking, right-click it, use Show All Windows and Hide, use Quit, Option-open the menu for Force Quit, remove it, reset the list. | Icon loads once, app opens through `NSWorkspace`, running indicator updates, Show All Windows activates the app, Hide hides it, Quit requests graceful termination, Force Quit replaces Quit instead of appearing beside it, and Docking-specific actions live under the Docking submenu. | Passed 2026-06-28 via Computer Use and validation: previous Computer Use confirmed Open, Show All Windows, Hide, Quit, Finder reveal, removal, Force Quit confirmation, and disposable DockingProbe termination. Current validation covers normal `Quit` vs Option-modified `Force Quit...` as mutually exclusive menu titles, and live context-menu inspection showed `Open`, `Show All Windows`, `Hide`, `Quit`, `Options > Keep in Docking / Show in Finder`, and `Docking > Open Control Center`. |

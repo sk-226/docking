@@ -704,6 +704,14 @@ private struct CalendarSourcePicker: View {
                     Text("Calendar access is off. Enable it in System Settings to choose calendars.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                case .permissionRestricted:
+                    Text("Calendar access is restricted by macOS policy. Check Screen Time, device management, or Calendar privacy settings.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                case .permissionWriteOnly:
+                    Text("Calendar access is write-only. Docking needs full Calendar access to list calendars and show events.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 case .error(let message):
                     Text(message)
                         .font(.caption)
