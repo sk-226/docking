@@ -6,18 +6,10 @@ GitHub branch or pull request for a user-facing milestone.
 
 ## Automated gates
 
-Run these after each meaningful code change:
+Run this after each meaningful code change:
 
 ```bash
-swift run --scratch-path /private/tmp/docking-app-swiftpm-validation DockingValidation
-swift build -c release --product Docking --scratch-path /private/tmp/docking-app-swiftpm-release
-./script/build_and_run.sh --verify
-/usr/libexec/PlistBuddy -c Print:CFBundleShortVersionString dist/Docking.app/Contents/Info.plist
-/usr/libexec/PlistBuddy -c Print:CFBundleVersion dist/Docking.app/Contents/Info.plist
-/usr/libexec/PlistBuddy -c Print:CFBundleIdentifier dist/Docking.app/Contents/Info.plist
-/usr/libexec/PlistBuddy -c Print:LSMinimumSystemVersion dist/Docking.app/Contents/Info.plist
-rg -n "#available|backward|compatib|decodeIfPresent|legacy|deprecated|requestAccess\\(to:" Sources Validation README.md PERFORMANCE.md Package.swift script
-rg -n "s[u]gu|/U[s]ers/|com\\.s[u]gu\\.docking" -g '!dist/**' -g '!.git/**' .
+./script/release_check.sh
 ```
 
 The scratch paths intentionally use the lowercase `docking-app` internal name.
@@ -28,16 +20,21 @@ when earlier pre-rename builds used lowercase paths.
 Expected results:
 
 - `DockingValidation` prints `All Docking validation checks passed.`
-- Release build succeeds without relying on DEBUG-only mock weather data.
-- `--verify` exits successfully and leaves a `Docking` process running.
+- A release app bundle is staged at `dist/Docking.app`.
+- A local release-candidate zip is written to `dist/Docking-0.0.0-macos26.zip`.
 - Both bundle version values are `0.0.0`.
 - The bundle identifier is `app.docking.docking`.
 - The bundle minimum system version is `26.0`.
+- `codesign --verify --deep` accepts the staged app bundle.
 - The source/docs search returns no matches. `QA.md` is intentionally excluded
-  because it documents the search expression itself.
+  because this file documents the automated gate itself.
 - The user-specific identifier/path search returns no matches. It intentionally
   excludes build output and `.git` so the check covers authored project files,
   not previous binaries or history.
+
+`./script/build_and_run.sh --verify` remains the quick launch smoke test. The
+release gate packages without launching so an artifact inspection does not also
+change app windows, permissions, or local user defaults.
 
 ## Manual gates before GitHub cutover
 

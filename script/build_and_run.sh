@@ -6,6 +6,7 @@ APP_NAME="Docking"
 BUNDLE_ID="app.docking.docking"
 APP_VERSION="0.0.0"
 MIN_SYSTEM_VERSION="26.0"
+CONFIGURATION="${CONFIGURATION:-debug}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
@@ -14,7 +15,23 @@ APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
-SWIFTPM_SCRATCH_PATH="${SWIFTPM_SCRATCH_PATH:-/private/tmp/docking-app-swiftpm-run}"
+PACKAGE_ZIP="$DIST_DIR/$APP_NAME-$APP_VERSION-macos26.zip"
+
+case "$CONFIGURATION" in
+  debug)
+    DEFAULT_SCRATCH_PATH="/private/tmp/docking-app-swiftpm-run"
+    ;;
+  release)
+    DEFAULT_SCRATCH_PATH="/private/tmp/docking-app-swiftpm-release-run"
+    ;;
+  *)
+    echo "CONFIGURATION must be debug or release, got: $CONFIGURATION" >&2
+    exit 2
+    ;;
+esac
+
+SWIFTPM_SCRATCH_PATH="${SWIFTPM_SCRATCH_PATH:-$DEFAULT_SCRATCH_PATH}"
+SWIFTPM_CONFIGURATION_ARGS=(-c "$CONFIGURATION")
 
 detect_code_sign_identity() {
   if [[ -n "${DOCKING_CODE_SIGN_IDENTITY:-}" ]]; then
@@ -43,8 +60,13 @@ pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 # and Swift/Clang module caches can collide when two scratch paths differ only
 # by case. We do not delete this scratch path on every run because incremental
 # builds matter for an app that will be launched repeatedly during UI tuning.
-swift build --product "$APP_NAME" --scratch-path "$SWIFTPM_SCRATCH_PATH"
-BUILD_BINARY="$(swift build --scratch-path "$SWIFTPM_SCRATCH_PATH" --show-bin-path)/$APP_NAME"
+#
+# Release packaging intentionally reuses this staging path instead of maintaining
+# a second app-bundle builder. The trade-off is that this script has a small
+# configuration switch, but the important bundle metadata, permission strings,
+# signing identity, and LaunchServices behavior stay in exactly one place.
+swift build "${SWIFTPM_CONFIGURATION_ARGS[@]}" --product "$APP_NAME" --scratch-path "$SWIFTPM_SCRATCH_PATH"
+BUILD_BINARY="$(swift build "${SWIFTPM_CONFIGURATION_ARGS[@]}" --scratch-path "$SWIFTPM_SCRATCH_PATH" --show-bin-path)/$APP_NAME"
 
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS"
@@ -123,8 +145,17 @@ case "$MODE" in
     sleep 1
     pgrep -x "$APP_NAME" >/dev/null
     ;;
+  --package|package)
+    # Package mode deliberately stops after bundle staging, signing, and zipping.
+    # It is for local release-candidate review, where launching the app would
+    # blur the result by mutating permissions, windows, or user defaults while
+    # the artifact is being inspected.
+    rm -f "$PACKAGE_ZIP"
+    /usr/bin/ditto -c -k --keepParent "$APP_BUNDLE" "$PACKAGE_ZIP"
+    printf '%s\n' "$PACKAGE_ZIP"
+    ;;
   *)
-    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify]" >&2
+    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--package]" >&2
     exit 2
     ;;
 esac

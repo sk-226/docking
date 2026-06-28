@@ -91,10 +91,25 @@ Useful modes:
 ./script/build_and_run.sh --verify
 ./script/build_and_run.sh --logs
 ./script/build_and_run.sh --telemetry
+CONFIGURATION=release ./script/build_and_run.sh --package
 ```
 
 The Codex app Run action is wired to the same script through
 `.codex/environments/environment.toml`.
+
+## Release Candidate
+
+Run the local release gate before sharing a build:
+
+```bash
+./script/release_check.sh
+```
+
+It runs the validation executable, builds and stages a release `Docking.app`,
+checks bundle metadata and signature integrity, rejects user-specific authored
+paths/identifiers, and writes `dist/Docking-0.0.0-macos26.zip`. This is a local
+0.0.0 candidate gate; Developer ID signing, hardened runtime, notarization, and
+GitHub push remain separate explicit release steps.
 
 ## Permissions
 
