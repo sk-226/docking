@@ -121,6 +121,22 @@ func validateDockPositionFrames() throws {
 
         let trigger = ScreenPlacementService.edgeTriggerFrame(dockFrame: frame, position: position, on: screen)
         try expect(screen.frame.insetBy(dx: -0.5, dy: -0.5).contains(trigger), "\(position.label) auto-hide trigger should stay on the physical screen edge")
+
+        switch position {
+        case .bottomCenter, .bottomLeft, .bottomRight:
+            // The trigger must touch the physical screen edge, not merely fit
+            // inside visibleFrame. visibleFrame can be shifted by Apple's Dock,
+            // which is exactly what made Docking's auto-hide reveal feel dead
+            // when the standard Dock was still visible.
+            try expect(abs(trigger.minY - screen.frame.minY) < 0.5, "\(position.label) auto-hide trigger should touch the bottom screen edge")
+            try expect(trigger.height >= 4, "\(position.label) auto-hide trigger should have enough thickness to catch pointer entry")
+        case .left:
+            try expect(abs(trigger.minX - screen.frame.minX) < 0.5, "left auto-hide trigger should touch the left screen edge")
+            try expect(trigger.width >= 4, "left auto-hide trigger should have enough thickness to catch pointer entry")
+        case .right:
+            try expect(abs(trigger.maxX - screen.frame.maxX) < 0.5, "right auto-hide trigger should touch the right screen edge")
+            try expect(trigger.width >= 4, "right auto-hide trigger should have enough thickness to catch pointer entry")
+        }
     }
 }
 
