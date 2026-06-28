@@ -662,10 +662,10 @@ func validateWeatherCache() throws {
     try expect(cache.load() == snapshot, "weather cache should round-trip snapshots")
 }
 
-func validationWeatherSnapshot(locationName: String = "Fallback City") -> WeatherSnapshot {
+func validationWeatherSnapshot(locationName: String = "Fallback City", fetchedAt: Date = Date(timeIntervalSince1970: 1_000)) -> WeatherSnapshot {
     WeatherSnapshot(
         locationName: locationName,
-        fetchedAt: Date(timeIntervalSince1970: 1_000),
+        fetchedAt: fetchedAt,
         unit: .celsius,
         current: CurrentWeatherSummary(temperature: 20, feelsLike: 21, conditionCode: nil, conditionLabel: "Clear", symbolName: "sun.max"),
         hourly: [],
@@ -673,6 +673,41 @@ func validationWeatherSnapshot(locationName: String = "Fallback City") -> Weathe
         humidity: nil,
         airQualityLabel: nil
     )
+}
+
+@MainActor
+func validateWeatherFreshCacheDoesNotRefreshProvider() async throws {
+    let provider = CountingWeatherProvider()
+    let cacheURL = FileManager.default.temporaryDirectory.appendingPathComponent("WeatherFreshCacheValidation-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: cacheURL) }
+
+    let cache = WeatherCache(fileURL: cacheURL)
+    let cachedSnapshot = validationWeatherSnapshot(locationName: "Fresh Cache", fetchedAt: Date())
+    cache.save(cachedSnapshot)
+
+    let viewModel = WeatherWidgetViewModel(provider: provider, cache: cache)
+    var settings = DockingSettings.default
+    settings.weatherEnabled = true
+    settings.weatherUsesCurrentLocation = false
+    settings.weatherManualLocation = "Tokyo"
+    settings.weatherRefreshIntervalMinutes = DockingSettings.default.weatherRefreshIntervalMinutes
+
+    // Fresh cached weather is intentionally considered good enough for passive
+    // launch/panel refresh paths. This test protects the battery/network
+    // contract: opening the widget repeatedly must not create provider requests
+    // until the configured refresh interval has actually elapsed. Manual
+    // refresh still uses `force: true`, so this does not remove the user's
+    // explicit "update now" escape hatch.
+    await viewModel.refreshIfNeeded(settings: settings)
+    try expect(provider.requestCount == 0, "fresh weather cache should suppress passive provider refreshes")
+    try expect(viewModel.state == .loaded, "fresh weather cache should publish a loaded state")
+    try expect(viewModel.snapshot == cachedSnapshot, "fresh weather cache should keep the cached snapshot")
+
+    await viewModel.refresh(settings: settings, force: false)
+    try expect(provider.requestCount == 0, "non-forced weather refresh should also honor fresh cache")
+
+    await viewModel.refresh(settings: settings, force: true)
+    try expect(provider.requestCount == 1, "forced weather refresh should remain available for the manual refresh button")
 }
 
 func validateCompositeWeatherFallback() async throws {
@@ -1018,6 +1053,7 @@ let asyncValidations: [(String, () async throws -> Void)] = [
     ("explicit app reorder controls", { try await validateExplicitAppReorderControls() }),
     ("calendar launch does not request permission", { try await validateCalendarLaunchDoesNotRequestPermission() }),
     ("disabled calendar ignores store changes", { try await validateDisabledCalendarIgnoresStoreChanges() }),
+    ("weather fresh cache avoids passive refresh", { try await validateWeatherFreshCacheDoesNotRefreshProvider() }),
     ("weather provider fallback", validateCompositeWeatherFallback),
     ("weather provider permission boundary", validateCompositeWeatherDoesNotHideLocationDenial),
     ("weather manual location missing stays local", { try await validateWeatherManualLocationMissingStaysLocal() }),

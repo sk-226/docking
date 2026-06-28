@@ -38,7 +38,7 @@ Expected results:
 | Area | Steps | Pass condition | Status |
 | --- | --- | --- | --- |
 | First launch | Run `./script/build_and_run.sh --verify`, then open Control Center from the app menu and menu bar item. | Dock panel appears, menu bar item works, Control Center opens without crash. | Passed 2026-06-28 via `--verify` and Computer Use: Overview, app menu, and Control Center opened without crash. |
-| Calendar permission not requested while disabled | Turn Calendar widget off, reopen Control Center > Widgets. | No Calendar permission prompt appears. | Not yet manually verified |
+| Calendar permission not requested while disabled | Turn Calendar widget off, reopen Control Center > Widgets. | No Calendar permission prompt appears. | Passed 2026-06-28 via Computer Use: disabling the Calendar widget kept the Widgets tab stable, disabled the Load button, showed `Enable the Calendar widget to choose calendars.`, and did not show a macOS permission prompt. Validation also covers disabled direct refresh/source load/store-change paths. |
 | Calendar permission granted | Turn Calendar widget on and grant Calendar access. | Detail panel shows grouped events or a clear empty state. | Not yet manually verified |
 | Calendar permission denied | Deny Calendar access in System Settings, then open the widget. | Detail panel shows a permission state and does not crash. | Not yet manually verified |
 | Weather manual city | Disable current location, set a city such as `Tokyo`, open Weather. | Real weather loads or a provider/network error is shown with no mock values. | Passed 2026-06-28 via Computer Use: manual city `Tokyo` showed real weather for `Tokyo, Tokyo, Japan`, updated at 19:05, with temperature, condition, hourly/daily forecast, and humidity. Missing manual city with cached data now shows a stale-cache message instead of a contradictory bare city prompt. |
@@ -56,7 +56,7 @@ Expected results:
 | Sleep/wake | Put the Mac to sleep and wake it with Docking running. | Dock repositions, running app state refreshes, widgets remain responsive. | Not yet manually verified |
 | Restore safety | Open Control Center > Restore, inspect primary mode, match-original-layout, restore, disable, and reload controls. Do not confirm reload unless intentionally testing Apple Dock restart. | Primary mode explains snapshot/restore behavior; match-original-layout imports readable Apple Dock layout into Docking; reload shows a confirmation before `killall Dock`; restore/disable do not crash. | Partially passed 2026-06-28 via Computer Use: Restore displayed snapshot time, restore/manual instructions, reload button, and Quit. `killall Dock` confirmation/reload was not executed. |
 | Idle performance | Leave pointer away from the dock for several minutes in Activity Monitor. | CPU stays close to 0% and memory remains stable. | Not yet manually verified |
-| Network cadence | Open Weather once and observe logs/network. | Refreshes do not repeat every few seconds. | Not yet manually verified |
+| Network cadence | Open Weather once and observe logs/network. | Refreshes do not repeat every few seconds. | Partially covered 2026-06-28 by validation: fresh cached weather suppresses passive `refreshIfNeeded` and non-forced refresh provider calls, while forced manual refresh still works. Live log/network observation is still not yet manually verified. |
 
 ## Git/GitHub readiness
 
