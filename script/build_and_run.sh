@@ -16,6 +16,23 @@ APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 SWIFTPM_SCRATCH_PATH="${SWIFTPM_SCRATCH_PATH:-/private/tmp/docking-app-swiftpm-run}"
 
+detect_code_sign_identity() {
+  if [[ -n "${DOCKING_CODE_SIGN_IDENTITY:-}" ]]; then
+    printf '%s\n' "$DOCKING_CODE_SIGN_IDENTITY"
+    return
+  fi
+
+  # macOS privacy permissions are tied to code identity. Leaving the staged app
+  # as a bare SwiftPM executable makes the embedded adhoc identifier look like
+  # `Docking-<hash>`, so Calendar and Location can be prompted again after a
+  # rebuild. Prefer a real local Apple Development identity when one exists; it
+  # gives TCC a stable requirement while keeping the script usable on machines
+  # that only have adhoc signing available.
+  /usr/bin/security find-identity -v -p codesigning 2>/dev/null |
+    /usr/bin/sed -n 's/.*"\(Apple Development:.*\)"/\1/p' |
+    /usr/bin/head -n 1 || true
+}
+
 pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 
 # The run script is the path users hit most often from Codex and Finder. Keeping
@@ -66,6 +83,19 @@ cat >"$INFO_PLIST" <<PLIST
 </dict>
 </plist>
 PLIST
+
+CODE_SIGN_IDENTITY="$(detect_code_sign_identity)"
+if [[ -z "$CODE_SIGN_IDENTITY" ]]; then
+  CODE_SIGN_IDENTITY="-"
+fi
+
+# Sign the completed bundle, not only the executable. The Info.plist must be
+# sealed into the signature so LaunchServices, TCC, and Activity Monitor all see
+# `com.sugu.docking` as the app identity during repeated debug launches. We do
+# not use hardened runtime or entitlements here because this is a local 0.0.0
+# development build; adding distribution-era signing constraints would make the
+# debugging loop more fragile without improving these permission flows.
+/usr/bin/codesign --force --sign "$CODE_SIGN_IDENTITY" --timestamp=none "$APP_BUNDLE"
 
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"

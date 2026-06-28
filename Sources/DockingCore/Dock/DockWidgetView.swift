@@ -3,6 +3,8 @@ import SwiftUI
 struct DockWidgetShell<Content: View>: View {
     let title: String
     let systemImage: String
+    let iconStyle: DockWidgetIconStyle
+    let iconScale: Double
     let width: Double
     let height: Double
     let action: () -> Void
@@ -10,8 +12,31 @@ struct DockWidgetShell<Content: View>: View {
     @EnvironmentObject private var model: DockingAppModel
     @State private var isHovering = false
 
+    init(
+        title: String,
+        systemImage: String,
+        iconStyle: DockWidgetIconStyle = .neutral,
+        iconScale: Double = 1,
+        width: Double,
+        height: Double,
+        action: @escaping () -> Void,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.systemImage = systemImage
+        self.iconStyle = iconStyle
+        self.iconScale = iconScale
+        self.width = width
+        self.height = height
+        self.action = action
+        self.content = content()
+    }
+
     var body: some View {
         let metrics = DockWidgetMetrics(width: width, height: height)
+        let effectiveIconScale = metrics.usesHorizontalLayout ? iconScale : 1
+        let contentAlignment: HorizontalAlignment = metrics.usesHorizontalLayout ? .leading : .center
+        let contentFrameAlignment: Alignment = metrics.usesHorizontalLayout ? .leading : .center
 
         Button(action: action) {
             let layout = metrics.usesHorizontalLayout
@@ -20,12 +45,16 @@ struct DockWidgetShell<Content: View>: View {
 
             layout {
                 Image(systemName: systemImage)
-                    .font(.system(size: metrics.iconFontSize, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .frame(width: metrics.iconExtent, height: metrics.iconExtent)
+                    .symbolRenderingMode(iconStyle.renderingMode)
+                    .font(.system(size: metrics.iconFontSize * effectiveIconScale, weight: .medium))
+                    .modifier(DockWidgetIconForegroundModifier(style: iconStyle))
+                    .frame(
+                        width: metrics.iconExtent * effectiveIconScale,
+                        height: metrics.iconExtent * effectiveIconScale
+                    )
                     .accessibilityHidden(true)
 
-                VStack(spacing: metrics.textSpacing) {
+                VStack(alignment: contentAlignment, spacing: metrics.textSpacing) {
                     content
                 }
                 // Widget width can grow to two or three app-icon slots, but
@@ -33,7 +62,12 @@ struct DockWidgetShell<Content: View>: View {
                 // keeps the icon from competing with text; wide widgets switch
                 // to a horizontal layout so extra width becomes real
                 // information density instead of empty square area.
-                .frame(maxWidth: .infinity, minHeight: metrics.contentHeight, maxHeight: metrics.contentHeight, alignment: .leading)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: metrics.contentHeight,
+                    maxHeight: metrics.contentHeight,
+                    alignment: contentFrameAlignment
+                )
                 .clipped()
             }
             .padding(.horizontal, metrics.horizontalPadding)
@@ -57,6 +91,44 @@ struct DockWidgetShell<Content: View>: View {
         .dockTooltip(title)
         .accessibilityLabel(title)
         .accessibilityHint("Opens \(title) details")
+    }
+}
+
+struct DockWidgetIconStyle {
+    let renderingMode: SymbolRenderingMode
+    let foreground: DockWidgetIconForeground
+
+    static let neutral = DockWidgetIconStyle(
+        renderingMode: .monochrome,
+        foreground: .palette(.gray, .gray)
+    )
+
+    static let systemMulticolor = DockWidgetIconStyle(
+        renderingMode: .multicolor,
+        foreground: .system
+    )
+}
+
+enum DockWidgetIconForeground {
+    case system
+    case palette(Color, Color)
+}
+
+private struct DockWidgetIconForegroundModifier: ViewModifier {
+    let style: DockWidgetIconStyle
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        switch style.foreground {
+        case .system:
+            // Multicolor SF Symbols already carry Apple-designed semantic
+            // color. Applying our own foreground style would flatten that back
+            // into a custom palette, which is exactly what makes small weather
+            // icons feel less native.
+            content
+        case .palette(let primary, let secondary):
+            content.foregroundStyle(primary, secondary)
+        }
     }
 }
 

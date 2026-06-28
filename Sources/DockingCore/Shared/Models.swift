@@ -308,7 +308,13 @@ enum WidgetSizePreset: String, CaseIterable, Identifiable, Codable {
         case .standard:
             return max(88, iconSize * 1.9)
         case .detailed:
-            return max(126, iconSize * 2.75)
+            // Detailed widgets should earn their space with side-by-side
+            // context, not taller rows. The width is still calibrated from the
+            // current icon rhythm, but it deliberately leaves enough room for
+            // a weather icon, primary reading, and supporting context without
+            // shrinking text back into the unreadable state the wider preset
+            // is meant to solve.
+            return max(220, iconSize * 4.8)
         }
     }
 }

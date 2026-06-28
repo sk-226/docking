@@ -563,6 +563,7 @@ func validateDefaultSettingsFitEditableRanges() throws {
     try expect(settings.weatherWidgetSizePreset == .standard, "default weather widget size should map to a user-facing preset")
     try expect(WidgetSizePreset.detailed.width(iconSize: settings.iconSize) > WidgetSizePreset.standard.width(iconSize: settings.iconSize), "detailed widget preset should expose a wider dock tile")
     try expect(WidgetSizePreset.compact.width(iconSize: settings.iconSize) < WidgetSizePreset.standard.width(iconSize: settings.iconSize), "compact widget preset should remain narrower than standard")
+    try expect(WidgetSizePreset.detailed.width(iconSize: settings.iconSize) >= 180, "detailed widget preset should have enough horizontal room for side-by-side context")
     var detailedWidgets = settings
     detailedWidgets.calendarWidgetSizePreset = .detailed
     detailedWidgets.weatherWidgetSizePreset = .detailed
@@ -639,6 +640,60 @@ func validateWeatherDockLocationDisplay() throws {
         WeatherDockLocationDisplay.name(snapshotLocationName: "Setagaya City, Tokyo, Japan", settings: currentLocationSettings) == "Setagaya",
         "manual fallback weather should still use the user's concise city label when the snapshot matches it"
     )
+}
+
+func validateWeatherWidgetPresentation() throws {
+    try expect(
+        WeatherConditionTone.resolve(conditionCode: 61, symbolName: "cloud.rain") == .rain,
+        "rainy weather should use the rain visual tone"
+    )
+    try expect(
+        WeatherConditionTone.resolve(conditionCode: 0, symbolName: "sun.max") == .clear,
+        "clear weather should use the clear visual tone"
+    )
+    try expect(
+        WeatherConditionTone.resolve(conditionCode: nil, symbolName: "cloud.bolt.rain") == .storm,
+        "symbol-only storm snapshots should still get a distinct visual tone"
+    )
+    try expect(
+        WeatherWidgetSymbol.name(for: "cloud.rain") == "cloud.rain.fill",
+        "weather widgets should prefer filled system variants for small multicolor icons"
+    )
+
+    var settings = DockingSettings.default
+    settings.weatherUsesCurrentLocation = false
+    settings.weatherManualLocation = "Setagaya"
+    settings.weatherShowsHumidity = true
+
+    var snapshot = validationWeatherSnapshot(locationName: "Setagaya City, Tokyo, Japan")
+    snapshot.current = CurrentWeatherSummary(
+        temperature: 21,
+        feelsLike: 20,
+        conditionCode: 61,
+        conditionLabel: "Drizzle",
+        symbolName: "cloud.rain"
+    )
+    snapshot.humidity = 0.96
+    snapshot.daily = [
+        DailyWeatherSummary(
+            date: Date(timeIntervalSince1970: 1_000),
+            high: 26,
+            low: 20,
+            conditionCode: 61,
+            symbolName: "cloud.rain"
+        )
+    ]
+
+    let presentation = WeatherDockPresentation(snapshot: snapshot, state: .loaded, settings: settings)
+    try expect(presentation.primary.contains("21"), "weather widget should make temperature the primary label")
+    try expect(presentation.secondary == "Drizzle", "weather widget should keep the condition readable without parsing a combined label")
+    try expect(presentation.tertiary?.contains("Setagaya") == true, "detailed weather widget should keep the concise location as supporting context")
+    try expect(presentation.tertiary?.contains("H 26") == true, "detailed weather widget should include today's high temperature")
+    try expect(presentation.tertiary?.contains("L 20") == true, "detailed weather widget should include today's low temperature")
+    try expect(presentation.tertiary?.contains("Humidity 96%") == true, "detailed weather widget should use wider tiles for useful weather context")
+    try expect(presentation.detailLines.count == 3, "detailed weather widget should keep the dock side column to three readable lines")
+    try expect(presentation.tone == .rain, "weather widget should color the icon from the current weather semantics")
+    try expect(presentation.symbolName == "cloud.rain.fill", "weather widget should use the filled rain symbol for native dock legibility")
 }
 
 @MainActor
@@ -1276,6 +1331,7 @@ let validations: [(String, () throws -> Void)] = [
     ("dock widget metrics", validateDockWidgetMetrics),
     ("dock item termination menu policy", validateDockItemTerminationMenuPolicy),
     ("weather dock location display", validateWeatherDockLocationDisplay),
+    ("weather widget presentation", validateWeatherWidgetPresentation),
     ("accent color options", validateAccentColorOptionsCoverDefault),
     ("weather cache", validateWeatherCache),
     ("restore snapshot", validateRestoreSnapshot)

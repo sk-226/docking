@@ -7,7 +7,7 @@ struct WeatherDetailPanelView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(model.weatherViewModel.snapshot?.locationName ?? "Weather")
+                    Text(locationTitle)
                         .font(.title2.weight(.semibold))
                     Text(statusText)
                         .font(.subheadline)
@@ -37,8 +37,8 @@ struct WeatherDetailPanelView: View {
 
     private var statusText: String {
         switch model.weatherViewModel.state {
-        case .stale(let message):
-            return message
+        case .stale:
+            return compactStatus(prefix: "Cached") ?? "Cached"
         case .manualLocationNotSet:
             return "Choose a city in Control Center."
         case .locationPermissionNeeded:
@@ -46,11 +46,31 @@ struct WeatherDetailPanelView: View {
         case .loading:
             return "Updating..."
         default:
-            if let fetchedAt = model.weatherViewModel.snapshot?.fetchedAt {
-                return "Updated \(DockingFormatters.timeFormatter.string(from: fetchedAt))"
-            }
-            return "Not loaded"
+            return compactStatus(prefix: "Updated") ?? "Not loaded"
         }
+    }
+
+    private var locationTitle: String {
+        guard let snapshot = model.weatherViewModel.snapshot else {
+            return "Weather"
+        }
+
+        // The weather panel is still a widget surface, not a location picker.
+        // Showing the geocoder's full administrative label makes the header
+        // compete with the forecast itself, so use the same concise label as
+        // the dock tile and reserve the panel's space for weather information.
+        return WeatherDockLocationDisplay.name(
+            snapshotLocationName: snapshot.locationName,
+            settings: model.settings
+        )
+    }
+
+    private func compactStatus(prefix: String) -> String? {
+        guard let fetchedAt = model.weatherViewModel.snapshot?.fetchedAt else {
+            return prefix
+        }
+
+        return "\(prefix) · \(DockingFormatters.timeFormatter.string(from: fetchedAt))"
     }
 
     @ViewBuilder
@@ -107,8 +127,8 @@ private struct WeatherSnapshotContent: View {
                 Text(DockingFormatters.temperature(snapshot.current.temperature, unit: snapshot.unit))
                     .font(.system(size: 52, weight: .semibold, design: .rounded))
                 VStack(alignment: .leading, spacing: 4) {
-                    Image(systemName: snapshot.current.symbolName)
-                        .font(.title)
+                    WeatherWidgetSymbolImage(snapshot.current.symbolName, accessibilityLabel: snapshot.current.conditionLabel)
+                        .font(.system(size: 34, weight: .semibold))
                     Text(snapshot.current.conditionLabel)
                         .font(.headline)
                     if let feelsLike = snapshot.current.feelsLike {
@@ -126,7 +146,8 @@ private struct WeatherSnapshotContent: View {
                         Text(DockingFormatters.timeFormatter.string(from: hour.date))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
-                        Image(systemName: hour.symbolName)
+                        WeatherWidgetSymbolImage(hour.symbolName)
+                            .font(.system(size: 17, weight: .medium))
                         Text(DockingFormatters.temperature(hour.temperature, unit: snapshot.unit))
                             .font(.caption.weight(.semibold))
                     }
@@ -149,7 +170,8 @@ private struct WeatherSnapshotContent: View {
                         Text(DockingFormatters.weekdayFormatter.string(from: day.date))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
-                        Image(systemName: day.symbolName)
+                        WeatherWidgetSymbolImage(day.symbolName)
+                            .font(.system(size: 17, weight: .medium))
                         Text("\(Int(day.high.rounded()))/\(Int(day.low.rounded()))")
                             .font(.caption.weight(.semibold))
                     }
