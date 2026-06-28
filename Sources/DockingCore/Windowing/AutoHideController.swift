@@ -4,6 +4,9 @@ import Foundation
 @MainActor
 final class AutoHideController {
     private var edgePanels: [String: NSPanel] = [:]
+    private var edgePanelScreens: [String: NSScreen] = [:]
+    private var globalMouseMovedMonitor: Any?
+    private var localMouseMovedMonitor: Any?
     private var onEnter: ((NSScreen?) -> Void)?
 
     func update(settings: DockingSettings, dockFrame: NSRect, screen: NSScreen?, onEnter: @escaping (NSScreen?) -> Void) {
@@ -14,11 +17,14 @@ final class AutoHideController {
             return
         }
 
+        installMouseMovedMonitorsIfNeeded()
+
         let screens = Self.triggerScreens(for: settings, selectedScreen: screen, availableScreens: NSScreen.screens)
         let wantedKeys = Set(screens.map(screenKey))
         for (key, panel) in edgePanels where !wantedKeys.contains(key) {
             panel.close()
             edgePanels[key] = nil
+            edgePanelScreens[key] = nil
         }
 
         for triggerScreen in screens {
@@ -35,14 +41,17 @@ final class AutoHideController {
             panel.collectionBehavior = DockingWindowBehavior.collectionBehavior(for: settings)
             panel.orderFrontRegardless()
             edgePanels[key] = panel
+            edgePanelScreens[key] = triggerScreen
         }
     }
 
     func close() {
+        removeMouseMovedMonitors()
         for panel in edgePanels.values {
             panel.close()
         }
         edgePanels = [:]
+        edgePanelScreens = [:]
     }
 
     private func makeEdgePanel(for screen: NSScreen?) -> NSPanel {
@@ -55,6 +64,14 @@ final class AutoHideController {
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false
+        panel.ignoresMouseEvents = false
+        // The edge strip is a transparent, non-activating panel, and some
+        // pointer paths only deliver movement inside the strip rather than a
+        // clean entered/exited transition. Accepting moved events keeps reveal
+        // tied to real edge interaction without falling back to a timer polling
+        // loop, which would be worse for idle battery life in a resident dock
+        // app.
+        panel.acceptsMouseMovedEvents = true
         panel.level = .statusBar
         // Tiny edge trigger panels avoid timer-based mouse polling. Bottom
         // docks get one trigger per display so the Docking dock can appear on
@@ -80,6 +97,54 @@ final class AutoHideController {
             return availableScreens.isEmpty ? selectedScreen.map { [$0] } ?? [] : availableScreens
         }
         return selectedScreen.map { [$0] } ?? availableScreens.prefix(1).map { $0 }
+    }
+
+    private func installMouseMovedMonitorsIfNeeded() {
+        guard globalMouseMovedMonitor == nil, localMouseMovedMonitor == nil else {
+            return
+        }
+
+        // The transparent trigger panel is still the primary hit target, but
+        // WindowServer/AppKit can miss tracking-area transitions on some edge
+        // paths. A mouse-moved monitor gives us a second event-driven path
+        // without sampling the pointer on a timer. We keep the work
+        // intentionally tiny: only compare the current location against the
+        // existing edge-panel frames, then reveal on the matching display.
+        globalMouseMovedMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] _ in
+            let location = NSEvent.mouseLocation
+            Task { @MainActor in
+                self?.revealIfLocationIsInsideEdgeTrigger(location)
+            }
+        }
+        localMouseMovedMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved]) { [weak self] event in
+            let location = NSEvent.mouseLocation
+            Task { @MainActor in
+                self?.revealIfLocationIsInsideEdgeTrigger(location)
+            }
+            return event
+        }
+    }
+
+    private func removeMouseMovedMonitors() {
+        if let globalMouseMovedMonitor {
+            NSEvent.removeMonitor(globalMouseMovedMonitor)
+        }
+        if let localMouseMovedMonitor {
+            NSEvent.removeMonitor(localMouseMovedMonitor)
+        }
+        globalMouseMovedMonitor = nil
+        localMouseMovedMonitor = nil
+    }
+
+    private func revealIfLocationIsInsideEdgeTrigger(_ location: NSPoint) {
+        for (key, panel) in edgePanels {
+            guard panel.frame.insetBy(dx: -2, dy: -2).contains(location) else {
+                continue
+            }
+
+            onEnter?(edgePanelScreens[key])
+            return
+        }
     }
 
     private func screenKey(_ screen: NSScreen?) -> String {
@@ -113,7 +178,7 @@ private final class EdgeTriggerView: NSView {
         addTrackingArea(
             NSTrackingArea(
                 rect: bounds,
-                options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
                 owner: self,
                 userInfo: nil
             )
@@ -121,6 +186,15 @@ private final class EdgeTriggerView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
+        onEnter()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        // Do not debounce this with an "inside" flag. The trigger panel is only
+        // eight points tall and receives events only while the pointer is on the
+        // physical edge; repeating a cheap `orderFront` during edge movement is
+        // less fragile than remembering stale inside/outside state across
+        // hidden-panel cycles and display changes.
         onEnter()
     }
 }
