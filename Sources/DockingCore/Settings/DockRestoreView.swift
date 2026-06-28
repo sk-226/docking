@@ -76,6 +76,19 @@ struct DockRestoreView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Emergency Manual Restore")
+                        .font(.headline)
+                    Text(model.manualRestoreInstructions)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(24)
             .frame(maxWidth: 700, alignment: .topLeading)

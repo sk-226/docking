@@ -614,6 +614,7 @@ func validateRestoreSnapshot() throws {
     let emptyRestoreService = DockSettingsRestoreService(snapshotService: emptySnapshotService, dockDefaults: defaults)
     let emptyResult = try emptyRestoreService.restoreIfSnapshotExists()
     try expect(emptyResult.userMessage.contains("No Dock restore snapshot exists"), "restore without a snapshot should explain that nothing changed")
+    try expect(emptyRestoreService.manualRestoreInstructions().text.contains("No saved Apple Dock snapshot exists"), "manual restore without snapshot should explain that there is nothing to replay")
     try expect(defaults.object(forKey: "autohide") as? Bool == false, "restore without a snapshot should not modify bool preferences")
     try expect(defaults.object(forKey: "tilesize") as? Double == 36.0, "restore without a snapshot should not modify numeric preferences")
     try expect(defaults.object(forKey: "orientation") as? String == "left", "restore without a snapshot should not modify string preferences")
@@ -641,6 +642,12 @@ func validateRestoreSnapshot() throws {
     try expect(current.values["orientation"] == .string("left"), "current Dock snapshot should read string preferences")
 
     try snapshotService.saveSnapshot(snapshot)
+    let manualInstructions = DockSettingsRestoreService(snapshotService: snapshotService, dockDefaults: defaults).manualRestoreInstructions().text
+    try expect(manualInstructions.contains("defaults write com.apple.dock autohide -bool true"), "manual restore should include saved boolean Dock preferences")
+    try expect(manualInstructions.contains("defaults write com.apple.dock tilesize -float 42.0"), "manual restore should include saved numeric Dock preferences")
+    try expect(manualInstructions.contains("defaults write com.apple.dock orientation -string 'bottom'"), "manual restore should include saved string Dock preferences")
+    try expect(manualInstructions.contains("killall Dock"), "manual restore should leave Apple Dock reload as an explicit user action")
+
     defaults.set(false, forKey: "autohide")
     defaults.set(20.0, forKey: "tilesize")
     defaults.set("left", forKey: "orientation")

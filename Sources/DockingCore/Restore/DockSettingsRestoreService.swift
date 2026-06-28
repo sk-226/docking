@@ -14,6 +14,10 @@ struct DockRestoreStatus: Equatable {
     }
 }
 
+struct DockManualRestoreInstructions: Equatable {
+    var text: String
+}
+
 final class DockSettingsRestoreService {
     private let snapshotService: DockSettingsSnapshotService
     private let dockDefaults: UserDefaults?
@@ -35,6 +39,29 @@ final class DockSettingsRestoreService {
             snapshotCreatedAt: snapshot.createdAt,
             snapshotAppVersion: snapshot.appVersion,
             savedPreferenceCount: snapshot.values.count
+        )
+    }
+
+    func manualRestoreInstructions() -> DockManualRestoreInstructions {
+        guard let snapshot = try? snapshotService.loadSnapshot() else {
+            return DockManualRestoreInstructions(
+                text: "No saved Apple Dock snapshot exists. Docking is overlay-only unless you explicitly enabled primary dock mode."
+            )
+        }
+
+        let commands = snapshot.values
+            .sorted { $0.key < $1.key }
+            .map { key, value in
+                Self.defaultsCommand(key: key, value: value)
+            }
+            .joined(separator: "\n")
+
+        return DockManualRestoreInstructions(
+            text: """
+            If the Restore button fails or Docking has already been removed, these Terminal commands write the saved Apple Dock snapshot back:
+            \(commands)
+            killall Dock
+            """
         )
     }
 
@@ -116,5 +143,25 @@ final class DockSettingsRestoreService {
         return DockRestoreResult(
             userMessage: "Apple Dock was reloaded so macOS can apply the saved Dock preference changes."
         )
+    }
+
+    private static func defaultsCommand(key: String, value: DockPreferenceValue) -> String {
+        switch value {
+        case .bool(let bool):
+            return "defaults write com.apple.dock \(key) -bool \(bool ? "true" : "false")"
+        case .double(let double):
+            return "defaults write com.apple.dock \(key) -float \(double)"
+        case .string(let string):
+            return "defaults write com.apple.dock \(key) -string \(shellSingleQuoted(string))"
+        }
+    }
+
+    private static func shellSingleQuoted(_ value: String) -> String {
+        // The restore keys we snapshot are expected to have simple values like
+        // "bottom" or "left", but this text can become a Terminal command. A
+        // correct single-quote escape costs almost nothing and prevents a future
+        // preference value from turning emergency instructions into malformed
+        // shell syntax.
+        "'\(value.replacingOccurrences(of: "'", with: "'\"'\"'"))'"
     }
 }

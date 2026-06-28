@@ -34,6 +34,7 @@ public final class DockingAppModel: ObservableObject {
     @Published var launchAtLoginStatusMessage: String = "Launch at login uses macOS Login Items when enabled."
     @Published var appleDockVisibilityStatusMessage: String = AppleDockPreferences.visibilityStatusText()
     @Published var controlCenterSelection: ControlCenterSection = .overview
+    @Published var manualRestoreInstructions: String = "No saved Apple Dock snapshot exists. Docking is overlay-only unless you explicitly enabled primary dock mode."
 
     let calendarViewModel: CalendarWidgetViewModel
     let weatherViewModel: WeatherWidgetViewModel
@@ -522,6 +523,7 @@ public final class DockingAppModel: ObservableObject {
 
     private func syncRestoreStatus() {
         dockRestoreStatus = restoreService.restoreStatus()
+        manualRestoreInstructions = restoreService.manualRestoreInstructions().text
     }
 
     private func defaultRestoreStatusMessage() -> String {
