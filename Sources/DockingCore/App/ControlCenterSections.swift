@@ -152,7 +152,7 @@ struct GeneralControlCenterSection: View {
                 }
             }
             .padding()
-            .frame(maxWidth: 680, alignment: .topLeading)
+            .frame(maxWidth: 560, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -317,7 +317,7 @@ struct AppearanceControlCenterSection: View {
                 Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 12) {
                     GridRow {
                         Text("Dock scale")
-                            .frame(width: 120, alignment: .leading)
+                            .frame(width: AppearanceLayout.labelWidth, alignment: .leading)
                         Picker("Dock scale", selection: dockScale) {
                             ForEach(DockScalePreset.allCases) { preset in
                                 Text(preset.label).tag(preset)
@@ -325,12 +325,12 @@ struct AppearanceControlCenterSection: View {
                         }
                         .labelsHidden()
                         .pickerStyle(.segmented)
-                        .frame(width: 280)
+                        .frame(width: AppearanceLayout.segmentedControlWidth)
                     }
 
                     GridRow {
                         Text("Calendar widget")
-                            .frame(width: 120, alignment: .leading)
+                            .frame(width: AppearanceLayout.labelWidth, alignment: .leading)
                         Picker("Calendar widget size", selection: $model.settings.calendarWidgetSizePreset) {
                             ForEach(WidgetSizePreset.allCases) { preset in
                                 Text(preset.label).tag(preset)
@@ -338,12 +338,12 @@ struct AppearanceControlCenterSection: View {
                         }
                         .labelsHidden()
                         .pickerStyle(.segmented)
-                        .frame(width: 280)
+                        .frame(width: AppearanceLayout.segmentedControlWidth)
                     }
 
                     GridRow {
                         Text("Weather widget")
-                            .frame(width: 120, alignment: .leading)
+                            .frame(width: AppearanceLayout.labelWidth, alignment: .leading)
                         Picker("Weather widget size", selection: $model.settings.weatherWidgetSizePreset) {
                             ForEach(WidgetSizePreset.allCases) { preset in
                                 Text(preset.label).tag(preset)
@@ -351,14 +351,14 @@ struct AppearanceControlCenterSection: View {
                         }
                         .labelsHidden()
                         .pickerStyle(.segmented)
-                        .frame(width: 280)
+                        .frame(width: AppearanceLayout.segmentedControlWidth)
                     }
                 }
 
                 Divider()
 
                 ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: 20) {
+                    HStack(alignment: .top, spacing: 14) {
                         surfaceControls
                         LiquidGlassPreview(settings: model.settings)
                     }
@@ -394,7 +394,7 @@ struct AppearanceControlCenterSection: View {
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 12) {
                 GridRow {
                     Text("Liquid Glass")
-                        .frame(width: 120, alignment: .leading)
+                        .frame(width: AppearanceLayout.labelWidth, alignment: .leading)
                     Picker("Liquid Glass", selection: $model.settings.liquidGlassSurfaceStyle) {
                         ForEach(LiquidGlassSurfaceStyle.allCases) { style in
                             Text(style.label).tag(style)
@@ -402,12 +402,12 @@ struct AppearanceControlCenterSection: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
-                    .frame(width: 280)
+                    .frame(width: AppearanceLayout.segmentedControlWidth)
                 }
 
                 GridRow {
                     Text("Theme")
-                        .frame(width: 120, alignment: .leading)
+                        .frame(width: AppearanceLayout.labelWidth, alignment: .leading)
                     Picker("Theme", selection: $model.settings.theme) {
                         ForEach(ThemeMode.allCases) { mode in
                             Text(mode.rawValue.capitalized).tag(mode)
@@ -419,7 +419,7 @@ struct AppearanceControlCenterSection: View {
 
                 GridRow {
                     Text("Accent color")
-                        .frame(width: 120, alignment: .leading)
+                        .frame(width: AppearanceLayout.labelWidth, alignment: .leading)
                     Picker("Accent color", selection: $model.settings.accentColorName) {
                         ForEach(DockingAccentColor.allCases) { accent in
                             HStack {
@@ -439,11 +439,25 @@ struct AppearanceControlCenterSection: View {
     }
 }
 
+private enum AppearanceLayout {
+    // These widths intentionally stay below the old 280px controls. The Control
+    // Center should keep its compact, Settings-like window size; widening the
+    // whole window just to make the Appearance preview fit made core chrome
+    // such as the sidebar toggle feel unstable. The labels remain wide enough
+    // for the current English copy, while the preview gets a permanent right
+    // column at the user's normal window size.
+    static let labelWidth: CGFloat = 104
+    static let segmentedControlWidth: CGFloat = 230
+    static let previewWidth: CGFloat = 232
+    static let previewHeight: CGFloat = 126
+    static let previewScale: CGFloat = 0.36
+}
+
 private struct LiquidGlassPreview: View {
     let settings: DockingSettings
 
     var body: some View {
-        let previewScale = 0.45
+        let previewScale = AppearanceLayout.previewScale
         ZStack {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(
@@ -486,7 +500,7 @@ private struct LiquidGlassPreview: View {
             .dockingSurface(settings: settings)
             .padding(16)
         }
-        .frame(width: 260, height: 138)
+        .frame(width: AppearanceLayout.previewWidth, height: AppearanceLayout.previewHeight)
         .preferredColorScheme(settings.theme.colorScheme)
         .tint(settings.accentColor)
         .accessibilityLabel("Liquid Glass preview")
