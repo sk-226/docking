@@ -611,6 +611,30 @@ func validateDockItemTerminationMenuPolicy() throws {
     )
 }
 
+func validateWeatherDockLocationDisplay() throws {
+    var manualSettings = DockingSettings.default
+    manualSettings.weatherUsesCurrentLocation = false
+    manualSettings.weatherManualLocation = "Setagaya"
+    try expect(
+        WeatherDockLocationDisplay.name(snapshotLocationName: "Setagaya City, Tokyo, Japan", settings: manualSettings) == "Setagaya",
+        "manual weather city should be shown as the user's concise dock label"
+    )
+
+    var currentLocationSettings = DockingSettings.default
+    currentLocationSettings.weatherUsesCurrentLocation = true
+    currentLocationSettings.weatherManualLocation = "Tokyo"
+    try expect(
+        WeatherDockLocationDisplay.name(snapshotLocationName: "Setagaya City, Tokyo, Japan", settings: currentLocationSettings) == "Setagaya",
+        "current-location weather should compact the loaded location instead of using an unrelated manual fallback label"
+    )
+
+    currentLocationSettings.weatherManualLocation = "Setagaya"
+    try expect(
+        WeatherDockLocationDisplay.name(snapshotLocationName: "Setagaya City, Tokyo, Japan", settings: currentLocationSettings) == "Setagaya",
+        "manual fallback weather should still use the user's concise city label when the snapshot matches it"
+    )
+}
+
 @MainActor
 func validateSettingsPersistenceIsDebounced() async throws {
     let suiteName = "docking.validation.debounce.\(UUID().uuidString)"
@@ -1245,6 +1269,7 @@ let validations: [(String, () throws -> Void)] = [
     ("default settings fit editable ranges", validateDefaultSettingsFitEditableRanges),
     ("dock widget metrics", validateDockWidgetMetrics),
     ("dock item termination menu policy", validateDockItemTerminationMenuPolicy),
+    ("weather dock location display", validateWeatherDockLocationDisplay),
     ("accent color options", validateAccentColorOptionsCoverDefault),
     ("weather cache", validateWeatherCache),
     ("restore snapshot", validateRestoreSnapshot)

@@ -66,16 +66,66 @@ private struct WeatherDetailedDockContent: View {
 
         let temperature = DockingFormatters.temperature(snapshot.current.temperature, unit: snapshot.unit)
         let secondary = "\(temperature) \(snapshot.current.conditionLabel)"
+        let location = WeatherDockLocationDisplay.name(snapshotLocationName: snapshot.locationName, settings: settings)
         if settings.weatherShowsHumidity, let humidity = snapshot.humidity {
             let percent = Int((humidity > 1 ? humidity : humidity * 100).rounded())
-            return (snapshot.locationName, secondary, "Humidity \(percent)%")
+            return (location, secondary, "Humidity \(percent)%")
         }
         if let feelsLike = snapshot.current.feelsLike {
-            return (snapshot.locationName, secondary, "Feels \(DockingFormatters.temperature(feelsLike, unit: snapshot.unit))")
+            return (location, secondary, "Feels \(DockingFormatters.temperature(feelsLike, unit: snapshot.unit))")
         }
         // Location is the key extra context for a larger dock weather tile.
         // If optional metrics are unavailable, keep the third line off instead
         // of inventing placeholder data that would make the dock look stale.
-        return (snapshot.locationName, secondary, nil)
+        return (location, secondary, nil)
+    }
+}
+
+enum WeatherDockLocationDisplay {
+    static func name(snapshotLocationName: String, settings: DockingSettings) -> String {
+        if let manualLocation = settings.weatherManualLocation.nilIfBlank,
+           shouldPreferManualLocation(manualLocation, snapshotLocationName: snapshotLocationName, settings: settings) {
+            return compactName(manualLocation)
+        }
+
+        return compactName(snapshotLocationName)
+    }
+
+    private static func shouldPreferManualLocation(
+        _ manualLocation: String,
+        snapshotLocationName: String,
+        settings: DockingSettings
+    ) -> Bool {
+        // The dock tile is glanceable UI. When the user typed "Setagaya", the
+        // expanded geocoder result is not more useful in the dock; it is mostly
+        // a confirmation of information the user already supplied. Current-
+        // location weather is different, because a manual city may only be a
+        // fallback. In that case we use the manual label only when the loaded
+        // snapshot clearly appears to be that fallback location.
+        if !settings.weatherUsesCurrentLocation {
+            return true
+        }
+
+        let loadedLocation = compactName(snapshotLocationName)
+        let requestedLocation = compactName(manualLocation)
+        return loadedLocation.range(of: requestedLocation, options: [.caseInsensitive, .diacriticInsensitive]) != nil ||
+            requestedLocation.range(of: loadedLocation, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+    }
+
+    private static func compactName(_ rawName: String) -> String {
+        let firstComponent = rawName
+            .split(separator: ",", maxSplits: 1)
+            .first
+            .map(String.init) ?? rawName
+        var name = firstComponent.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        for suffix in [" City", " city", " Ward", " ward"] {
+            if name.hasSuffix(suffix) {
+                name.removeLast(suffix.count)
+                return name.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+
+        return name
     }
 }
