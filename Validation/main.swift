@@ -793,13 +793,22 @@ func validateRestoreSnapshot() throws {
     try expect(manualInstructions.contains("defaults write com.apple.dock orientation -string 'bottom'"), "manual restore should include saved string Dock preferences")
     try expect(manualInstructions.contains("killall Dock"), "manual restore should leave Apple Dock reload as an explicit user action")
 
+    do {
+        _ = try DockSettingsRestoreService(snapshotService: snapshotService, dockDefaults: nil).restoreIfSnapshotExists()
+        throw ValidationFailure(description: "restore should not report success when the Dock defaults domain is unavailable")
+    } catch DockSettingsRestoreError.dockDefaultsUnavailable {
+        // Expected: a restore button that cannot reach Apple's Dock defaults is
+        // materially different from a successful write. The UI can still show
+        // manual commands, but the automatic path must not claim it worked.
+    }
+
     defaults.set(false, forKey: "autohide")
     defaults.set(20.0, forKey: "tilesize")
     defaults.set("left", forKey: "orientation")
 
     let restoreService = DockSettingsRestoreService(snapshotService: snapshotService, dockDefaults: defaults)
     let result = try restoreService.restoreIfSnapshotExists()
-    try expect(result.userMessage.contains("Saved Dock settings"), "restore should report that a snapshot was written back")
+    try expect(result.userMessage.contains("written back and verified"), "restore should report that a snapshot was written back and verified")
     try expect(defaults.object(forKey: "autohide") as? Bool == true, "restore should write bool preferences")
     try expect(defaults.object(forKey: "tilesize") as? Double == 42.0, "restore should write numeric preferences")
     try expect(defaults.object(forKey: "orientation") as? String == "bottom", "restore should write string preferences")

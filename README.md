@@ -123,7 +123,10 @@ current Apple Dock preferences, mirrors the readable original Dock layout and
 pinned apps into Docking, then changes Apple Dock to strong auto-hide settings.
 Use **Match Original Apple Dock Layout** if primary mode was already enabled and
 you want to re-import the saved layout. Use **Restore Original macOS Dock
-Settings** or **Disable Primary Mode** to write the saved settings back.
+Settings** or **Disable Primary Mode** to write the saved settings back. The
+automatic restore path verifies the readable Dock preference values after
+writing them; if verification fails, the Restore section keeps the manual
+Terminal commands visible.
 
 The Restore section also includes **Reload Apple Dock to Apply**. That button is
 separate because it runs `killall Dock`; Docking only does this after the user

@@ -18,6 +18,20 @@ struct DockManualRestoreInstructions: Equatable {
     var text: String
 }
 
+enum DockSettingsRestoreError: LocalizedError {
+    case dockDefaultsUnavailable
+    case restoreVerificationFailed([String])
+
+    var errorDescription: String? {
+        switch self {
+        case .dockDefaultsUnavailable:
+            return "Docking could not access the Apple Dock preferences domain. Use the manual restore instructions shown below."
+        case .restoreVerificationFailed(let keys):
+            return "Docking wrote the saved Dock settings, but macOS did not report the expected values for: \(keys.joined(separator: ", ")). Use the manual restore instructions shown below."
+        }
+    }
+}
+
 final class DockSettingsRestoreService {
     private let snapshotService: DockSettingsSnapshotService
     private let dockDefaults: UserDefaults?
@@ -70,6 +84,10 @@ final class DockSettingsRestoreService {
     }
 
     func enableReplacementMode() throws -> DockRestoreResult {
+        guard let dockDefaults else {
+            throw DockSettingsRestoreError.dockDefaultsUnavailable
+        }
+
         // Replacement mode is intentionally conservative: it makes Apple's Dock
         // step out of the way, but it does not delete Dock contents, rewrite app
         // tiles, or touch system files. The original preference snapshot is
@@ -85,10 +103,10 @@ final class DockSettingsRestoreService {
         // macOS behavior. We deliberately do not mutate persistent-app arrays
         // or any Dock database-like state because those changes are harder for
         // users to audit and unnecessary for a personal overlay dock.
-        dockDefaults?.set(true, forKey: "autohide")
-        dockDefaults?.set(1000.0, forKey: "autohide-delay")
-        dockDefaults?.set(0.0, forKey: "autohide-time-modifier")
-        dockDefaults?.synchronize()
+        dockDefaults.set(true, forKey: "autohide")
+        dockDefaults.set(1000.0, forKey: "autohide-delay")
+        dockDefaults.set(0.0, forKey: "autohide-time-modifier")
+        dockDefaults.synchronize()
 
         return DockRestoreResult(
             userMessage: "Docking primary dock mode is enabled. Your original Apple Dock settings were saved. Reload Apple Dock or log out/in if macOS has not applied the auto-hide changes yet."
@@ -101,6 +119,9 @@ final class DockSettingsRestoreService {
                 userMessage: "No Dock restore snapshot exists. Docking 0.0.0 has not changed Apple Dock settings."
             )
         }
+        guard let dockDefaults else {
+            throw DockSettingsRestoreError.dockDefaultsUnavailable
+        }
 
         // The defaults store is injected so validation can prove restore
         // semantics against a temporary suite. The production default remains
@@ -108,21 +129,32 @@ final class DockSettingsRestoreService {
         for (key, value) in snapshot.values {
             switch value {
             case .bool(let bool):
-                dockDefaults?.set(bool, forKey: key)
+                dockDefaults.set(bool, forKey: key)
             case .double(let double):
-                dockDefaults?.set(double, forKey: key)
+                dockDefaults.set(double, forKey: key)
             case .string(let string):
-                dockDefaults?.set(string, forKey: key)
+                dockDefaults.set(string, forKey: key)
             }
         }
-        dockDefaults?.synchronize()
+        dockDefaults.synchronize()
+
+        let mismatchedKeys = snapshot.values
+            .filter { key, expectedValue in
+                !Self.preferenceValue(expectedValue, matches: dockDefaults.object(forKey: key))
+            }
+            .map(\.key)
+            .sorted()
+
+        guard mismatchedKeys.isEmpty else {
+            throw DockSettingsRestoreError.restoreVerificationFailed(mismatchedKeys)
+        }
 
         // We deliberately do not run `killall Dock` here. Restarting Apple's
         // Dock is visible and disruptive, and the goal file forbids doing it
         // without explicit confirmation. Writing the saved values plus telling
         // the user how to reload keeps restoration reversible and transparent.
         return DockRestoreResult(
-            userMessage: "Saved Dock settings from \(snapshot.createdAt) were written back. Log out/in or restart Dock manually if macOS has not reloaded them."
+            userMessage: "Saved Dock settings from \(snapshot.createdAt) were written back and verified. Log out/in or restart Dock manually if macOS has not reloaded them."
         )
     }
 
@@ -157,6 +189,38 @@ final class DockSettingsRestoreService {
             return "defaults write com.apple.dock \(key) -float \(double)"
         case .string(let string):
             return "defaults write com.apple.dock \(key) -string \(shellSingleQuoted(string))"
+        }
+    }
+
+    private static func preferenceValue(_ expected: DockPreferenceValue, matches rawValue: Any?) -> Bool {
+        // UserDefaults values from the Dock domain often bridge through
+        // NSNumber even when the logical preference is a Bool or a numeric
+        // scalar. Verification should confirm the saved semantic value, not the
+        // exact Swift runtime wrapper used by defaults. String preferences stay
+        // strict because treating a non-string as a shell-restorable string
+        // would make the emergency instructions misleading.
+        switch expected {
+        case .bool(let expectedBool):
+            if let bool = rawValue as? Bool {
+                return bool == expectedBool
+            }
+            if let number = rawValue as? NSNumber {
+                return number.boolValue == expectedBool
+            }
+            return false
+        case .double(let expectedDouble):
+            if let double = rawValue as? Double {
+                return abs(double - expectedDouble) < 0.000_001
+            }
+            if let int = rawValue as? Int {
+                return abs(Double(int) - expectedDouble) < 0.000_001
+            }
+            if let number = rawValue as? NSNumber {
+                return abs(number.doubleValue - expectedDouble) < 0.000_001
+            }
+            return false
+        case .string(let expectedString):
+            return rawValue as? String == expectedString
         }
     }
 

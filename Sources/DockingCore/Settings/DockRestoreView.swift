@@ -62,7 +62,7 @@ struct DockRestoreView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Restore and Uninstall Safety")
                         .font(.headline)
-                    Text("Docking saves Apple Dock preferences before primary mode changes them. Restore writes those saved values back. Docking never modifies system files.")
+                    Text("Docking saves Apple Dock preferences before primary mode changes them. Restore writes those saved values back and verifies readable preferences after writing. Docking never modifies system files.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
