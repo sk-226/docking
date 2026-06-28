@@ -2,8 +2,8 @@
 
 `Docking` is a native macOS overlay dock built with SwiftUI and a narrow AppKit
 windowing layer. It is a personal Dock-style app inspired by the product goals in
-`/Users/sugu/Downloads/docking.md`, but it does not copy Dockspace code, assets,
-icons, text, or layout.
+the attached goal document, but it does not copy Dockspace code, assets, icons,
+text, or layout.
 
 ## Current 0.0.0 App
 

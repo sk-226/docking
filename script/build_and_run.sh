@@ -3,7 +3,7 @@ set -euo pipefail
 
 MODE="${1:-run}"
 APP_NAME="Docking"
-BUNDLE_ID="com.sugu.docking"
+BUNDLE_ID="app.docking.docking"
 APP_VERSION="0.0.0"
 MIN_SYSTEM_VERSION="26.0"
 
@@ -91,10 +91,12 @@ fi
 
 # Sign the completed bundle, not only the executable. The Info.plist must be
 # sealed into the signature so LaunchServices, TCC, and Activity Monitor all see
-# `com.sugu.docking` as the app identity during repeated debug launches. We do
-# not use hardened runtime or entitlements here because this is a local 0.0.0
-# development build; adding distribution-era signing constraints would make the
-# debugging loop more fragile without improving these permission flows.
+# one stable app identity during repeated debug launches. The identifier is
+# deliberately product-scoped rather than user-scoped because it can show up in
+# screenshots, logs, and eventual GitHub-visible artifacts. We do not use
+# hardened runtime or entitlements here because this is a local 0.0.0 development
+# build; adding distribution-era signing constraints would make the debugging
+# loop more fragile without improving these permission flows.
 /usr/bin/codesign --force --sign "$CODE_SIGN_IDENTITY" --timestamp=none "$APP_BUNDLE"
 
 open_app() {
