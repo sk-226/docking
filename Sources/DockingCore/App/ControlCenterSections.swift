@@ -385,17 +385,10 @@ struct AppearanceControlCenterSection: View {
                 Divider()
 
                 ControlCenterSettingsGroup("Surface") {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(alignment: .top, spacing: AppearanceLayout.previewGap) {
-                            surfaceControls
-                                .frame(width: AppearanceLayout.surfaceControlsWidth, alignment: .leading)
-                            LiquidGlassPreview(settings: model.settings)
-                        }
-
-                        VStack(alignment: .leading, spacing: 18) {
-                            surfaceControls
-                            LiquidGlassPreview(settings: model.settings)
-                        }
+                    HStack(alignment: .top, spacing: AppearanceLayout.previewGap) {
+                        surfaceControls
+                            .frame(width: AppearanceLayout.surfaceControlsWidth, alignment: .leading)
+                        LiquidGlassPreview(settings: model.settings)
                     }
                 }
             }
@@ -471,15 +464,16 @@ private enum AppearanceLayout {
     // normal Settings-window size, and show a live surface preview without
     // making controls feel cramped. These dimensions are therefore designed as
     // a two-column form for the default window, not as a pixel-perfect dock
-    // replica. If the window becomes too narrow, ViewThatFits lets the preview
-    // move below the controls instead of collapsing the form into unreadability.
-    static let pageWidth: CGFloat = 690
-    static let labelWidth: CGFloat = 112
-    static let segmentedControlWidth: CGFloat = 236
-    static let surfaceControlsWidth: CGFloat = 362
-    static let previewGap: CGFloat = 32
-    static let previewWidth: CGFloat = 248
-    static let previewHeight: CGFloat = 132
+    // replica. The preview intentionally stays beside the surface controls:
+    // dropping below looked like a separate setting section and made the
+    // Appearance page feel unstable.
+    static let pageWidth: CGFloat = 640
+    static let labelWidth: CGFloat = 104
+    static let segmentedControlWidth: CGFloat = 220
+    static let surfaceControlsWidth: CGFloat = 338
+    static let previewGap: CGFloat = 20
+    static let previewWidth: CGFloat = 260
+    static let previewHeight: CGFloat = 136
     static let previewScale: CGFloat = 0.38
 }
 
@@ -488,20 +482,14 @@ private struct LiquidGlassPreview: View {
 
     var body: some View {
         let previewScale = AppearanceLayout.previewScale
-        ZStack {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            settings.accentColor.opacity(0.22),
-                            Color(nsColor: .windowBackgroundColor),
-                            Color.primary.opacity(0.08)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+        ZStack(alignment: .bottom) {
+            LiquidGlassPreviewBackdrop()
 
+            // Liquid Glass only communicates itself when there is real visual
+            // information behind the surface. A single live preview is clearer
+            // than several thumbnail comparisons: the segmented control already
+            // tells users which style is selected, and this view only needs to
+            // show how the current dock reads against content underneath it.
             HStack(spacing: min(settings.spacing * previewScale, 6)) {
                 ForEach(0..<3, id: \.self) { index in
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -523,14 +511,19 @@ private struct LiquidGlassPreview: View {
             }
             .padding(.horizontal, 12)
             // The preview is intentionally scaled, not pixel-for-pixel. It must
-            // show the relationship between presets without creating a second
-            // layout problem inside Control Center when the user chooses the
-            // largest Dock and widget sizes.
+            // show the relationship between app icons, widgets, and surface
+            // material without turning Appearance into a second dock canvas.
             .frame(height: settings.effectiveDockThickness * 0.64)
             .dockingSurface(settings: settings)
-            .padding(16)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 14)
         }
         .frame(width: AppearanceLayout.previewWidth, height: AppearanceLayout.previewHeight)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.8)
+        }
         .preferredColorScheme(settings.theme.colorScheme)
         .tint(settings.accentColor)
         .accessibilityLabel("Liquid Glass preview")
@@ -554,6 +547,50 @@ private struct LiquidGlassPreview: View {
                     RoundedRectangle(cornerRadius: min(12, height * 0.18), style: .continuous)
                         .fill(Color.primary.opacity(0.045))
                 }
+        }
+    }
+}
+
+private struct LiquidGlassPreviewBackdrop: View {
+    var body: some View {
+        GeometryReader { geometry in
+            let width = geometry.size.width
+            let height = geometry.size.height
+
+            ZStack {
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.16, green: 0.38, blue: 0.62),
+                        Color(red: 0.30, green: 0.52, blue: 0.42),
+                        Color(red: 0.78, green: 0.58, blue: 0.34)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+
+                // The panes are intentionally broad and quiet. Thin repeated
+                // bars looked like a miniature dashboard and made the preview
+                // compete with the real controls; these larger blocks provide
+                // enough contrast for glass without visual noise.
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(0.28))
+                    .frame(width: width * 0.46, height: height * 0.32)
+                    .offset(x: -width * 0.18, y: -height * 0.22)
+
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.black.opacity(0.22))
+                    .frame(width: width * 0.38, height: height * 0.28)
+                    .offset(x: width * 0.22, y: -height * 0.12)
+
+                HStack(spacing: width * 0.025) {
+                    ForEach(0..<5, id: \.self) { index in
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(index.isMultiple(of: 2) ? Color.white.opacity(0.22) : Color.black.opacity(0.16))
+                            .frame(width: width * 0.10, height: height * 0.08)
+                    }
+                }
+                .offset(y: height * 0.16)
+            }
         }
     }
 }

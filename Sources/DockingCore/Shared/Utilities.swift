@@ -40,7 +40,8 @@ private struct DockingSurfaceModifier: ViewModifier {
                 // outline. The neutral fill is only a damping layer for the
                 // user-facing "material strength" setting; it never replaces the
                 // native material as the base surface.
-                shape.fill(.thinMaterial)
+                shape.fill(systemMaterial)
+                    .opacity(settings.opacity)
                 shape.fill(Color(nsColor: .controlBackgroundColor).opacity((1 - strength) * 0.28))
 
                 // Accent color belongs inside the glass, not on the outer edge.
@@ -60,6 +61,22 @@ private struct DockingSurfaceModifier: ViewModifier {
                 )
                 .blendMode(.plusLighter)
             }
+    }
+
+    private var systemMaterial: Material {
+        // The named presets should be visibly different, not just numerically
+        // different. Keeping all three on `.thinMaterial` made "Liquid Glass"
+        // feel like a label that barely changed anything. These are still
+        // system materials, so the dock remains adaptive instead of becoming a
+        // hand-painted translucent rectangle.
+        switch settings.liquidGlassSurfaceStyle {
+        case .clear:
+            return .ultraThinMaterial
+        case .balanced:
+            return .thinMaterial
+        case .dense:
+            return .regularMaterial
+        }
     }
 }
 
