@@ -37,7 +37,7 @@ final class WidgetDetailPanelController {
         panel.orderFrontRegardless()
         self.panel = panel
 
-        installDismissMonitors(panel: panel)
+        installDismissMonitors(panel: panel, anchorFrame: anchorFrame)
         showPanel(panel, targetAlpha: model.settings.opacity)
     }
 
@@ -123,23 +123,53 @@ final class WidgetDetailPanelController {
         return panel
     }
 
-    private func installDismissMonitors(panel: NSPanel) {
+    private func installDismissMonitors(panel: NSPanel, anchorFrame: NSRect?) {
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown]) { [weak self, weak panel] event in
             if event.type == .keyDown, event.keyCode == 53 {
                 self?.close()
                 return nil
             }
 
-            if let panel, !panel.frame.contains(NSEvent.mouseLocation) {
+            if let panel,
+               Self.shouldDismissPointerEvent(
+                   pointerLocation: NSEvent.mouseLocation,
+                   panelFrame: panel.frame,
+                   anchorFrame: anchorFrame
+               ) {
                 self?.close()
             }
             return event
         }
 
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self, weak panel] _ in
-            if let panel, !panel.frame.contains(NSEvent.mouseLocation) {
+            if let panel,
+               Self.shouldDismissPointerEvent(
+                   pointerLocation: NSEvent.mouseLocation,
+                   panelFrame: panel.frame,
+                   anchorFrame: anchorFrame
+               ) {
                 self?.close()
             }
         }
+    }
+
+    nonisolated static func shouldDismissPointerEvent(pointerLocation: NSPoint, panelFrame: NSRect, anchorFrame: NSRect?) -> Bool {
+        if panelFrame.contains(pointerLocation) {
+            return false
+        }
+
+        // NSEvent monitors run before SwiftUI button actions. If the user
+        // clicks the same widget that opened the panel, treating that click as
+        // a normal outside click closes the panel first; the widget's own
+        // action then runs and reopens it. Exempting the current anchor leaves
+        // the source of truth in `toggle(kind:)`: same widget closes, different
+        // widgets still switch panels, and ordinary outside clicks still
+        // dismiss. A small tolerance absorbs sub-pixel frame conversion and
+        // icon hover scaling without making the whole dock a non-dismiss zone.
+        if let anchorFrame, anchorFrame.insetBy(dx: -6, dy: -6).contains(pointerLocation) {
+            return false
+        }
+
+        return true
     }
 }

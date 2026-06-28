@@ -78,6 +78,36 @@ func validateDetailPanelAnchoring() throws {
     try expect(detailFrame.minY > dockFrame.maxY, "detail panel should open above the dock")
 }
 
+func validateWidgetPanelDismissHitTesting() throws {
+    let panelFrame = NSRect(x: 100, y: 100, width: 380, height: 430)
+    let widgetFrame = NSRect(x: 260, y: 40, width: 58, height: 58)
+
+    try expect(
+        !WidgetDetailPanelController.shouldDismissPointerEvent(
+            pointerLocation: NSPoint(x: panelFrame.midX, y: panelFrame.midY),
+            panelFrame: panelFrame,
+            anchorFrame: widgetFrame
+        ),
+        "clicks inside the widget detail panel should not dismiss it"
+    )
+    try expect(
+        !WidgetDetailPanelController.shouldDismissPointerEvent(
+            pointerLocation: NSPoint(x: widgetFrame.midX, y: widgetFrame.midY),
+            panelFrame: panelFrame,
+            anchorFrame: widgetFrame
+        ),
+        "clicking the source widget should be left for toggle(kind:) so a second click closes the panel"
+    )
+    try expect(
+        WidgetDetailPanelController.shouldDismissPointerEvent(
+            pointerLocation: NSPoint(x: 20, y: 20),
+            panelFrame: panelFrame,
+            anchorFrame: widgetFrame
+        ),
+        "ordinary outside clicks should still dismiss widget detail panels"
+    )
+}
+
 func validateSpecificDisplaySelection() throws {
     guard let display = ScreenPlacementService.availableDisplays().first else {
         print("SKIP specific display selection (no display)")
@@ -780,6 +810,7 @@ let validations: [(String, () throws -> Void)] = [
     ("calendar grouping", validateCalendarGrouping),
     ("dock layout", validateDockLayout),
     ("detail panel anchoring", validateDetailPanelAnchoring),
+    ("widget panel dismiss hit testing", validateWidgetPanelDismissHitTesting),
     ("specific display selection", validateSpecificDisplaySelection),
     ("dock position frames", validateDockPositionFrames),
     ("dock window level toggle", validateDockWindowLevelToggle),
