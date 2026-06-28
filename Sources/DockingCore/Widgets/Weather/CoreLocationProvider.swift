@@ -1,12 +1,12 @@
 import CoreLocation
 import Foundation
+import MapKit
 
 enum LocationProviderError: LocalizedError {
     case servicesDisabled
     case denied
     case restricted
     case unableToDetermine(String)
-    case requestAlreadyInProgress
 
     var errorDescription: String? {
         switch self {
@@ -18,15 +18,14 @@ enum LocationProviderError: LocalizedError {
             return "Location access is restricted by system policy."
         case .unableToDetermine(let message):
             return "Location could not be determined. \(message)"
-        case .requestAlreadyInProgress:
-            return "A location request is already in progress."
         }
     }
 }
 
 final class CoreLocationProvider: NSObject, LocationProviding, CLLocationManagerDelegate {
     private var manager: CLLocationManager?
-    private var continuation: CheckedContinuation<WeatherLocation, Error>?
+    private var continuations: [CheckedContinuation<WeatherLocation, Error>] = []
+    private var reverseGeocodingRequest: MKReverseGeocodingRequest?
 
     func currentLocation() async throws -> WeatherLocation {
         try await requestLocationOnMainActor()
@@ -38,12 +37,20 @@ final class CoreLocationProvider: NSObject, LocationProviding, CLLocationManager
             throw LocationProviderError.servicesDisabled
         }
 
-        guard continuation == nil else {
-            throw LocationProviderError.requestAlreadyInProgress
-        }
-
         return try await withCheckedThrowingContinuation { continuation in
-            self.continuation = continuation
+            if manager != nil {
+                // WeatherKit primary, Open-Meteo fallback, launch refresh, and
+                // panel-open refresh can converge on current-location weather
+                // at nearly the same time. Treating the second caller as an
+                // error makes the widget fail even though the first location
+                // request is valid. Coalescing callers behind one CoreLocation
+                // request keeps permission prompts singular and avoids wasting
+                // battery/network work.
+                continuations.append(continuation)
+                return
+            }
+
+            continuations = [continuation]
 
             let manager = CLLocationManager()
             manager.delegate = self
@@ -79,16 +86,18 @@ final class CoreLocationProvider: NSObject, LocationProviding, CLLocationManager
 
     @MainActor
     private func complete(with result: Result<WeatherLocation, Error>) {
-        let continuation = continuation
-        self.continuation = nil
+        let continuations = continuations
+        self.continuations.removeAll()
+        reverseGeocodingRequest?.cancel()
+        reverseGeocodingRequest = nil
         manager?.delegate = nil
         manager = nil
 
         switch result {
         case .success(let location):
-            continuation?.resume(returning: location)
+            continuations.forEach { $0.resume(returning: location) }
         case .failure(let error):
-            continuation?.resume(throwing: error)
+            continuations.forEach { $0.resume(throwing: error) }
         }
     }
 
@@ -109,14 +118,13 @@ final class CoreLocationProvider: NSObject, LocationProviding, CLLocationManager
             return
         }
 
-        let location = WeatherLocation(
-            latitude: latest.coordinate.latitude,
-            longitude: latest.coordinate.longitude,
-            displayName: "Current Location"
-        )
-
         Task { @MainActor [weak self] in
-            self?.complete(with: .success(location))
+            guard let self else {
+                return
+            }
+
+            let location = await self.weatherLocation(for: latest)
+            self.complete(with: .success(location))
         }
     }
 
@@ -124,5 +132,59 @@ final class CoreLocationProvider: NSObject, LocationProviding, CLLocationManager
         Task { @MainActor [weak self] in
             self?.complete(with: .failure(LocationProviderError.unableToDetermine(error.localizedDescription)))
         }
+    }
+
+    @MainActor
+    private func weatherLocation(for location: CLLocation) async -> WeatherLocation {
+        let fallback = WeatherLocation(
+            latitude: location.coordinate.latitude,
+            longitude: location.coordinate.longitude,
+            displayName: "Current Location"
+        )
+
+        do {
+            guard let request = MKReverseGeocodingRequest(location: location) else {
+                return fallback
+            }
+            request.preferredLocale = .autoupdatingCurrent
+            reverseGeocodingRequest = request
+            defer {
+                if reverseGeocodingRequest === request {
+                    reverseGeocodingRequest = nil
+                }
+            }
+
+            let mapItems = try await request.mapItems
+            guard let displayName = mapItems.first.flatMap(Self.displayName)?.nilIfBlank else {
+                return fallback
+            }
+
+            return WeatherLocation(
+                latitude: fallback.latitude,
+                longitude: fallback.longitude,
+                displayName: displayName
+            )
+        } catch {
+            // The forecast only needs coordinates, so a reverse-geocode outage
+            // should not block weather updates. Falling back to a generic label
+            // is less informative, but it preserves the primary behavior and
+            // avoids turning an optional presentation lookup into a data-fetch
+            // failure.
+            return fallback
+        }
+    }
+
+    private static func displayName(for mapItem: MKMapItem) -> String? {
+        // Weather needs a place label, not a street address. MapKit's
+        // city-level representation is the right granularity for a dock widget:
+        // it tells the user which location is being used without exposing or
+        // crowding the UI with precise address data. The broader fallbacks are
+        // still useful when reverse geocoding returns a sparse map item.
+        [
+            mapItem.addressRepresentations?.cityName,
+            mapItem.addressRepresentations?.cityWithContext(.short),
+            mapItem.address?.shortAddress,
+            mapItem.name
+        ].compactMap { $0?.nilIfBlank }.first
     }
 }
