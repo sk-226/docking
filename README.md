@@ -72,7 +72,8 @@ fallback boundaries, and restore snapshot serialization.
 Use [QA.md](QA.md) for the manual gates
 that cannot be proven by SwiftPM alone, including real Calendar/Location
 permission flows, Spaces, multiple displays, sleep/wake, and Activity Monitor
-checks.
+checks. Use [PERFORMANCE.md](PERFORMANCE.md) for the dedicated idle CPU,
+memory, network-cadence, and sleep/wake performance pass.
 
 ## Run
 
