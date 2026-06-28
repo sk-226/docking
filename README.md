@@ -30,9 +30,9 @@ icons, text, or layout.
   unpinned running-app visibility, keep-above behavior, widgets, weather
   location/unit, calendar lookahead, display choice, accent color, material
   strength, launch at login, and restore messaging.
-- Control Center has selectable Overview, General, Appearance, Apps, Widgets,
-  and Restore sections.
-- Menu bar status item with show, hide, Control Center, restore, and quit
+- Control Center has selectable General, Appearance, Apps, Widgets, and Restore
+  sections.
+- Menu bar status item with show, hide, Control Center, widget, and quit
   actions; it can be hidden from Control Center.
 - Keyboard commands:
   - `Command-Shift-D`: show Docking

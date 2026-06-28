@@ -39,8 +39,8 @@ public final class DockingAppModel: ObservableObject {
     @Published var launchAtLoginStatusMessage: String = "Launch at login uses macOS Login Items when enabled."
     @Published var appleDockVisibilityStatusMessage: String = AppleDockPreferences.visibilityStatusText()
     // Control Center is primarily a settings surface. Opening it directly into
-    // General matches the menu-bar entry point and avoids making users pass
-    // through an overview page that is useful only as lightweight orientation.
+    // General matches the menu-bar entry point and keeps the first screen on
+    // everyday settings instead of diagnostic status.
     @Published var controlCenterSelection: ControlCenterSection = .general
     @Published var manualRestoreInstructions: String = "No saved Apple Dock snapshot exists. Docking is overlay-only unless you explicitly enabled primary dock mode."
 

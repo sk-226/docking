@@ -5,7 +5,7 @@ struct GeneralControlCenterSection: View {
     @EnvironmentObject private var model: DockingAppModel
 
     var body: some View {
-        ScrollView {
+        ControlCenterScrollPage(maxContentWidth: 560) {
             VStack(alignment: .leading, spacing: 22) {
                 Text("General")
                     .font(.headline)
@@ -151,10 +151,7 @@ struct GeneralControlCenterSection: View {
                     ControlCenterHelpText("Open apps that are not permanently kept in Docking can appear in a separated running-app area, or stay hidden until you pin them.")
                 }
             }
-            .padding()
-            .frame(maxWidth: 560, alignment: .topLeading)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var dockEdge: Binding<DockEdgeChoice> {
@@ -198,6 +195,34 @@ struct GeneralControlCenterSection: View {
         }
 
         return "Side docks stay on one display so their edge trigger does not intercept gestures on every monitor."
+    }
+}
+
+struct ControlCenterScrollPage<Content: View>: View {
+    let maxContentWidth: CGFloat
+    private let content: () -> Content
+
+    init(maxContentWidth: CGFloat, @ViewBuilder content: @escaping () -> Content) {
+        self.maxContentWidth = maxContentWidth
+        self.content = content
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            ScrollView {
+                content()
+                    .padding()
+                    .frame(maxWidth: maxContentWidth, alignment: .topLeading)
+                    .frame(width: geometry.size.width, alignment: .topLeading)
+            }
+            // The page owns the full detail column even when its form content is
+            // intentionally narrow. Without this geometry-bound frame, SwiftUI
+            // can size the scroll view to the form's ideal width and leave the
+            // scrollbar floating in the middle of the window, which makes the
+            // Control Center look broken rather than merely compact.
+            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
@@ -309,70 +334,72 @@ struct AppearanceControlCenterSection: View {
     @EnvironmentObject private var model: DockingAppModel
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+        ControlCenterScrollPage(maxContentWidth: AppearanceLayout.pageWidth) {
+            VStack(alignment: .leading, spacing: 24) {
                 Text("Appearance")
                     .font(.headline)
 
-                Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 12) {
-                    GridRow {
-                        Text("Dock scale")
-                            .frame(width: AppearanceLayout.labelWidth, alignment: .leading)
-                        Picker("Dock scale", selection: dockScale) {
-                            ForEach(DockScalePreset.allCases) { preset in
-                                Text(preset.label).tag(preset)
+                ControlCenterSettingsGroup("Size") {
+                    Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 12) {
+                        GridRow {
+                            Text("Dock scale")
+                                .frame(width: AppearanceLayout.labelWidth, alignment: .leading)
+                            Picker("Dock scale", selection: dockScale) {
+                                ForEach(DockScalePreset.allCases) { preset in
+                                    Text(preset.label).tag(preset)
+                                }
                             }
+                            .labelsHidden()
+                            .pickerStyle(.segmented)
+                            .frame(width: AppearanceLayout.segmentedControlWidth)
                         }
-                        .labelsHidden()
-                        .pickerStyle(.segmented)
-                        .frame(width: AppearanceLayout.segmentedControlWidth)
-                    }
 
-                    GridRow {
-                        Text("Calendar widget")
-                            .frame(width: AppearanceLayout.labelWidth, alignment: .leading)
-                        Picker("Calendar widget size", selection: $model.settings.calendarWidgetSizePreset) {
-                            ForEach(WidgetSizePreset.allCases) { preset in
-                                Text(preset.label).tag(preset)
+                        GridRow {
+                            Text("Calendar widget")
+                                .frame(width: AppearanceLayout.labelWidth, alignment: .leading)
+                            Picker("Calendar widget size", selection: $model.settings.calendarWidgetSizePreset) {
+                                ForEach(WidgetSizePreset.allCases) { preset in
+                                    Text(preset.label).tag(preset)
+                                }
                             }
+                            .labelsHidden()
+                            .pickerStyle(.segmented)
+                            .frame(width: AppearanceLayout.segmentedControlWidth)
                         }
-                        .labelsHidden()
-                        .pickerStyle(.segmented)
-                        .frame(width: AppearanceLayout.segmentedControlWidth)
-                    }
 
-                    GridRow {
-                        Text("Weather widget")
-                            .frame(width: AppearanceLayout.labelWidth, alignment: .leading)
-                        Picker("Weather widget size", selection: $model.settings.weatherWidgetSizePreset) {
-                            ForEach(WidgetSizePreset.allCases) { preset in
-                                Text(preset.label).tag(preset)
+                        GridRow {
+                            Text("Weather widget")
+                                .frame(width: AppearanceLayout.labelWidth, alignment: .leading)
+                            Picker("Weather widget size", selection: $model.settings.weatherWidgetSizePreset) {
+                                ForEach(WidgetSizePreset.allCases) { preset in
+                                    Text(preset.label).tag(preset)
+                                }
                             }
+                            .labelsHidden()
+                            .pickerStyle(.segmented)
+                            .frame(width: AppearanceLayout.segmentedControlWidth)
                         }
-                        .labelsHidden()
-                        .pickerStyle(.segmented)
-                        .frame(width: AppearanceLayout.segmentedControlWidth)
                     }
                 }
 
                 Divider()
 
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: 14) {
-                        surfaceControls
-                        LiquidGlassPreview(settings: model.settings)
-                    }
+                ControlCenterSettingsGroup("Surface") {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .top, spacing: AppearanceLayout.previewGap) {
+                            surfaceControls
+                                .frame(width: AppearanceLayout.surfaceControlsWidth, alignment: .leading)
+                            LiquidGlassPreview(settings: model.settings)
+                        }
 
-                    VStack(alignment: .leading, spacing: 14) {
-                        surfaceControls
-                        LiquidGlassPreview(settings: model.settings)
+                        VStack(alignment: .leading, spacing: 18) {
+                            surfaceControls
+                            LiquidGlassPreview(settings: model.settings)
+                        }
                     }
                 }
             }
-            .padding()
-            .frame(maxWidth: 760, alignment: .topLeading)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var dockScale: Binding<DockScalePreset> {
@@ -440,17 +467,20 @@ struct AppearanceControlCenterSection: View {
 }
 
 private enum AppearanceLayout {
-    // These widths intentionally stay below the old 280px controls. The Control
-    // Center should keep its compact, Settings-like window size; widening the
-    // whole window just to make the Appearance preview fit made core chrome
-    // such as the sidebar toggle feel unstable. The labels remain wide enough
-    // for the current English copy, while the preview gets a permanent right
-    // column at the user's normal window size.
-    static let labelWidth: CGFloat = 104
-    static let segmentedControlWidth: CGFloat = 230
-    static let previewWidth: CGFloat = 232
-    static let previewHeight: CGFloat = 126
-    static let previewScale: CGFloat = 0.36
+    // Appearance has to balance two conflicting needs: keep Control Center at a
+    // normal Settings-window size, and show a live surface preview without
+    // making controls feel cramped. These dimensions are therefore designed as
+    // a two-column form for the default window, not as a pixel-perfect dock
+    // replica. If the window becomes too narrow, ViewThatFits lets the preview
+    // move below the controls instead of collapsing the form into unreadability.
+    static let pageWidth: CGFloat = 690
+    static let labelWidth: CGFloat = 112
+    static let segmentedControlWidth: CGFloat = 236
+    static let surfaceControlsWidth: CGFloat = 362
+    static let previewGap: CGFloat = 32
+    static let previewWidth: CGFloat = 248
+    static let previewHeight: CGFloat = 132
+    static let previewScale: CGFloat = 0.38
 }
 
 private struct LiquidGlassPreview: View {
@@ -534,10 +564,10 @@ struct WidgetsControlCenterSection: View {
     var body: some View {
         // Widgets can expose permission-sensitive Calendar controls and
         // network-backed Weather controls. Keeping this surface in the single
-        // Control Center avoids duplicate configuration surfaces, while the
-        // explicit scroll container keeps the lower Weather controls reachable
-        // in compact window sizes.
-        ScrollView {
+        // Control Center avoids duplicate configuration surfaces. The shared
+        // page wrapper keeps the lower Weather controls reachable while keeping
+        // the scrollbar at the detail-pane edge instead of beside the form.
+        ControlCenterScrollPage(maxContentWidth: 640) {
             VStack(alignment: .leading, spacing: 22) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Calendar Widget")
@@ -582,10 +612,7 @@ struct WidgetsControlCenterSection: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(24)
-            .frame(maxWidth: 640, alignment: .topLeading)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 

@@ -7,7 +7,7 @@ struct DockRestoreView: View {
     @State private var confirmsAppleDockReload = false
 
     var body: some View {
-        ScrollView {
+        ControlCenterScrollPage(maxContentWidth: 700) {
             VStack(alignment: .leading, spacing: 22) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Primary Dock Mode")
@@ -96,8 +96,6 @@ struct DockRestoreView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(24)
-            .frame(maxWidth: 700, alignment: .topLeading)
         }
         .confirmationDialog(
             "Use Docking as the primary dock?",
