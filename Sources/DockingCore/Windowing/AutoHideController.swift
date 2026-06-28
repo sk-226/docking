@@ -6,7 +6,6 @@ final class AutoHideController {
     private var edgePanels: [String: NSPanel] = [:]
     private var edgePanelScreens: [String: NSScreen] = [:]
     private var globalMouseMovedMonitor: Any?
-    private var localMouseMovedMonitor: Any?
     private var onEnter: ((NSScreen?) -> Void)?
 
     func update(settings: DockingSettings, dockFrame: NSRect, screen: NSScreen?, onEnter: @escaping (NSScreen?) -> Void) {
@@ -100,15 +99,16 @@ final class AutoHideController {
     }
 
     private func installMouseMovedMonitorsIfNeeded() {
-        guard globalMouseMovedMonitor == nil, localMouseMovedMonitor == nil else {
+        guard globalMouseMovedMonitor == nil else {
             return
         }
 
         // The transparent trigger panel is still the primary hit target, but
         // WindowServer/AppKit can miss tracking-area transitions on some edge
-        // paths. A mouse-moved monitor gives us a second event-driven path
-        // without sampling the pointer on a timer. We keep the work
-        // intentionally tiny: only compare the current location against the
+        // paths while another app owns the frontmost event stream. A global
+        // monitor gives us that second event-driven path without adding a timer
+        // or duplicating events already delivered to `EdgeTriggerView`. We keep
+        // the work intentionally tiny: compare the current location against the
         // existing edge-panel frames, then reveal on the matching display.
         globalMouseMovedMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] _ in
             let location = NSEvent.mouseLocation
@@ -116,24 +116,13 @@ final class AutoHideController {
                 self?.revealIfLocationIsInsideEdgeTrigger(location)
             }
         }
-        localMouseMovedMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved]) { [weak self] event in
-            let location = NSEvent.mouseLocation
-            Task { @MainActor in
-                self?.revealIfLocationIsInsideEdgeTrigger(location)
-            }
-            return event
-        }
     }
 
     private func removeMouseMovedMonitors() {
         if let globalMouseMovedMonitor {
             NSEvent.removeMonitor(globalMouseMovedMonitor)
         }
-        if let localMouseMovedMonitor {
-            NSEvent.removeMonitor(localMouseMovedMonitor)
-        }
         globalMouseMovedMonitor = nil
-        localMouseMovedMonitor = nil
     }
 
     private func revealIfLocationIsInsideEdgeTrigger(_ location: NSPoint) {
