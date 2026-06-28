@@ -68,7 +68,7 @@ final class DockPanelController {
         // turn Docking into a focus-stealing app window.
         panel.isFloatingPanel = settings.keepAboveOtherWindows
         panel.level = Self.windowLevel(for: settings)
-        panel.collectionBehavior = collectionBehavior(for: settings)
+        panel.collectionBehavior = DockingWindowBehavior.collectionBehavior(for: settings)
 
         autoHideController.update(settings: settings, dockFrame: frame, screen: screen) { [weak self] screen in
             self?.reveal(on: screen, settings: settings, itemCount: itemCount, widgetCount: widgetCount)
@@ -136,17 +136,6 @@ final class DockPanelController {
         // stealing focus from the user's current workspace.
         panel.contentView = NSHostingView(rootView: DockView().environmentObject(model))
         return panel
-    }
-
-    private func collectionBehavior(for settings: DockingSettings) -> NSWindow.CollectionBehavior {
-        var behavior: NSWindow.CollectionBehavior = [.transient, .ignoresCycle]
-        if settings.showOnAllSpaces {
-            behavior.insert(.canJoinAllSpaces)
-        }
-        if settings.showOnFullScreenSpaces {
-            behavior.insert(.fullScreenAuxiliary)
-        }
-        return behavior
     }
 
     nonisolated static func windowLevel(for settings: DockingSettings) -> NSWindow.Level {

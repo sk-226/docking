@@ -245,6 +245,27 @@ func validateAutoHideTriggerScreens() throws {
     )
 }
 
+func validateDockingWindowCollectionBehavior() throws {
+    let defaultBehavior = DockingWindowBehavior.collectionBehavior(for: .default)
+    try expect(defaultBehavior.contains(.transient), "dock panels should be transient system-style surfaces")
+    try expect(defaultBehavior.contains(.ignoresCycle), "dock panels should stay out of normal window cycling")
+    try expect(defaultBehavior.contains(.canJoinAllSpaces), "default dock panels should be available on every Space")
+    try expect(defaultBehavior.contains(.fullScreenAuxiliary), "default dock panels should be available in full-screen Spaces")
+
+    var scopedSettings = DockingSettings.default
+    scopedSettings.showOnAllSpaces = false
+    scopedSettings.showOnFullScreenSpaces = false
+    let scopedBehavior = DockingWindowBehavior.collectionBehavior(for: scopedSettings)
+
+    // These toggles are user-facing escape hatches. If a workflow needs Docking
+    // to stay scoped to the current desktop, turning them off must remove the
+    // cross-Space flags while preserving the non-document panel semantics.
+    try expect(scopedBehavior.contains(.transient), "scoped dock panels should remain transient")
+    try expect(scopedBehavior.contains(.ignoresCycle), "scoped dock panels should still stay out of window cycling")
+    try expect(!scopedBehavior.contains(.canJoinAllSpaces), "turning off all-Spaces should remove canJoinAllSpaces")
+    try expect(!scopedBehavior.contains(.fullScreenAuxiliary), "turning off full-screen Spaces should remove fullScreenAuxiliary")
+}
+
 func validateAppleDockMirroring() throws {
     let suiteName = "docking.validation.apple-mirror.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!
@@ -1078,6 +1099,7 @@ let validations: [(String, () throws -> Void)] = [
     ("specific display selection", validateSpecificDisplaySelection),
     ("dock position frames", validateDockPositionFrames),
     ("auto-hide trigger screens", validateAutoHideTriggerScreens),
+    ("dock window collection behavior", validateDockingWindowCollectionBehavior),
     ("dock window level toggle", validateDockWindowLevelToggle),
     ("apple dock mirroring", validateAppleDockMirroring),
     ("app catalog bundle recognition", validateAppCatalogRecognizesOnlyApplicationBundles),

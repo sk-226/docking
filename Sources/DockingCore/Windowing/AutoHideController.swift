@@ -32,7 +32,7 @@ final class AutoHideController {
             )
             let panel = edgePanels[key] ?? makeEdgePanel(for: triggerScreen)
             panel.setFrame(frame, display: true)
-            panel.collectionBehavior = collectionBehavior(for: settings)
+            panel.collectionBehavior = DockingWindowBehavior.collectionBehavior(for: settings)
             panel.orderFrontRegardless()
             edgePanels[key] = panel
         }
@@ -90,16 +90,6 @@ final class AutoHideController {
         return "\(screen.localizedName)-\(Int(frame.minX))-\(Int(frame.minY))-\(Int(frame.width))-\(Int(frame.height))"
     }
 
-    private func collectionBehavior(for settings: DockingSettings) -> NSWindow.CollectionBehavior {
-        var behavior: NSWindow.CollectionBehavior = [.transient, .ignoresCycle]
-        if settings.showOnAllSpaces {
-            behavior.insert(.canJoinAllSpaces)
-        }
-        if settings.showOnFullScreenSpaces {
-            behavior.insert(.fullScreenAuxiliary)
-        }
-        return behavior
-    }
 }
 
 private final class EdgeTriggerView: NSView {
