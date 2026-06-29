@@ -10,9 +10,11 @@ opt-in, confirmation-gated, and restoreable from Control Center > Restore.
 ## Local Release Gate
 
 - [ ] `./script/release_check.sh` passes on this branch.
-- [ ] The generated artifact is `dist/Docking-0.0.0-macos26.zip`.
-- [ ] The generated checksum is `dist/Docking-0.0.0-macos26.zip.sha256`.
-- [ ] The package SHA-256 from `release_check.sh` is recorded in Notes.
+- [ ] The generated fallback artifact is `dist/Docking-0.0.0-macos26.zip`.
+- [ ] The generated tester artifact is `dist/Docking-0.0.0-macos26.dmg`.
+- [ ] The generated checksums are `dist/Docking-0.0.0-macos26.zip.sha256` and
+      `dist/Docking-0.0.0-macos26.dmg.sha256`.
+- [ ] The zip and DMG SHA-256 values from `release_check.sh` are recorded in Notes.
 - [ ] The worktree contains no unrelated local changes.
 
 ## Manual QA

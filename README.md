@@ -139,11 +139,13 @@ It runs the validation executable, builds and stages a release `Docking.app`,
 checks bundle metadata, Calendar/Location permission descriptions, icon
 resources, signature integrity, and WeatherKit entitlement/profile consistency,
 rejects user-specific authored paths/identifiers, verifies that the debug mock
-weather provider is not in the release executable, inspects the zip for the
-expected app bundle files, and writes `dist/Docking-0.0.0-macos26.zip` plus
-`dist/Docking-0.0.0-macos26.zip.sha256`. It also prints the current branch,
-commit, worktree cleanliness, and package SHA-256 so the tested zip can be tied
-back to the exact local candidate. This is a local 0.0.0 candidate gate;
+weather provider is not in the release executable, inspects the zip and DMG for
+the expected app bundle files, and writes `dist/Docking-0.0.0-macos26.zip`,
+`dist/Docking-0.0.0-macos26.dmg`, and matching `.sha256` files. The DMG is the
+tester-facing artifact: it contains `Docking.app` and an Applications symlink
+without decorative Finder metadata. The script also prints the current branch,
+commit, worktree cleanliness, and SHA-256 values so the tested artifacts can be
+tied back to the exact local candidate. This is a local 0.0.0 candidate gate;
 Developer ID signing, hardened runtime, notarization, and GitHub push remain
 separate explicit release steps.
 

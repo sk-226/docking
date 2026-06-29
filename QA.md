@@ -22,11 +22,13 @@ Expected results:
 - `DockingValidation` prints `All Docking validation checks passed.`
 - A release app bundle is staged at `dist/Docking.app`.
 - A local release-candidate zip is written to `dist/Docking-0.0.0-macos26.zip`.
-- A matching checksum file is written to
-  `dist/Docking-0.0.0-macos26.zip.sha256`.
+- A tester-facing DMG is written to `dist/Docking-0.0.0-macos26.dmg`.
+- Matching checksum files are written for the zip and DMG.
 - The zip contains the expected `Docking.app` bundle root, executable,
   `Info.plist`, app icon, and menu bar template icon.
-- The checksum file validates with `shasum -c`.
+- The DMG contains `Docking.app`, the same required bundle files, and an
+  Applications symlink for drag-install testing.
+- Both checksum files validate with `shasum -c`.
 - Both bundle version values are `0.0.0`.
 - The bundle identifier is `app.docking.docking`.
 - The bundle minimum system version is `26.0`.
@@ -41,8 +43,8 @@ Expected results:
 - `MockWeatherProvider.swift` remains DEBUG-only and the release executable does
   not contain the mock provider implementation.
 - The final release identity section prints the current branch, short commit,
-  worktree cleanliness, SHA-256 for `dist/Docking-0.0.0-macos26.zip`, and the
-  checksum file path.
+  worktree cleanliness, SHA-256 values for the zip and DMG, and both checksum
+  file paths.
 
 `./script/build_and_run.sh --verify` remains the quick launch smoke test. The
 release gate packages without launching so an artifact inspection does not also
@@ -63,12 +65,14 @@ Expected results:
   updates` warning for Docking during launch.
 
 Latest automated evidence: passed 2026-06-29 on the current release-candidate
-path. The run created `dist/Docking-0.0.0-macos26.zip`, verified the staged app
-signature, and confirmed that unprovisioned builds omit the WeatherKit
-entitlement so Weather uses the Open-Meteo real-data fallback instead of failing
-at launch. A launch smoke pass on the same path kept Docking resident after the
-settle window, sampled it at 0.0% CPU with roughly 160 MB RSS, and showed no
-SwiftUI publish-within-update warning in the launch log.
+path. The run created `dist/Docking-0.0.0-macos26.zip` and
+`dist/Docking-0.0.0-macos26.dmg`, verified the staged app signature, verified
+the archive contents and checksum files, and confirmed that unprovisioned builds
+omit the WeatherKit entitlement so Weather uses the Open-Meteo real-data
+fallback instead of failing at launch. A launch smoke pass on the same path kept
+Docking resident after the settle window, sampled it at 0.0% CPU with roughly
+160 MB RSS, and showed no SwiftUI publish-within-update warning in the launch
+log.
 
 ## Manual gates before GitHub cutover
 
