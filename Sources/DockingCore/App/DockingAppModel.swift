@@ -33,7 +33,6 @@ public final class DockingAppModel: ObservableObject {
         }
     }
     @Published var activeBundleID: String?
-    @Published var isPointerInsideDock = false
     @Published var restoreStatusMessage: String = "Docking is currently overlay-only and has not changed Apple Dock settings."
     @Published var dockRestoreStatus = DockRestoreStatus(snapshotCreatedAt: nil, snapshotAppVersion: nil, savedPreferenceCount: 0)
     @Published var launchAtLoginStatusMessage: String = "Launch at login uses macOS Login Items when enabled."
@@ -65,6 +64,13 @@ public final class DockingAppModel: ObservableObject {
     private var pendingSettingsSaveTask: Task<Void, Never>?
     private var widgetFrames: [DockWidgetKind: NSRect] = [:]
     private var dockItemFrames: [UUID: NSRect] = [:]
+    // Pointer residency is an auto-hide controller invariant, not presentation
+    // state. Publishing it looked convenient while debugging, but no SwiftUI
+    // view reads it directly; sending ObservableObject changes from hover or
+    // tracking-area callbacks can collide with SwiftUI's own layout pass during
+    // launch. Keeping it ordinary MainActor state preserves the behavior while
+    // avoiding a noisy and unnecessary view invalidation path.
+    var isPointerInsideDock = false
     // Auto-hide should hide after pointer exit, but an explicit Show Dock
     // button/menu command is different from a passive edge reveal. The user has
     // asked to see the dock, so a previously scheduled hide must not win while

@@ -12,7 +12,18 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         // normal macOS app.
         NSApp.setActivationPolicy(.regular)
         DockingIconAssets.applyApplicationIcon()
-        DockingAppModel.shared.start()
+        Task { @MainActor in
+            // SwiftUI is still constructing the WindowGroup when AppKit calls
+            // `applicationDidFinishLaunching`. Starting the model immediately
+            // publishes the running-app snapshot, restore status, and menu-bar
+            // state while those views are in their first update pass, which
+            // triggers SwiftUI's "Publishing changes from within view updates"
+            // runtime warning. Yielding one main-actor turn keeps launch just as
+            // fast for the user, but lets the scene finish before Docking starts
+            // its own resident panels and observer-driven state updates.
+            await Task.yield()
+            DockingAppModel.shared.start()
+        }
     }
 
     public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
