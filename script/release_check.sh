@@ -14,6 +14,8 @@ PACKAGE_ZIP="$DIST_DIR/$APP_NAME-$APP_VERSION-macos26.zip"
 APP_ICON="$APP_BUNDLE/Contents/Resources/DockingAppIcon.icns"
 MENU_BAR_ICON="$APP_BUNDLE/Contents/Resources/DockingMenuBarTemplate.png"
 EMBEDDED_PROFILE="$APP_BUNDLE/Contents/embedded.provisionprofile"
+APP_BINARY="$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+MOCK_WEATHER_PROVIDER="$ROOT_DIR/Sources/DockingCore/Widgets/Weather/MockWeatherProvider.swift"
 
 cd "$ROOT_DIR"
 
@@ -121,6 +123,27 @@ fail_if_matches \
   "user-specific path or old bundle identifier still appears in authored files" \
   "s[u]gu|/U[s]ers/|com\\.s[u]gu\\.docking" \
   -g '!dist/**' -g '!.git/**' -g '!script/release_check.sh' .
+
+section "Production mock boundary"
+# The product requirement is stronger than "real provider exists": production
+# builds must not be able to fall back to fake weather. Import lines are allowed
+# outside the guard because they do not create a runtime implementation; the
+# invariant we actually care about is that the provider type itself remains
+# enclosed by DEBUG-only compilation. The release binary check below catches the
+# important second half: a source guard typo must not silently ship in the app.
+debug_guard_line="$(/usr/bin/awk '/^#if DEBUG$/ { print NR; exit }' "$MOCK_WEATHER_PROVIDER")"
+provider_line="$(/usr/bin/awk '/final class MockWeatherProvider/ { print NR; exit }' "$MOCK_WEATHER_PROVIDER")"
+endif_line="$(/usr/bin/awk '/^#endif$/ { line=NR } END { if (line) print line }' "$MOCK_WEATHER_PROVIDER")"
+if [[ -z "$debug_guard_line" || -z "$provider_line" || -z "$endif_line" ]] ||
+  (( debug_guard_line >= provider_line || endif_line <= provider_line )); then
+  printf 'Release check failed: MockWeatherProvider.swift must remain DEBUG-only.\n' >&2
+  exit 1
+fi
+
+if /usr/bin/strings "$APP_BINARY" | /usr/bin/grep -q "MockWeatherProvider"; then
+  printf 'Release check failed: release binary still contains MockWeatherProvider.\n' >&2
+  exit 1
+fi
 
 section "Package"
 if [[ ! -s "$PACKAGE_ZIP" ]]; then

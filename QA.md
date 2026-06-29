@@ -31,6 +31,8 @@ Expected results:
 - The user-specific identifier/path search returns no matches. It intentionally
   excludes build output and `.git` so the check covers authored project files,
   not previous binaries or history.
+- `MockWeatherProvider.swift` remains DEBUG-only and the release executable does
+  not contain the mock provider implementation.
 - The final release identity section prints the current branch, short commit,
   worktree cleanliness, and SHA-256 for `dist/Docking-0.0.0-macos26.zip`.
 
