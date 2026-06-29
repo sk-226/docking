@@ -104,6 +104,12 @@ struct FolderStackPanelView: View {
                     .padding(.leading, CGFloat(index) * 3)
                 }
                 .buttonStyle(.plain)
+                .contextMenu {
+                    stackEntryContextMenu(entry)
+                }
+                .onDrag {
+                    stackEntryDragProvider(entry)
+                }
             }
             overflowText(limit: 10)
         }
@@ -130,6 +136,12 @@ struct FolderStackPanelView: View {
                         }
                         .buttonStyle(.plain)
                         .dockTooltip(entry.title)
+                        .contextMenu {
+                            stackEntryContextMenu(entry)
+                        }
+                        .onDrag {
+                            stackEntryDragProvider(entry)
+                        }
                     }
                 }
                 scrollMoreAffordance
@@ -181,6 +193,12 @@ struct FolderStackPanelView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .contextMenu {
+                        stackEntryContextMenu(entry)
+                    }
+                    .onDrag {
+                        stackEntryDragProvider(entry)
+                    }
                 }
             }
         }
@@ -194,6 +212,26 @@ struct FolderStackPanelView: View {
             .aspectRatio(contentMode: .fit)
             .frame(width: size, height: size)
             .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private func stackEntryContextMenu(_ entry: FolderStackEntry) -> some View {
+        Button("Open") {
+            model.openFolderStackEntry(entry)
+        }
+        Button("Show in Finder") {
+            model.showFolderStackEntryInFinder(entry)
+        }
+    }
+
+    private func stackEntryDragProvider(_ entry: FolderStackEntry) -> NSItemProvider {
+        // Finder and most Mac apps understand `public.file-url`. Passing the
+        // actual file URL preserves native drag behavior for Downloads items:
+        // the receiving app decides whether it opens, imports, copies, or moves
+        // the file. Docking should not pre-copy stack entries or synthesize
+        // temporary files, because that would break the user's expectation that
+        // a Dock stack represents the real folder contents.
+        NSItemProvider(object: entry.url as NSURL)
     }
 
     private var entryCountLabel: String {

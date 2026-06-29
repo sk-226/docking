@@ -464,6 +464,11 @@ public final class DockingAppModel: ObservableObject {
         folderStackPanelController.close()
     }
 
+    func showFolderStackEntryInFinder(_ entry: FolderStackEntry) {
+        NSWorkspace.shared.activateFileViewerSelecting([entry.url])
+        folderStackPanelController.close()
+    }
+
     func openFolderInFinderFromStack(_ item: DockItem) {
         launch(item)
         folderStackPanelController.close()
