@@ -5,6 +5,8 @@ struct DockRestoreView: View {
     @EnvironmentObject private var model: DockingAppModel
     @State private var confirmsPrimaryMode = false
     @State private var confirmsAppleDockReload = false
+    @State private var confirmsDisableReplacementMode = false
+    @State private var confirmsRestoreOriginalDock = false
 
     var body: some View {
         ControlCenterScrollPage(maxContentWidth: 700) {
@@ -31,7 +33,13 @@ struct DockRestoreView: View {
                         .disabled(model.settings.dockReplacementModeEnabled)
 
                         Button {
-                            model.disableDockReplacementMode()
+                            // Disabling replacement mode writes Apple Dock
+                            // preferences. It is tempting to treat this as a
+                            // harmless "turn off" toggle, but the user can
+                            // experience visible system Dock changes, so it
+                            // belongs behind the same explicit confirmation
+                            // boundary as enabling primary mode.
+                            confirmsDisableReplacementMode = true
                         } label: {
                             Label("Disable Docking replacement mode", systemImage: "xmark.circle")
                         }
@@ -69,7 +77,12 @@ struct DockRestoreView: View {
 
                     HStack {
                         Button {
-                            model.restoreOriginalDockSettings()
+                            // Restoring is a safety feature, but it still
+                            // writes into com.apple.dock. Keeping it
+                            // confirm-first prevents an accidental click from
+                            // changing the user's current Dock setup while
+                            // they are only inspecting uninstall instructions.
+                            confirmsRestoreOriginalDock = true
                         } label: {
                             Label("Restore Original macOS Dock Settings", systemImage: "arrow.counterclockwise")
                         }
@@ -120,6 +133,30 @@ struct DockRestoreView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This runs killall Dock so macOS restarts Apple Dock and applies preference changes. It does not import Apple Dock apps into Docking; use Match Original Apple Dock Layout for that. Open windows stay open, but Mission Control and Dock may briefly refresh.")
+        }
+        .confirmationDialog(
+            "Disable primary dock mode?",
+            isPresented: $confirmsDisableReplacementMode,
+            titleVisibility: .visible
+        ) {
+            Button("Disable and Restore Apple Dock") {
+                model.disableDockReplacementMode()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Docking will write the saved Apple Dock settings back, turn off primary dock mode, and keep manual restore instructions visible if macOS does not report the expected values.")
+        }
+        .confirmationDialog(
+            "Restore original macOS Dock settings?",
+            isPresented: $confirmsRestoreOriginalDock,
+            titleVisibility: .visible
+        ) {
+            Button("Restore Apple Dock Settings") {
+                model.restoreOriginalDockSettings()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Docking will write the saved Apple Dock preference snapshot back. It will not run killall Dock here; use Reload Apple Dock to Apply only if you want macOS to restart Apple Dock after restoring.")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
