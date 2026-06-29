@@ -202,3 +202,9 @@ above.
   main display.
 - Full-screen Spaces and multi-display behavior use conservative panel
   collection behavior and still need manual QA on the target machine.
+- Before a wider GitHub/public handoff, the remaining target-machine checks in
+  [QA.md](QA.md) should be completed or consciously accepted: granted/denied
+  Calendar permission flows, Location Services denial, live Finder drag/drop
+  into and out of folder stacks, physical pointer-edge auto-hide reveal, actual
+  sleep/wake, longer Activity Monitor idle sampling, and network-cadence
+  observation after opening Weather.
