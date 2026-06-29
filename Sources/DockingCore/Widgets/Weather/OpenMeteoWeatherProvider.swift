@@ -166,7 +166,8 @@ private struct ForecastResponse: Decodable {
             hourly: hourly.items().prefix(6).map { $0 },
             daily: daily.items().prefix(7).map { $0 },
             humidity: current.relativeHumidity,
-            airQualityLabel: airQualityLabel
+            airQualityLabel: airQualityLabel,
+            dataSource: .openMeteo
         )
     }
 }

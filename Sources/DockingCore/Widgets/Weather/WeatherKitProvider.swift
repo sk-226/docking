@@ -126,7 +126,8 @@ final class WeatherKitProvider: WeatherProvider {
                     )
                 },
             humidity: current.humidity,
-            airQualityLabel: nil
+            airQualityLabel: nil,
+            dataSource: .weatherKit
         )
     }
 }

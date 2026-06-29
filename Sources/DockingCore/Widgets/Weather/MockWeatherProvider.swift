@@ -40,7 +40,8 @@ final class MockWeatherProvider: WeatherProvider {
                 }
             },
             humidity: 0.72,
-            airQualityLabel: nil
+            airQualityLabel: nil,
+            dataSource: .mock
         )
     }
 }

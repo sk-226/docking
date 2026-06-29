@@ -623,6 +623,7 @@ struct WidgetsControlCenterSection: View {
                     Text("Weather Widget")
                         .font(.headline)
                     Toggle("Enable Weather widget", isOn: $model.settings.weatherEnabled)
+                    WeatherDataSourceStatus(viewModel: model.weatherViewModel)
                     Toggle("Use current location", isOn: $model.settings.weatherUsesCurrentLocation)
 
                     HStack {
@@ -650,6 +651,46 @@ struct WidgetsControlCenterSection: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+    }
+}
+
+private struct WeatherDataSourceStatus: View {
+    @ObservedObject var viewModel: WeatherWidgetViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("Latest data source")
+                Text(label)
+                    .fontWeight(.medium)
+                    .foregroundStyle(viewModel.snapshot?.dataSource == nil ? .secondary : .primary)
+            }
+            ControlCenterHelpText(detail)
+        }
+    }
+
+    private var label: String {
+        guard let snapshot = viewModel.snapshot else {
+            return "Not loaded yet"
+        }
+
+        return snapshot.dataSource?.controlCenterLabel ?? "Unknown cached data"
+    }
+
+    private var detail: String {
+        guard let snapshot = viewModel.snapshot else {
+            return "After Weather refreshes, this shows whether Docking used Apple WeatherKit or the Open-Meteo fallback."
+        }
+
+        if let source = snapshot.dataSource {
+            // This row intentionally lives only in Control Center. The dock tile
+            // and weather panel are glanceable weather surfaces; provider
+            // provenance is operational context that matters while configuring
+            // WeatherKit entitlements, fallback behavior, or API trust.
+            return source.controlCenterDetail
+        }
+
+        return "This cached forecast was saved before Docking tracked provider provenance. Refresh weather to identify the current source."
     }
 }
 

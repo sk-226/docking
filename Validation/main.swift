@@ -1079,6 +1079,21 @@ func validateOpenMeteoAirQualityLabels() throws {
     try expect(OpenMeteoAirQualityFormatter.usAQILabel(350) == "350 Hazardous", "hazardous AQI should include the category")
 }
 
+func validateWeatherDataSourceLabels() throws {
+    try expect(
+        WeatherDataSource.weatherKit.controlCenterLabel == "Apple WeatherKit",
+        "WeatherKit snapshots should identify the Apple provider in Control Center"
+    )
+    try expect(
+        WeatherDataSource.openMeteo.controlCenterLabel == "Open-Meteo fallback",
+        "Open-Meteo snapshots should make fallback status explicit in Control Center"
+    )
+    try expect(
+        WeatherDataSource.mock.controlCenterLabel == "Debug mock",
+        "debug-only weather should never be confused with a production provider"
+    )
+}
+
 @MainActor
 func validateSettingsPersistenceIsDebounced() async throws {
     let suiteName = "docking.validation.debounce.\(UUID().uuidString)"
@@ -1305,7 +1320,8 @@ func validateWeatherCache() throws {
         hourly: [],
         daily: [],
         humidity: nil,
-        airQualityLabel: nil
+        airQualityLabel: nil,
+        dataSource: .weatherKit
     )
     try expect(WeatherCache.isFresh(snapshot, intervalMinutes: 1, now: Date(timeIntervalSince1970: 1_600)), "weather cache should enforce a 15 minute minimum freshness interval")
     try expect(!WeatherCache.isFresh(snapshot, intervalMinutes: 15, now: Date(timeIntervalSince1970: 2_000)), "weather cache should expire after the configured interval")
@@ -1326,7 +1342,8 @@ func validationWeatherSnapshot(locationName: String = "Fallback City", fetchedAt
         hourly: [],
         daily: [],
         humidity: nil,
-        airQualityLabel: nil
+        airQualityLabel: nil,
+        dataSource: nil
     )
 }
 
@@ -1788,6 +1805,7 @@ let validations: [(String, () throws -> Void)] = [
     ("weather widget presentation", validateWeatherWidgetPresentation),
     ("weather code mapping", validateWeatherCodeMapping),
     ("open-meteo air quality labels", validateOpenMeteoAirQualityLabels),
+    ("weather data source labels", validateWeatherDataSourceLabels),
     ("accent color options", validateAccentColorOptionsCoverDefault),
     ("weather cache", validateWeatherCache),
     ("restore snapshot", validateRestoreSnapshot)
