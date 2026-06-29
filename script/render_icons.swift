@@ -176,36 +176,41 @@ private enum DockingIconRenderer {
     }
 
     private static func drawMenuBarGlyph() {
-        NSColor.black.setStroke()
         NSColor.black.setFill()
 
-        let shelf = NSBezierPath(roundedRect: NSRect(x: 4.5, y: 5.5, width: 27, height: 8.5), xRadius: 3.0, yRadius: 3.0)
-        shelf.lineWidth = 2.2
-        shelf.stroke()
-
-        // The status item must work at menu-bar size, so it drops color, glass,
-        // and individual app-tile colors. The three holes are enough to say
-        // "dock shelf" without becoming a miniature screenshot of the app icon.
-        for x in [11.0, 17.0, 23.0] {
-            NSBezierPath(roundedRect: NSRect(x: x, y: 8.3, width: 2.8, height: 2.8), xRadius: 0.8, yRadius: 0.8).fill()
-        }
+        // TODO(icon-design): Treat this menu-bar rocket as WIP. The current
+        // mark is intentionally simple so it remains legible as a template
+        // status icon, but the final brand direction is still unsettled. Keep
+        // this renderer easy to replace rather than tuning tiny curve points as
+        // if this were the permanent design.
+        // The menu bar version is a brand glyph, not a miniature copy of the
+        // app icon. A straight vertical rocket reads like a sword in the menu
+        // bar, so this one is drawn as a larger diagonal silhouette. The single
+        // oversized porthole is the only cut-out we keep: it is large enough to
+        // survive template rendering and is the cue that distinguishes the mark
+        // from an arrow, upload icon, or blade.
+        NSGraphicsContext.current?.cgContext.saveGState()
+        NSGraphicsContext.current?.cgContext.translateBy(x: 1.0, y: -1.2)
+        NSGraphicsContext.current?.cgContext.translateBy(x: 18, y: 18)
+        NSGraphicsContext.current?.cgContext.scaleBy(x: 1.08, y: 1.08)
+        NSGraphicsContext.current?.cgContext.rotate(by: -.pi / 5.2)
+        NSGraphicsContext.current?.cgContext.translateBy(x: -18, y: -18)
 
         let rocket = NSBezierPath()
-        rocket.move(to: NSPoint(x: 18, y: 30.5))
-        rocket.curve(to: NSPoint(x: 14.7, y: 19.2), controlPoint1: NSPoint(x: 14.7, y: 27.3), controlPoint2: NSPoint(x: 13.5, y: 23.0))
-        rocket.curve(to: NSPoint(x: 11.8, y: 16.2), controlPoint1: NSPoint(x: 13.2, y: 18.6), controlPoint2: NSPoint(x: 12.2, y: 17.6))
-        rocket.curve(to: NSPoint(x: 17.0, y: 18.3), controlPoint1: NSPoint(x: 14.0, y: 16.5), controlPoint2: NSPoint(x: 15.6, y: 17.2))
-        rocket.line(to: NSPoint(x: 17.0, y: 15.8))
-        rocket.curve(to: NSPoint(x: 19.0, y: 15.8), controlPoint1: NSPoint(x: 17.0, y: 14.8), controlPoint2: NSPoint(x: 19.0, y: 14.8))
-        rocket.line(to: NSPoint(x: 19.0, y: 18.3))
-        rocket.curve(to: NSPoint(x: 24.2, y: 16.2), controlPoint1: NSPoint(x: 20.4, y: 17.2), controlPoint2: NSPoint(x: 22.0, y: 16.5))
-        rocket.curve(to: NSPoint(x: 21.3, y: 19.2), controlPoint1: NSPoint(x: 23.8, y: 17.6), controlPoint2: NSPoint(x: 22.8, y: 18.6))
-        rocket.curve(to: NSPoint(x: 18, y: 30.5), controlPoint1: NSPoint(x: 22.5, y: 23.0), controlPoint2: NSPoint(x: 21.3, y: 27.3))
+        rocket.move(to: NSPoint(x: 18, y: 33))
+        rocket.curve(to: NSPoint(x: 10.8, y: 17.6), controlPoint1: NSPoint(x: 11.8, y: 28.4), controlPoint2: NSPoint(x: 9.4, y: 23.0))
+        rocket.curve(to: NSPoint(x: 5.6, y: 11.6), controlPoint1: NSPoint(x: 7.8, y: 16.1), controlPoint2: NSPoint(x: 5.9, y: 14.1))
+        rocket.curve(to: NSPoint(x: 14.8, y: 14.7), controlPoint1: NSPoint(x: 9.2, y: 11.7), controlPoint2: NSPoint(x: 12.0, y: 12.7))
+        rocket.line(to: NSPoint(x: 14.8, y: 7.2))
+        rocket.curve(to: NSPoint(x: 21.2, y: 7.2), controlPoint1: NSPoint(x: 14.8, y: 5.4), controlPoint2: NSPoint(x: 21.2, y: 5.4))
+        rocket.line(to: NSPoint(x: 21.2, y: 14.7))
+        rocket.curve(to: NSPoint(x: 30.4, y: 11.6), controlPoint1: NSPoint(x: 24.0, y: 12.7), controlPoint2: NSPoint(x: 26.8, y: 11.7))
+        rocket.curve(to: NSPoint(x: 25.2, y: 17.6), controlPoint1: NSPoint(x: 30.1, y: 14.1), controlPoint2: NSPoint(x: 28.2, y: 16.1))
+        rocket.curve(to: NSPoint(x: 18, y: 33), controlPoint1: NSPoint(x: 26.6, y: 23.0), controlPoint2: NSPoint(x: 24.2, y: 28.4))
         rocket.close()
         rocket.fill()
 
-        let window = NSBezierPath(ovalIn: NSRect(x: 16.7, y: 23.6, width: 2.6, height: 2.6))
-        NSGraphicsContext.current?.cgContext.saveGState()
+        let window = NSBezierPath(ovalIn: NSRect(x: 15.2, y: 23.0, width: 5.6, height: 5.6))
         NSGraphicsContext.current?.cgContext.setBlendMode(.clear)
         window.fill()
         NSGraphicsContext.current?.cgContext.restoreGState()
