@@ -1055,6 +1055,19 @@ func validateWeatherWidgetPresentation() throws {
     try expect(presentation.symbolName == "cloud.rain.fill", "weather widget should use the filled rain symbol for native dock legibility")
 }
 
+func validateWeatherCodeMapping() throws {
+    // Open-Meteo's 1/2/3 codes are deliberately adjacent but semantically
+    // distinct. This protects the fallback provider from regressing to the
+    // older broad `1...3` mapping, which made fully cloudy/overcast weather
+    // show the same sun-bearing symbol as partly cloudy weather.
+    try expect(WeatherCodeMapping.label(for: 1) == "Mostly Clear", "Open-Meteo code 1 should not be labeled as generic cloudy weather")
+    try expect(WeatherCodeMapping.symbolName(for: 1) == "sun.max", "Open-Meteo code 1 should preserve mostly-clear semantics")
+    try expect(WeatherCodeMapping.label(for: 2) == "Partly Cloudy", "Open-Meteo code 2 should stay distinct from overcast conditions")
+    try expect(WeatherCodeMapping.symbolName(for: 2) == "cloud.sun", "Open-Meteo code 2 is the only clear/cloudy fallback case that should show both cloud and sun")
+    try expect(WeatherCodeMapping.label(for: 3) == "Cloudy", "Open-Meteo code 3 should read as cloudy/overcast in the dock")
+    try expect(WeatherCodeMapping.symbolName(for: 3) == "cloud", "Open-Meteo code 3 should not render a sun-bearing symbol")
+}
+
 func validateOpenMeteoAirQualityLabels() throws {
     try expect(OpenMeteoAirQualityFormatter.usAQILabel(nil) == nil, "missing AQI should hide the air-quality row")
     try expect(OpenMeteoAirQualityFormatter.usAQILabel(-1) == nil, "invalid negative AQI should not be shown")
@@ -1773,6 +1786,7 @@ let validations: [(String, () throws -> Void)] = [
     ("weather dock location display", validateWeatherDockLocationDisplay),
     ("calendar widget presentation", validateCalendarWidgetPresentation),
     ("weather widget presentation", validateWeatherWidgetPresentation),
+    ("weather code mapping", validateWeatherCodeMapping),
     ("open-meteo air quality labels", validateOpenMeteoAirQualityLabels),
     ("accent color options", validateAccentColorOptionsCoverDefault),
     ("weather cache", validateWeatherCache),

@@ -111,10 +111,21 @@ enum CalendarGrouping {
 enum WeatherCodeMapping {
     static func label(for code: Int?) -> String {
         guard let code else { return "Weather" }
+
+        // Open-Meteo follows WMO-style numeric conditions, while WeatherKit
+        // already hands us provider-owned prose and symbols. These labels are
+        // therefore only for the Open-Meteo fallback path. We keep code 3 as
+        // "Cloudy" instead of the more literal "Overcast" because the dock
+        // tile is a compact glance surface and "Cloudy" matches the broader
+        // Apple-style condition vocabulary used elsewhere in this widget.
         switch code {
         case 0:
             return "Clear"
-        case 1...3:
+        case 1:
+            return "Mostly Clear"
+        case 2:
+            return "Partly Cloudy"
+        case 3:
             return "Cloudy"
         case 45, 48:
             return "Fog"
@@ -133,11 +144,24 @@ enum WeatherCodeMapping {
 
     static func symbolName(for code: Int?) -> String {
         guard let code else { return "cloud" }
+
+        // Open-Meteo gives us WMO condition codes, not SF Symbols. Keep the
+        // low-cloud-cover cases split instead of folding `1...3`: code 3 is
+        // overcast, so `cloud.sun` would invent visible sun that the data
+        // source did not report. Code 1 stays `sun.max` because making it
+        // `cloud.sun` would collapse "mostly clear" into the same visual as
+        // "partly cloudy"; if we later add Open-Meteo `is_day`, day/night
+        // variants should be threaded through explicitly rather than guessed
+        // from the weather code alone.
         switch code {
         case 0:
             return "sun.max"
-        case 1...3:
+        case 1:
+            return "sun.max"
+        case 2:
             return "cloud.sun"
+        case 3:
+            return "cloud"
         case 45, 48:
             return "cloud.fog"
         case 51...67, 80...82:
