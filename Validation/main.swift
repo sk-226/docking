@@ -615,6 +615,65 @@ func validateFolderStackPanelDismissHitTesting() throws {
     )
 }
 
+func validateFolderDropService() throws {
+    let fileManager = FileManager.default
+    let root = URL(fileURLWithPath: "/private/tmp/DockingValidation/FolderDrop", isDirectory: true)
+    try? fileManager.removeItem(at: root)
+    try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+
+    let target = root.appendingPathComponent("Target", isDirectory: true)
+    try fileManager.createDirectory(at: target, withIntermediateDirectories: true)
+
+    let copySource = root.appendingPathComponent("copy-source.txt")
+    try "copy".write(to: copySource, atomically: true, encoding: .utf8)
+    let copied = try FolderDropService.performDrop(
+        sourceURL: copySource,
+        into: target,
+        modifierFlags: [.option],
+        fileManager: fileManager
+    )
+    try expect(fileManager.fileExists(atPath: copySource.path), "Option-dropping onto a Dock folder should copy without removing the source")
+    try expect(fileManager.fileExists(atPath: copied.path), "Option-dropping onto a Dock folder should create the destination item")
+
+    let moveSource = root.appendingPathComponent("move-source.txt")
+    try "move".write(to: moveSource, atomically: true, encoding: .utf8)
+    try expect(
+        FolderDropService.operation(sourceURL: moveSource, targetFolderURL: target, modifierFlags: []) == .move,
+        "same-volume Dock folder drops should default to move, matching Finder-style drag semantics"
+    )
+    let moved = try FolderDropService.performDrop(
+        sourceURL: moveSource,
+        into: target,
+        modifierFlags: [],
+        fileManager: fileManager
+    )
+    try expect(!fileManager.fileExists(atPath: moveSource.path), "same-volume Dock folder drops should remove the source after moving")
+    try expect(fileManager.fileExists(atPath: moved.path), "same-volume Dock folder drops should create the moved destination item")
+
+    let duplicateSource = root.appendingPathComponent("duplicate.txt")
+    let duplicateDestination = target.appendingPathComponent("duplicate.txt")
+    try "source".write(to: duplicateSource, atomically: true, encoding: .utf8)
+    try "existing".write(to: duplicateDestination, atomically: true, encoding: .utf8)
+    do {
+        _ = try FolderDropService.performDrop(sourceURL: duplicateSource, into: target, modifierFlags: [.option], fileManager: fileManager)
+        throw ValidationFailure(description: "folder drops should not overwrite an existing item")
+    } catch FolderDropError.destinationAlreadyExists {
+        // Expected: Finder would ask the user how to resolve the collision. The
+        // 0.0.0 Docking implementation refuses silent overwrite instead.
+    }
+
+    let sourceFolder = root.appendingPathComponent("SourceFolder", isDirectory: true)
+    let nestedTarget = sourceFolder.appendingPathComponent("Nested", isDirectory: true)
+    try fileManager.createDirectory(at: nestedTarget, withIntermediateDirectories: true)
+    do {
+        _ = try FolderDropService.performDrop(sourceURL: sourceFolder, into: nestedTarget, modifierFlags: [.option], fileManager: fileManager)
+        throw ValidationFailure(description: "folder drops should reject copying a folder into itself")
+    } catch FolderDropError.droppingFolderIntoItself {
+        // Expected: recursive folder copies are invalid and should produce a
+        // clear Docking-level error before FileManager returns a low-level one.
+    }
+}
+
 func validateRunningApplicationMatcher() throws {
     let item = DockItem(
         title: "Editor",
@@ -1703,6 +1762,7 @@ let validations: [(String, () throws -> Void)] = [
     ("app catalog item recognition", validateAppCatalogRecognizesApplicationsAndFolders),
     ("folder stack presentation", validateFolderStackPresentation),
     ("folder stack dismiss hit testing", validateFolderStackPanelDismissHitTesting),
+    ("folder drop service", validateFolderDropService),
     ("running app matcher", validateRunningApplicationMatcher),
     ("settings store", validateSettingsStore),
     ("settings refresh keys", validateSettingsRefreshKeys),
