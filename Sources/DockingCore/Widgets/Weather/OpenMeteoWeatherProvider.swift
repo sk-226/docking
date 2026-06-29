@@ -80,7 +80,8 @@ final class OpenMeteoWeatherProvider: WeatherProvider {
             URLQueryItem(name: "daily", value: "weather_code,temperature_2m_max,temperature_2m_min"),
             URLQueryItem(name: "forecast_days", value: "7"),
             URLQueryItem(name: "temperature_unit", value: unit == .fahrenheit ? "fahrenheit" : "celsius"),
-            URLQueryItem(name: "timezone", value: "auto")
+            URLQueryItem(name: "timezone", value: "auto"),
+            URLQueryItem(name: "timeformat", value: "unixtime")
         ]
 
         guard let url = components?.url else {
@@ -146,12 +147,26 @@ private struct GeocodingPlace: Decodable {
 }
 
 private struct ForecastResponse: Decodable {
+    var timezone: String?
+    var utcOffsetSeconds: Int?
     var current: CurrentBlock
     var hourly: HourlyBlock
     var daily: DailyBlock
 
+    enum CodingKeys: String, CodingKey {
+        case timezone
+        case utcOffsetSeconds = "utc_offset_seconds"
+        case current
+        case hourly
+        case daily
+    }
+
     func snapshot(locationName: String, unit: TemperatureUnit, airQualityLabel: String?) -> WeatherSnapshot {
         let code = current.weatherCode
+        let clock = OpenMeteoForecastClock(
+            timeZoneIdentifier: timezone,
+            utcOffsetSeconds: utcOffsetSeconds
+        )
         return WeatherSnapshot(
             locationName: locationName,
             fetchedAt: Date(),
@@ -163,12 +178,71 @@ private struct ForecastResponse: Decodable {
                 conditionLabel: WeatherCodeMapping.label(for: code),
                 symbolName: WeatherCodeMapping.symbolName(for: code)
             ),
-            hourly: hourly.items().prefix(6).map { $0 },
-            daily: daily.items().prefix(7).map { $0 },
+            hourly: hourly.items(clock: clock).prefix(6).map { $0 },
+            daily: daily.items(clock: clock).prefix(7).map { $0 },
             humidity: current.relativeHumidity,
             airQualityLabel: airQualityLabel,
+            timeZoneIdentifier: clock.timeZoneIdentifier,
             dataSource: .openMeteo
         )
+    }
+}
+
+struct OpenMeteoForecastClock {
+    let timeZoneIdentifier: String?
+    let utcOffsetSeconds: TimeInterval
+    private let hasExplicitUTCOffset: Bool
+
+    init(timeZoneIdentifier: String?, utcOffsetSeconds: Int?) {
+        let resolvedTimeZone = timeZoneIdentifier.flatMap(TimeZone.init(identifier:))
+        self.utcOffsetSeconds = TimeInterval(utcOffsetSeconds ?? 0)
+        self.hasExplicitUTCOffset = utcOffsetSeconds != nil
+        self.timeZoneIdentifier = resolvedTimeZone?.identifier
+            ?? utcOffsetSeconds.flatMap { TimeZone(secondsFromGMT: $0)?.identifier }
+    }
+
+    var displayTimeZone: TimeZone? {
+        if let timeZoneIdentifier {
+            return TimeZone(identifier: timeZoneIdentifier)
+        }
+        guard hasExplicitUTCOffset else {
+            return nil
+        }
+        return TimeZone(secondsFromGMT: Int(utcOffsetSeconds))
+    }
+
+    func absoluteDate(fromUnixTime seconds: Double) -> Date {
+        Date(timeIntervalSince1970: seconds)
+    }
+
+    func localForecastDay(fromUnixTime seconds: Double) -> Date {
+        let shiftedDate = Date(timeIntervalSince1970: seconds + utcOffsetSeconds)
+        var utcCalendar = Calendar(identifier: .gregorian)
+        utcCalendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let components = utcCalendar.dateComponents([.year, .month, .day], from: shiftedDate)
+
+        guard let displayTimeZone else {
+            return utcCalendar.date(from: components) ?? absoluteDate(fromUnixTime: seconds)
+        }
+
+        var localNoonComponents = components
+        localNoonComponents.timeZone = displayTimeZone
+        localNoonComponents.hour = 12
+
+        var forecastCalendar = Calendar(identifier: .gregorian)
+        forecastCalendar.timeZone = displayTimeZone
+        // Daily forecast rows only display a weekday, not a wall-clock time.
+        // We intentionally anchor the date at noon in the forecast timezone:
+        // midnight is where DST transitions and missing local times tend to
+        // live, while noon preserves the intended local day for formatting.
+        return forecastCalendar.date(from: localNoonComponents) ?? absoluteDate(fromUnixTime: seconds)
+    }
+
+    func isUpcoming(unixTime seconds: Double, now: Date = Date()) -> Bool {
+        // This comparison must happen against the absolute epoch time, not a
+        // wall-clock string. Otherwise a Tokyo Mac can drop future New York
+        // hours simply because "09:00" was parsed as Japan time.
+        absoluteDate(fromUnixTime: seconds) >= now
     }
 }
 
@@ -236,7 +310,7 @@ private struct CurrentBlock: Decodable {
 }
 
 private struct HourlyBlock: Decodable {
-    var time: [String]
+    var time: [Double]
     var temperature: [Double]
     var weatherCode: [Int?]
 
@@ -246,13 +320,13 @@ private struct HourlyBlock: Decodable {
         case weatherCode = "weather_code"
     }
 
-    func items() -> [HourlyWeatherSummary] {
-        zip3(time, temperature, weatherCode).compactMap { rawTime, temperature, code in
-            guard let date = OpenMeteoDateParsers.hourly.date(from: rawTime), date >= Date() else {
+    func items(clock: OpenMeteoForecastClock) -> [HourlyWeatherSummary] {
+        zip3(time, temperature, weatherCode).compactMap { unixTime, temperature, code in
+            guard clock.isUpcoming(unixTime: unixTime) else {
                 return nil
             }
             return HourlyWeatherSummary(
-                date: date,
+                date: clock.absoluteDate(fromUnixTime: unixTime),
                 temperature: temperature,
                 conditionCode: code,
                 symbolName: WeatherCodeMapping.symbolName(for: code)
@@ -262,7 +336,7 @@ private struct HourlyBlock: Decodable {
 }
 
 private struct DailyBlock: Decodable {
-    var time: [String]
+    var time: [Double]
     var weatherCode: [Int?]
     var high: [Double]
     var low: [Double]
@@ -274,13 +348,10 @@ private struct DailyBlock: Decodable {
         case low = "temperature_2m_min"
     }
 
-    func items() -> [DailyWeatherSummary] {
-        zip4(time, weatherCode, high, low).compactMap { rawDate, code, high, low in
-            guard let date = OpenMeteoDateParsers.daily.date(from: rawDate) else {
-                return nil
-            }
+    func items(clock: OpenMeteoForecastClock) -> [DailyWeatherSummary] {
+        zip4(time, weatherCode, high, low).map { unixTime, code, high, low in
             return DailyWeatherSummary(
-                date: date,
+                date: clock.localForecastDay(fromUnixTime: unixTime),
                 high: high,
                 low: low,
                 conditionCode: code,
@@ -288,22 +359,6 @@ private struct DailyBlock: Decodable {
             )
         }
     }
-}
-
-private enum OpenMeteoDateParsers {
-    static let hourly: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm"
-        return formatter
-    }()
-
-    static let daily: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
 }
 
 private func zip3<A, B, C>(_ a: [A], _ b: [B], _ c: [C]) -> [(A, B, C)] {

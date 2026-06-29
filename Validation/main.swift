@@ -67,8 +67,46 @@ func validateDockLayout() throws {
     var verticalSettings = settings
     verticalSettings.dockPosition = .left
     let vertical = DockLayout.panelSize(itemCount: 3, settings: verticalSettings)
-    try expect(vertical.width == verticalSettings.effectiveDockThickness, "vertical dock width should use effective dock thickness")
+    try expect(vertical.width == DockLayout.shortAxisSize(settings: verticalSettings), "vertical dock width should fit the widest rendered child")
     try expect(vertical.height > vertical.width, "vertical dock should put items on the long vertical axis")
+
+    var detailedVerticalSettings = settings
+    detailedVerticalSettings.dockPosition = .right
+    detailedVerticalSettings.calendarWidgetSizePreset = .detailed
+    detailedVerticalSettings.weatherWidgetSizePreset = .detailed
+    let detailedVertical = DockLayout.panelSize(itemCount: 3, settings: detailedVerticalSettings)
+    try expect(
+        detailedVertical.width >= max(detailedVerticalSettings.calendarWidgetWidth, detailedVerticalSettings.weatherWidgetWidth),
+        "left/right dock panels should not clip detailed widgets wider than the app icon column"
+    )
+
+    var noWidgetSettings = settings
+    noWidgetSettings.calendarEnabled = false
+    noWidgetSettings.weatherEnabled = false
+    let withoutRunningDivider = DockLayout.panelSize(
+        itemCount: 4,
+        settings: noWidgetSettings,
+        hasSeparatedRunningItems: false
+    )
+    let withRunningDivider = DockLayout.panelSize(
+        itemCount: 4,
+        settings: noWidgetSettings,
+        hasSeparatedRunningItems: true
+    )
+    try expect(
+        withRunningDivider.width > withoutRunningDivider.width,
+        "panel size should include the divider before unpinned running apps even when widgets are disabled"
+    )
+
+    let withWidgetsAndRunningDivider = DockLayout.panelSize(
+        itemCount: 4,
+        settings: settings,
+        hasSeparatedRunningItems: true
+    )
+    try expect(
+        withWidgetsAndRunningDivider.width > withWidgets.width,
+        "panel size should include both widget and unpinned-running dividers when both sections are visible"
+    )
 }
 
 func validateDockIconRendererUsesFullBackingScale() throws {
@@ -205,7 +243,7 @@ func validateDockPositionFrames() throws {
         try expect(visible.insetBy(dx: -0.5, dy: -0.5).contains(frame), "\(position.label) dock frame should stay inside the visible screen")
 
         if position.isVertical {
-            try expect(frame.width == settings.effectiveDockThickness, "\(position.label) dock should keep effective dock thickness")
+            try expect(frame.width == DockLayout.shortAxisSize(settings: settings), "\(position.label) dock should fit the rendered short axis")
             try expect(frame.height > frame.width, "\(position.label) dock should be vertical")
         } else {
             try expect(frame.height == settings.effectiveDockThickness, "\(position.label) dock should keep effective dock thickness")
@@ -1107,6 +1145,52 @@ func validateOpenMeteoAirQualityLabels() throws {
     try expect(OpenMeteoAirQualityFormatter.usAQILabel(350) == "350 Hazardous", "hazardous AQI should include the category")
 }
 
+func validateOpenMeteoForecastClock() throws {
+    let newYorkClock = OpenMeteoForecastClock(
+        timeZoneIdentifier: "America/New_York",
+        utcOffsetSeconds: -4 * 60 * 60
+    )
+    try expect(
+        newYorkClock.timeZoneIdentifier == "America/New_York",
+        "Open-Meteo snapshots should retain the resolved provider timezone"
+    )
+    try expect(
+        newYorkClock.displayTimeZone?.identifier == "America/New_York",
+        "forecast display should use the provider timezone instead of the Mac timezone"
+    )
+
+    let now = Date(timeIntervalSince1970: 1_000)
+    try expect(
+        newYorkClock.isUpcoming(unixTime: 1_001, now: now),
+        "hourly forecast filtering should compare absolute Unix seconds"
+    )
+    try expect(
+        !newYorkClock.isUpcoming(unixTime: 999, now: now),
+        "hourly forecast filtering should drop only hours that are truly in the past"
+    )
+
+    let forecastInstant = Date(timeIntervalSince1970: 1_787_490_000) // 2026-08-23 13:00 UTC
+    try expect(
+        DockingFormatters.timeString(from: forecastInstant, timeZone: newYorkClock.displayTimeZone) == "09:00",
+        "weather detail rows should format forecast hours in the forecast location timezone"
+    )
+
+    guard let newYorkTimeZone = newYorkClock.displayTimeZone else {
+        throw ValidationFailure(description: "New York forecast clock should expose a display timezone")
+    }
+    var newYorkCalendar = Calendar(identifier: .gregorian)
+    newYorkCalendar.timeZone = newYorkTimeZone
+    let dailyDate = newYorkClock.localForecastDay(fromUnixTime: 1_787_457_600) // 2026-08-23 04:00 UTC, midnight in New York
+    let dailyComponents = newYorkCalendar.dateComponents([.year, .month, .day, .hour], from: dailyDate)
+    try expect(
+        dailyComponents.year == 2026
+            && dailyComponents.month == 8
+            && dailyComponents.day == 23
+            && dailyComponents.hour == 12,
+        "daily Open-Meteo unix timestamps should preserve the forecast location's local calendar day"
+    )
+}
+
 func validateWeatherDataSourceLabels() throws {
     try expect(
         WeatherDataSource.weatherKit.controlCenterLabel == "Apple WeatherKit",
@@ -1413,6 +1497,7 @@ func validateWeatherCache() throws {
         daily: [],
         humidity: nil,
         airQualityLabel: nil,
+        timeZoneIdentifier: nil,
         dataSource: .weatherKit
     )
     try expect(WeatherCache.isFresh(snapshot, intervalMinutes: 1, now: Date(timeIntervalSince1970: 1_600)), "weather cache should enforce a 15 minute minimum freshness interval")
@@ -1435,6 +1520,7 @@ func validationWeatherSnapshot(locationName: String = "Fallback City", fetchedAt
         daily: [],
         humidity: nil,
         airQualityLabel: nil,
+        timeZoneIdentifier: nil,
         dataSource: .openMeteo
     )
 }
@@ -1936,6 +2022,7 @@ let validations: [(String, () throws -> Void)] = [
     ("weather widget presentation", validateWeatherWidgetPresentation),
     ("weather code mapping", validateWeatherCodeMapping),
     ("open-meteo air quality labels", validateOpenMeteoAirQualityLabels),
+    ("open-meteo forecast clock", validateOpenMeteoForecastClock),
     ("weather data source labels", validateWeatherDataSourceLabels),
     ("accent color options", validateAccentColorOptionsCoverDefault),
     ("weather cache", validateWeatherCache),

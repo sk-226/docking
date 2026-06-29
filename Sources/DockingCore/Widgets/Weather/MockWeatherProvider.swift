@@ -41,6 +41,7 @@ final class MockWeatherProvider: WeatherProvider {
             },
             humidity: 0.72,
             airQualityLabel: nil,
+            timeZoneIdentifier: nil,
             dataSource: .mock
         )
     }

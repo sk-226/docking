@@ -141,9 +141,10 @@ private struct WeatherSnapshotContent: View {
             }
 
             HStack(spacing: 10) {
+                let forecastTimeZone = snapshot.timeZoneIdentifier.flatMap(TimeZone.init(identifier:))
                 ForEach(snapshot.hourly.prefix(6)) { hour in
                     VStack(spacing: 5) {
-                        Text(DockingFormatters.timeFormatter.string(from: hour.date))
+                        Text(DockingFormatters.timeString(from: hour.date, timeZone: forecastTimeZone))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                         WeatherWidgetSymbolImage(hour.symbolName)
@@ -165,9 +166,10 @@ private struct WeatherSnapshotContent: View {
             }
 
             HStack(spacing: 10) {
+                let forecastTimeZone = snapshot.timeZoneIdentifier.flatMap(TimeZone.init(identifier:))
                 ForEach(snapshot.daily.prefix(5)) { day in
                     VStack(spacing: 5) {
-                        Text(DockingFormatters.weekdayFormatter.string(from: day.date))
+                        Text(DockingFormatters.weekdayString(from: day.date, timeZone: forecastTimeZone))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                         WeatherWidgetSymbolImage(day.symbolName)

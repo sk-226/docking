@@ -54,6 +54,34 @@ enum DockingFormatters {
         return "\(remainingMinutes) min"
     }
 
+    static func timeString(from date: Date, timeZone: TimeZone?) -> String {
+        guard let timeZone else {
+            return timeFormatter.string(from: date)
+        }
+
+        // DateFormatter is mutable and shared formatters are deliberately
+        // reused elsewhere. A fresh formatter for remote weather rows avoids a
+        // subtle global-state bug where one forecast's timezone could leak into
+        // calendar rows or restore timestamps.
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.dateFormat = "HH:mm"
+        formatter.timeZone = timeZone
+        return formatter.string(from: date)
+    }
+
+    static func weekdayString(from date: Date, timeZone: TimeZone?) -> String {
+        guard let timeZone else {
+            return weekdayFormatter.string(from: date)
+        }
+
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.setLocalizedDateFormatFromTemplate("EEE")
+        formatter.timeZone = timeZone
+        return formatter.string(from: date)
+    }
+
     static func sectionTitle(for date: Date, calendar: Calendar = .autoupdatingCurrent, now: Date = Date()) -> String {
         if calendar.isDate(date, inSameDayAs: now) {
             return "Today"

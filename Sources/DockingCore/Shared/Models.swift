@@ -768,6 +768,11 @@ struct WeatherSnapshot: Codable, Equatable {
     var daily: [DailyWeatherSummary]
     var humidity: Double?
     var airQualityLabel: String?
+    // Weather forecasts are not necessarily for the Mac's current timezone:
+    // manual locations can point anywhere in the world. Keep the provider's
+    // timezone with the snapshot so the detail panel can format forecast hours
+    // in the place the weather describes, not wherever the user happens to be.
+    var timeZoneIdentifier: String?
     // Every persisted weather snapshot should identify its provider. Docking is
     // still a 0.0.0 app, so a cache without this field is simply stale data to
     // discard, not a format we need to preserve.

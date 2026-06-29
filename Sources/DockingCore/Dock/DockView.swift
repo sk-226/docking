@@ -6,7 +6,7 @@ struct DockView: View {
 
     var body: some View {
         let isVertical = model.settings.dockPosition.isVertical
-        let dockThickness = model.settings.effectiveDockThickness
+        let dockThickness = DockLayout.shortAxisSize(settings: model.settings)
         let layout = isVertical
             ? AnyLayout(VStackLayout(spacing: model.settings.spacing))
             : AnyLayout(HStackLayout(spacing: model.settings.spacing))
