@@ -111,6 +111,8 @@ cat >"$INFO_PLIST" <<PLIST
   <string>Docking shows your upcoming events in the calendar widget.</string>
   <key>NSCalendarsFullAccessUsageDescription</key>
   <string>Docking needs full calendar access to read upcoming events for the calendar widget.</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
   <key>NSLocationWhenInUseUsageDescription</key>
   <string>Docking can use your location for the weather widget when you enable current-location weather.</string>
   <key>NSLocationUsageDescription</key>

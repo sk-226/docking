@@ -16,6 +16,9 @@ text, or layout.
 - App/folder add by picker or drag/drop, remove, reset, Finder reveal, context
   menus with app process actions and folder stack options, Dock drag reorder,
   and explicit Control Center reorder buttons.
+- Downloads is treated as a recent stack: its panel opens with 12 visible items
+  and loads more as the user scrolls, while its dock icon stays recognizable as
+  Downloads instead of trying to draw the whole folder.
 - Dock app-control parity is tracked in [DOCK_PARITY.md](DOCK_PARITY.md),
   including implemented Quit, Force Quit, Hide, Show All Windows, and folder
   stack behavior.

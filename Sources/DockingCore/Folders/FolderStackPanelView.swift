@@ -5,6 +5,16 @@ struct FolderStackPanelView: View {
     @EnvironmentObject private var model: DockingAppModel
     let item: DockItem
     let entries: [FolderStackEntry]
+    @State private var visibleLimit: Int
+
+    init(item: DockItem, entries: [FolderStackEntry]) {
+        self.item = item
+        self.entries = entries
+        let initialLimit = item.url.map { FolderStackService.isDownloadsFolder($0) } == true
+            ? min(entries.count, FolderStackService.downloadsInitialVisibleCount)
+            : entries.count
+        _visibleLimit = State(initialValue: initialLimit)
+    }
 
     var body: some View {
         let viewMode = FolderStackPresentation.resolvedViewMode(for: item, entryCount: entries.count)
@@ -44,7 +54,7 @@ struct FolderStackPanelView: View {
                 Text(item.title)
                     .font(.headline)
                     .lineLimit(1)
-                Text("\(entries.count) items")
+                Text(entryCountLabel)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -100,25 +110,28 @@ struct FolderStackPanelView: View {
 
     private var gridView: some View {
         ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 76), spacing: 10)], alignment: .leading, spacing: 12) {
-                ForEach(entries) { entry in
-                    Button {
-                        model.openFolderStackEntry(entry)
-                    } label: {
-                        VStack(spacing: 6) {
-                            entryIcon(entry, size: 38)
-                            Text(entry.title)
-                                .font(.caption)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.center)
-                                .frame(height: 32, alignment: .top)
+            VStack(alignment: .leading, spacing: 10) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 76), spacing: 10)], alignment: .leading, spacing: 12) {
+                    ForEach(visibleEntries) { entry in
+                        Button {
+                            model.openFolderStackEntry(entry)
+                        } label: {
+                            VStack(spacing: 6) {
+                                entryIcon(entry, size: 38)
+                                Text(entry.title)
+                                    .font(.caption)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.center)
+                                    .frame(height: 32, alignment: .top)
+                            }
+                            .frame(width: 76, height: 82)
+                            .contentShape(Rectangle())
                         }
-                        .frame(width: 76, height: 82)
-                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
+                        .dockTooltip(entry.title)
                     }
-                    .buttonStyle(.plain)
-                    .dockTooltip(entry.title)
                 }
+                loadMoreTrigger
             }
             .padding(.vertical, 2)
         }
@@ -155,9 +168,60 @@ struct FolderStackPanelView: View {
     private func entryIcon(_ entry: FolderStackEntry, size: CGFloat) -> some View {
         Image(nsImage: NSWorkspace.shared.icon(forFile: entry.url.path))
             .resizable()
+            .interpolation(.high)
+            .antialiased(true)
             .aspectRatio(contentMode: .fit)
             .frame(width: size, height: size)
             .accessibilityHidden(true)
+    }
+
+    private var entryCountLabel: String {
+        guard isDownloadsStack else {
+            return "\(entries.count) items"
+        }
+
+        return visibleLimit >= entries.count
+            ? "\(entries.count) items"
+            : "\(visibleLimit) of \(entries.count) items"
+    }
+
+    private var isDownloadsStack: Bool {
+        item.url.map { FolderStackService.isDownloadsFolder($0) } ?? false
+    }
+
+    @ViewBuilder
+    private var loadMoreTrigger: some View {
+        if isDownloadsStack, visibleLimit < entries.count {
+            HStack {
+                Spacer()
+                Text("Scroll for more")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .frame(height: 18)
+            .onAppear {
+                revealMoreDownloads()
+            }
+        }
+    }
+
+    private var visibleEntries: [FolderStackEntry] {
+        guard isDownloadsStack else {
+            return entries
+        }
+        return Array(entries.prefix(visibleLimit))
+    }
+
+    private func revealMoreDownloads() {
+        guard isDownloadsStack, visibleLimit < entries.count else {
+            return
+        }
+
+        // Do not decode every Downloads icon at panel-open time. The entries
+        // are already sorted by direct-child metadata; this only expands the
+        // number of SwiftUI cells allowed to create icons as the user scrolls.
+        visibleLimit = min(entries.count, visibleLimit + FolderStackService.downloadsInitialVisibleCount)
     }
 
     @ViewBuilder

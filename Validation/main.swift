@@ -61,6 +61,26 @@ func validateDockLayout() throws {
     try expect(vertical.height > vertical.width, "vertical dock should put items on the long vertical axis")
 }
 
+func validateDockIconRendererUsesFullBackingScale() throws {
+    let image = DockIconImageRenderer.render { rect in
+        NSColor.systemBlue.setFill()
+        rect.fill()
+    }
+
+    guard let bitmap = image.representations.compactMap({ $0 as? NSBitmapImageRep }).first else {
+        throw ValidationFailure(description: "generated dock icons should contain a bitmap representation")
+    }
+
+    try expect(bitmap.pixelsWide == 512, "generated dock icons should keep a Retina-width bitmap backing")
+    try expect(bitmap.pixelsHigh == 512, "generated dock icons should keep a Retina-height bitmap backing")
+
+    let topRightColor = bitmap.colorAt(x: bitmap.pixelsWide - 8, y: bitmap.pixelsHigh - 8)
+    try expect(
+        (topRightColor?.alphaComponent ?? 0) > 0.8,
+        "generated dock icons should scale point drawing across the full Retina backing instead of the lower-left quarter"
+    )
+}
+
 func validateDetailPanelAnchoring() throws {
     guard let screen = NSScreen.main ?? NSScreen.screens.first else {
         // The product is a macOS GUI app, so a screen normally exists. Keeping
@@ -446,9 +466,55 @@ func validateFolderStackPresentation() throws {
 
     let downloadsURL = URL(fileURLWithPath: "/tmp/DockingValidation/Downloads", isDirectory: true)
     try expect(
-        SpecialFolderIconFactory.symbolName(forFolderAt: downloadsURL, downloadsDirectory: downloadsURL) == "arrow.down.circle",
+        FolderStackService.isDownloadsFolder(downloadsURL, downloadsDirectory: downloadsURL),
+        "Downloads folder detection should allow the caller to compare against a known Downloads URL"
+    )
+    try expect(
+        SpecialFolderIconFactory.symbolName(forFolderAt: downloadsURL, downloadsDirectory: downloadsURL) == "arrow.down.circle.fill",
         "Downloads should use the Finder-style symbolic folder icon"
     )
+    if let standardDownloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first {
+        let standardDownloadsStackItem = DockItem(
+            kind: .folder,
+            title: "Downloads",
+            bundleIdentifier: nil,
+            url: standardDownloadsURL,
+            iconCacheKey: "folder:\(standardDownloadsURL.path)",
+            folderDisplayMode: .stack
+        )
+        try expect(
+            FolderStackIconFactory.icon(for: standardDownloadsStackItem) == nil,
+            "Downloads should bypass Docking's stack-preview composition so the Dock icon stays visually full-size"
+        )
+        let specialDownloadsIcon = SpecialFolderIconFactory.icon(for: standardDownloadsStackItem)
+        try expect(
+            specialDownloadsIcon?.size == NSSize(width: 256, height: 256),
+            "Downloads should render a high-resolution Finder-style icon for the normal Dock tile"
+        )
+    }
+
+    let recentSourceEntries = (0..<14).map { index in
+        FolderStackEntry(
+            title: "Item \(index)",
+            url: URL(fileURLWithPath: "/tmp/DockingValidation/Downloads/Item-\(index)"),
+            isDirectory: false,
+            kindDescription: "File",
+            dateAdded: now.addingTimeInterval(TimeInterval(index)),
+            dateModified: nil,
+            dateCreated: nil
+        )
+    }
+    let recentDownloads = FolderStackService.recentDownloads(recentSourceEntries, limit: FolderStackService.downloadsInitialVisibleCount)
+    try expect(recentDownloads.count == 12, "Downloads stacks should initially show 12 recent entries")
+    try expect(
+        Array(recentDownloads.map(\.title).prefix(3)) == ["Item 13", "Item 12", "Item 11"],
+        "Downloads recent entries should be newest first"
+    )
+    try expect(recentDownloads.last?.title == "Item 2", "Downloads initial entries should drop older items beyond 12")
+    let allRecentDownloads = FolderStackService.recentDownloads(recentSourceEntries)
+    try expect(allRecentDownloads.count == 14, "Downloads panel data should keep older entries available for scroll reveal")
+    try expect(allRecentDownloads.last?.title == "Item 0", "Downloads full recent list should preserve the oldest direct entry at the end")
+
     try expect(
         SpecialFolderIconFactory.symbolName(
             forFolderAt: URL(fileURLWithPath: "/tmp/DockingValidation/Documents", isDirectory: true),
@@ -1577,6 +1643,7 @@ let validations: [(String, () throws -> Void)] = [
     ("formatters", validateFormatters),
     ("calendar grouping", validateCalendarGrouping),
     ("dock layout", validateDockLayout),
+    ("dock icon renderer backing scale", validateDockIconRendererUsesFullBackingScale),
     ("detail panel anchoring", validateDetailPanelAnchoring),
     ("widget panel dismiss hit testing", validateWidgetPanelDismissHitTesting),
     ("specific display selection", validateSpecificDisplaySelection),

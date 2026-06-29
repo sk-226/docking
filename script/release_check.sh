@@ -78,6 +78,7 @@ assert_plist_value CFBundleVersion "$APP_VERSION"
 assert_plist_value CFBundleIdentifier "$BUNDLE_ID"
 assert_plist_value CFBundleIconFile "DockingAppIcon"
 assert_plist_value LSMinimumSystemVersion "$MIN_SYSTEM_VERSION"
+assert_plist_value NSHighResolutionCapable "true"
 
 if [[ ! -s "$APP_ICON" || ! -s "$MENU_BAR_ICON" ]]; then
   printf 'Release check failed: icon resources were not copied into %s\n' "$APP_BUNDLE" >&2

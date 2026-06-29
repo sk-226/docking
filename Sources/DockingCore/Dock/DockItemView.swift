@@ -22,6 +22,7 @@ struct DockItemView: View {
 
     var body: some View {
         let isVertical = model.settings.dockPosition.isVertical
+        let hoverScale: CGFloat = isHovering && !reduceMotion ? 1.08 : 1.0
 
         Button {
             if item.isFolder {
@@ -33,9 +34,11 @@ struct DockItemView: View {
             VStack(spacing: 4) {
                 Image(nsImage: model.icon(for: item))
                     .resizable()
+                    .interpolation(.high)
+                    .antialiased(true)
                     .aspectRatio(contentMode: .fit)
                     .frame(width: model.settings.iconSize, height: model.settings.iconSize)
-                    .scaleEffect(isHovering && !reduceMotion ? 1.08 : 1.0)
+                    .scaleEffect(hoverScale)
 
                 Circle()
                     .fill(isActive ? model.settings.accentColor : (isRunning ? Color.primary.opacity(0.8) : Color.clear))

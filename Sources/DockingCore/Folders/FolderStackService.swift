@@ -14,6 +14,8 @@ struct FolderStackEntry: Identifiable, Equatable {
 }
 
 enum FolderStackService {
+    static let downloadsInitialVisibleCount = 12
+
     private static let resourceKeys: Set<URLResourceKey> = [
         .isDirectoryKey,
         .isHiddenKey,
@@ -30,12 +32,20 @@ enum FolderStackService {
         }
 
         do {
+            // This reads only the immediate children and requested metadata, not
+            // file contents and not descendants inside downloaded folders. For
+            // Downloads, exact "recent first" order requires metadata for the
+            // direct items; loading icons and row views remains lazy in the
+            // panel so opening the stack does not decode everything at once.
             let urls = try FileManager.default.contentsOfDirectory(
                 at: folderURL,
                 includingPropertiesForKeys: Array(resourceKeys),
                 options: [.skipsHiddenFiles]
             )
             let entries = urls.compactMap(entry(for:))
+            if isDownloadsFolder(folderURL) {
+                return recentDownloads(entries, limit: limit)
+            }
             return sorted(entries, by: item.folderSortMode, limit: limit)
         } catch {
             DockingLog.dock.error("Could not read folder stack \(folderURL.path): \(error.localizedDescription)")
@@ -58,6 +68,39 @@ enum FolderStackService {
                 if lhs.kindDescription != rhs.kindDescription {
                     return localizedCompare(lhs.kindDescription, rhs.kindDescription)
                 }
+                return localizedCompare(lhs.title, rhs.title)
+            }
+        }
+
+        if let limit {
+            return Array(sortedEntries.prefix(limit))
+        }
+        return sortedEntries
+    }
+
+    static func isDownloadsFolder(_ url: URL, downloadsDirectory: URL? = nil) -> Bool {
+        let standardDownloadsDirectory = downloadsDirectory
+            ?? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads", isDirectory: true)
+
+        return isSameFolder(url, standardDownloadsDirectory)
+    }
+
+    static func recentDownloads(_ entries: [FolderStackEntry], limit: Int? = nil) -> [FolderStackEntry] {
+        // Downloads is the one folder where "recent" is more important than a
+        // generic folder sort. The Dock is usually used to recover the file that
+        // just arrived, so showing an alphabetic list here is technically simple
+        // but product-wrong. We keep this special case local to Downloads rather
+        // than changing every folder stack's sort semantics.
+        let sortedEntries = entries.sorted { lhs, rhs in
+            switch (recentDate(for: lhs), recentDate(for: rhs)) {
+            case let (lhs?, rhs?) where lhs != rhs:
+                return lhs > rhs
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            default:
                 return localizedCompare(lhs.title, rhs.title)
             }
         }
@@ -93,6 +136,14 @@ enum FolderStackService {
         lhs.localizedStandardCompare(rhs) == .orderedAscending
     }
 
+    private static func recentDate(for entry: FolderStackEntry) -> Date? {
+        entry.dateAdded ?? entry.dateModified ?? entry.dateCreated
+    }
+
+    private static func isSameFolder(_ lhs: URL, _ rhs: URL) -> Bool {
+        lhs.standardizedFileURL.resolvingSymlinksInPath().path == rhs.standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
     private static func compareDates(_ lhsDate: Date?, _ rhsDate: Date?, fallback lhsTitle: String, _ rhsTitle: String) -> Bool {
         switch (lhsDate, rhsDate) {
         case let (lhs?, rhs?) where lhs != rhs:
@@ -115,6 +166,10 @@ enum FolderStackPresentation {
     static func resolvedViewMode(for item: DockItem, entryCount: Int) -> DockFolderViewMode {
         guard item.folderViewMode == .automatic else {
             return item.folderViewMode
+        }
+
+        if let url = item.url, FolderStackService.isDownloadsFolder(url) {
+            return .grid
         }
 
         // Apple's Automatic mode adapts to available space and item count. We
@@ -147,7 +202,16 @@ enum FolderStackPresentation {
 
 enum FolderStackIconFactory {
     static func icon(for item: DockItem) -> NSImage? {
-        guard item.isFolder, item.folderDisplayMode == .stack else {
+        guard item.isFolder else {
+            return nil
+        }
+
+        let isDownloads = item.url.map { FolderStackService.isDownloadsFolder($0) } ?? false
+        guard !isDownloads else {
+            return nil
+        }
+
+        guard item.folderDisplayMode == .stack else {
             return nil
         }
 
@@ -156,34 +220,39 @@ enum FolderStackIconFactory {
             return item.url.map { NSWorkspace.shared.icon(forFile: $0.path) }
         }
 
-        let size = NSSize(width: 128, height: 128)
-        let image = NSImage(size: size)
-        image.lockFocus()
-
-        NSColor.clear.setFill()
-        NSRect(origin: .zero, size: size).fill()
-
-        for (index, entry) in entries.reversed().enumerated() {
-            let icon = NSWorkspace.shared.icon(forFile: entry.url.path)
-            let offset = CGFloat(index) * 12
-            let rect = NSRect(x: 18 + offset, y: 14 + offset, width: 76, height: 76)
-            let background = NSBezierPath(roundedRect: rect.insetBy(dx: -5, dy: -5), xRadius: 14, yRadius: 14)
-            NSColor.windowBackgroundColor.withAlphaComponent(0.78).setFill()
-            background.fill()
-            icon.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
+        return DockIconImageRenderer.render { _ in
+            for (index, entry) in entries.reversed().enumerated() {
+                let icon = NSWorkspace.shared.icon(forFile: entry.url.path)
+                let offset = CGFloat(index) * 24
+                let rect = NSRect(x: 36 + offset, y: 28 + offset, width: 152, height: 152)
+                let background = NSBezierPath(roundedRect: rect.insetBy(dx: -10, dy: -10), xRadius: 28, yRadius: 28)
+                NSColor.windowBackgroundColor.withAlphaComponent(0.78).setFill()
+                background.fill()
+                icon.draw(
+                    in: rect,
+                    from: .zero,
+                    operation: .sourceOver,
+                    fraction: 1,
+                    respectFlipped: true,
+                    hints: [.interpolation: NSImageInterpolation.high]
+                )
+            }
         }
-
-        image.unlockFocus()
-        return image
     }
 }
 
 enum SpecialFolderIconFactory {
+    private static let downloadsSymbolName = "arrow.down.circle.fill"
+
     static func icon(for item: DockItem) -> NSImage? {
         guard item.isFolder,
               let url = item.url,
               let symbolName = symbolName(forFolderAt: url) else {
             return nil
+        }
+
+        if symbolName == downloadsSymbolName {
+            return downloadsIcon(accessibilityDescription: item.title)
         }
 
         return symbolIcon(symbolName: symbolName, accessibilityDescription: item.title)
@@ -197,46 +266,65 @@ enum SpecialFolderIconFactory {
             return nil
         }
 
-        if url.standardizedFileURL.path == standardDownloadsDirectory.standardizedFileURL.path {
+        if FolderStackService.isDownloadsFolder(url, downloadsDirectory: standardDownloadsDirectory) {
             // Finder's sidebar represents Downloads with a symbolic down-arrow
             // mark, not with a generic blue folder. For a Dock replacement, the
             // semantic shortcut matters more than showing the first downloaded
             // file as a stack preview: users should recognize Downloads at a
             // glance even when the folder contents are noisy.
-            return "arrow.down.circle"
+            return downloadsSymbolName
         }
 
         return nil
     }
 
+    private static func downloadsIcon(accessibilityDescription _: String) -> NSImage {
+        DockIconImageRenderer.render { _ in
+            // SF Symbols are normally the right answer, but the circular
+            // Downloads glyph has less visual area than square app icons. Scaling
+            // that circle in SwiftUI made the tile drift off-center. Drawing a
+            // full-size rounded-square asset keeps the Finder download metaphor
+            // while giving SwiftUI a normal centered image like every app icon.
+            let backgroundRect = NSRect(x: 4, y: 4, width: 248, height: 248)
+            let background = NSBezierPath(roundedRect: backgroundRect, xRadius: 54, yRadius: 54)
+            NSColor.systemBlue.setFill()
+            background.fill()
+
+            let arrow = NSBezierPath()
+            arrow.lineWidth = 32
+            arrow.lineCapStyle = .round
+            arrow.lineJoinStyle = .round
+            arrow.move(to: NSPoint(x: 128, y: 184))
+            arrow.line(to: NSPoint(x: 128, y: 74))
+            arrow.move(to: NSPoint(x: 76, y: 126))
+            arrow.line(to: NSPoint(x: 128, y: 74))
+            arrow.line(to: NSPoint(x: 180, y: 126))
+            NSColor.white.setStroke()
+            arrow.stroke()
+        }
+    }
+
     private static func symbolIcon(symbolName: String, accessibilityDescription: String) -> NSImage? {
         guard let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: accessibilityDescription)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 92, weight: .semibold)) else {
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 224, weight: .medium)) else {
             return nil
         }
 
-        let size = NSSize(width: 128, height: 128)
-        let image = NSImage(size: size)
-        image.lockFocus()
-
-        NSColor.clear.setFill()
-        NSRect(origin: .zero, size: size).fill()
-
-        let symbolRect = NSRect(x: 16, y: 16, width: 96, height: 96)
-        let shadow = NSShadow()
-        shadow.shadowBlurRadius = 4
-        shadow.shadowOffset = NSSize(width: 0, height: -1)
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.22)
-        shadow.set()
-
-        // The icon is rendered into an NSImage because Docking's icon cache is
-        // shared by the dock, Control Center, and stack panels. Keeping the
-        // symbol here avoids adding separate SwiftUI icon branches that would
-        // drift visually between those surfaces.
-        tinted(symbol, color: .labelColor).draw(in: symbolRect)
-
-        image.unlockFocus()
-        return image
+        return DockIconImageRenderer.render { _ in
+            // This generic path is intentionally plain. Folder-specific artwork
+            // such as Downloads gets a dedicated renderer above when a symbol's
+            // optical bounds need tuning; the fallback should not add shadows or
+            // visual treatments that would make future special folders fight the
+            // system glyph shape.
+            tinted(symbol, color: .labelColor).draw(
+                in: NSRect(x: 10, y: 10, width: 236, height: 236),
+                from: .zero,
+                operation: .sourceOver,
+                fraction: 1,
+                respectFlipped: true,
+                hints: [.interpolation: NSImageInterpolation.high]
+            )
+        }
     }
 
     private static func tinted(_ image: NSImage, color: NSColor) -> NSImage {
