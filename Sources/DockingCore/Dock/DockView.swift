@@ -109,11 +109,7 @@ private struct DockItemDropDelegate: DropDelegate {
 
         loadFileURL(from: provider) { url in
             Task { @MainActor in
-                if target.isFolder {
-                    model.dropFile(url, ontoFolder: target)
-                } else {
-                    model.addDockItem(fromDroppedURL: url, before: target)
-                }
+                model.dropFile(url, onto: target)
             }
         }
         return true

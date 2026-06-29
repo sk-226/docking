@@ -289,6 +289,31 @@ public final class DockingAppModel: ObservableObject {
         insertDockItemIfNeeded(item, before: target)
     }
 
+    func dropFile(_ url: URL, onto item: DockItem) {
+        if item.isFolder {
+            dropFile(url, ontoFolder: item)
+            return
+        }
+
+        guard item.isApplication else {
+            return
+        }
+
+        if AppCatalogService.dockItemIfSupported(for: url) != nil {
+            // A dragged app bundle or directory is still a Docking item being
+            // placed near another item. Treating every file URL on an app icon
+            // as an app input would make adding folders/apps by drag feel
+            // unpredictable and would diverge from the existing Docking model.
+            addDockItem(fromDroppedURL: url, before: item)
+        } else {
+            // Ordinary documents dropped onto an app icon follow the macOS Dock
+            // contract: open this document with that app. This path is separate
+            // from `addDockItem` because Docking intentionally does not keep
+            // arbitrary documents as permanent dock items yet.
+            appLauncherService.openFile(url, with: item)
+        }
+    }
+
     func dropFile(_ url: URL, ontoFolder item: DockItem) {
         // A drop directly on a Dock folder should behave like dropping onto a
         // Finder folder proxy. We keep this separate from `addDockItem` because

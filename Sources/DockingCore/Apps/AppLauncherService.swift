@@ -36,6 +36,25 @@ final class AppLauncherService {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
+    func openFile(_ fileURL: URL, with item: DockItem) {
+        guard item.isApplication,
+              let applicationURL = resolvedURL(for: item) else {
+            return
+        }
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        // This is the public Dock-equivalent path for "drag a document onto an
+        // app icon". We deliberately do not turn the document into a Docking
+        // item: apps/folders are Dock contents, while ordinary files dropped on
+        // an app are inputs for that app. Letting NSWorkspace broker the open
+        // keeps LaunchServices' type checks, activation, and app reuse intact.
+        NSWorkspace.shared.open([fileURL], withApplicationAt: applicationURL, configuration: configuration) { _, error in
+            if let error {
+                DockingLog.dock.error("Failed to open \(fileURL.lastPathComponent) with \(item.title): \(error.localizedDescription)")
+            }
+        }
+    }
+
     func showAllWindows(_ item: DockItem) {
         guard let application = runningApplication(for: item) else {
             open(item)
