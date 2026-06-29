@@ -5,7 +5,16 @@ import Foundation
 final class AppLauncherService {
     func open(_ item: DockItem) {
         guard let url = resolvedURL(for: item) else {
-            DockingLog.dock.error("Could not resolve app URL for \(item.title)")
+            DockingLog.dock.error("Could not resolve URL for \(item.title)")
+            return
+        }
+
+        guard item.isApplication else {
+            // Folder stack clicks are handled by FolderStackPanelController.
+            // Context-menu Open should use Finder, matching the Apple Dock's
+            // separation between "show me the stack contents" and "open this
+            // folder as a normal Finder location."
+            NSWorkspace.shared.open(url)
             return
         }
 
@@ -93,8 +102,8 @@ final class AppLauncherService {
     }
 
     private func resolvedURL(for item: DockItem) -> URL? {
-        if let appURL = item.appURL {
-            return appURL
+        if let itemURL = item.url {
+            return itemURL
         }
         if let bundleIdentifier = item.bundleIdentifier {
             return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
@@ -103,6 +112,10 @@ final class AppLauncherService {
     }
 
     private func runningApplication(for item: DockItem) -> NSRunningApplication? {
+        guard item.isApplication else {
+            return nil
+        }
+
         if let bundleIdentifier = item.bundleIdentifier {
             return NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
                 .first { application in
@@ -131,12 +144,16 @@ enum RunningApplicationMatcher {
         applicationBundleIdentifier: String?,
         applicationBundleURL: URL?
     ) -> Bool {
+        guard item.isApplication else {
+            return false
+        }
+
         if let itemBundleIdentifier = item.bundleIdentifier,
            itemBundleIdentifier == applicationBundleIdentifier {
             return true
         }
 
-        guard let itemPath = item.appURL?.standardizedFileURL.path,
+        guard let itemPath = item.url?.standardizedFileURL.path,
               let applicationPath = applicationBundleURL?.standardizedFileURL.path else {
             return false
         }

@@ -803,13 +803,13 @@ private struct AppsControlCenterContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Applications")
+                Text("Items")
                     .font(.headline)
                 Spacer()
                 Button {
-                    model.addApplication()
+                    model.addDockItem()
                 } label: {
-                    Label("Add App", systemImage: "plus")
+                    Label("Add Item", systemImage: "plus")
                 }
                 Button {
                     model.resetAppList()
@@ -826,7 +826,7 @@ private struct AppsControlCenterContent: View {
                             .frame(width: 24, height: 24)
                         VStack(alignment: .leading) {
                             Text(item.title)
-                            Text(item.bundleIdentifier ?? item.appURL?.path ?? "Unknown app")
+                            Text(item.subtitle)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
@@ -836,7 +836,7 @@ private struct AppsControlCenterContent: View {
                         // dock is visible, but settings needs an explicit
                         // keyboard- and VoiceOver-friendly reorder affordance.
                         // Relying only on List's platform-specific edit mode
-                        // made the Apps section look editable without giving a
+                        // made the Items section look editable without giving a
                         // clear way to change order in this Control Center.
                         HStack(spacing: 4) {
                             Button {

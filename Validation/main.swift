@@ -275,7 +275,13 @@ func validateDockingWindowCollectionBehavior() throws {
 func validateAppleDockMirroring() throws {
     let suiteName = "docking.validation.apple-mirror.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!
-    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("AppleDockMirror-\(UUID().uuidString)", isDirectory: true)
+    let downloadsURL = root.appendingPathComponent("Downloads", isDirectory: true)
+    defer {
+        defaults.removePersistentDomain(forName: suiteName)
+        try? FileManager.default.removeItem(at: root)
+    }
+    try FileManager.default.createDirectory(at: downloadsURL, withIntermediateDirectories: true)
 
     defaults.set(true, forKey: "autohide")
     defaults.set("right", forKey: "orientation")
@@ -301,6 +307,23 @@ func validateAppleDockMirroring() throws {
         ],
         forKey: "persistent-apps"
     )
+    defaults.set(
+        [
+            [
+                "tile-type": "directory-tile",
+                "tile-data": [
+                    "file-label": "Downloads",
+                    "displayas": 0,
+                    "showas": 2,
+                    "arrangement": 3,
+                    "file-data": [
+                        "_CFURLString": downloadsURL.absoluteString
+                    ]
+                ]
+            ]
+        ],
+        forKey: "persistent-others"
+    )
 
     var settings = DockingSettings.default
     let appliedFromDefaults = AppleDockPreferences.mirrorOriginalDock(into: &settings, savedValues: nil, dockDefaults: defaults)
@@ -320,22 +343,31 @@ func validateAppleDockMirroring() throws {
     try expect(settings.dockPosition == .left, "saved orientation should restore original Dock edge")
     try expect(settings.iconSize == 44.0, "saved tile size should restore original icon size")
 
-    let items = AppleDockPreferences.persistentAppItems(from: defaults)
-    try expect(items.count == 1, "Apple Dock mirror should import only app tiles")
-    try expect(items.first?.title == "Foo", "Apple Dock mirror should preserve app labels")
-    try expect(items.first?.bundleIdentifier == "com.example.Foo", "Apple Dock mirror should preserve bundle identifiers")
-    try expect(items.first?.appURL?.path == "/Applications/Foo.app", "Apple Dock mirror should preserve app URLs")
+    let items = AppleDockPreferences.persistentDockItems(from: defaults)
+    try expect(items.count == 2, "Apple Dock mirror should import apps and folder stack tiles")
+    try expect(items[0].kind == .application, "Apple Dock app tiles should remain application items")
+    try expect(items[0].title == "Foo", "Apple Dock mirror should preserve app labels")
+    try expect(items[0].bundleIdentifier == "com.example.Foo", "Apple Dock mirror should preserve bundle identifiers")
+    try expect(items[0].url?.path == "/Applications/Foo.app", "Apple Dock mirror should preserve app URLs")
+    try expect(items[1].kind == .folder, "Apple Dock persistent-others directory tiles should become folder items")
+    try expect(items[1].title == "Downloads", "Apple Dock mirror should preserve folder labels")
+    try expect(items[1].url?.path == downloadsURL.path, "Apple Dock mirror should preserve folder URLs")
+    try expect(items[1].folderDisplayMode == .stack, "Apple Dock displayas should map to folder display mode")
+    try expect(items[1].folderViewMode == .grid, "Apple Dock showas should map to folder view mode")
+    try expect(items[1].folderSortMode == .dateModified, "Apple Dock arrangement should map to folder sort mode")
 }
 
-func validateAppCatalogRecognizesOnlyApplicationBundles() throws {
+func validateAppCatalogRecognizesApplicationsAndFolders() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("AppCatalogValidation-\(UUID().uuidString)", isDirectory: true)
     let appURL = root.appendingPathComponent("Sample.app", isDirectory: true)
     let contentsURL = appURL.appendingPathComponent("Contents", isDirectory: true)
-    let plainDirectoryURL = root.appendingPathComponent("NotAnApp", isDirectory: true)
+    let folderURL = root.appendingPathComponent("Projects", isDirectory: true)
+    let plainFileURL = root.appendingPathComponent("NotSupported.txt")
     defer { try? FileManager.default.removeItem(at: root) }
 
     try FileManager.default.createDirectory(at: contentsURL, withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(at: plainDirectoryURL, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+    try Data("nope".utf8).write(to: plainFileURL)
 
     let infoPlist = """
     <?xml version="1.0" encoding="UTF-8"?>
@@ -351,17 +383,86 @@ func validateAppCatalogRecognizesOnlyApplicationBundles() throws {
     """
     try infoPlist.data(using: .utf8)?.write(to: contentsURL.appendingPathComponent("Info.plist"))
 
-    let item = AppCatalogService.dockItemIfApplication(for: appURL)
-    try expect(item?.bundleIdentifier == "com.example.Sample", "application bundle drops should preserve bundle identifier")
-    try expect(item?.title == "Sample App", "application bundle drops should use bundle display metadata")
-    try expect(AppCatalogService.dockItemIfApplication(for: plainDirectoryURL) == nil, "plain directory drops should not create dock items")
+    let appItem = AppCatalogService.dockItemIfSupported(for: appURL)
+    try expect(appItem?.kind == .application, "application bundle drops should create application items")
+    try expect(appItem?.bundleIdentifier == "com.example.Sample", "application bundle drops should preserve bundle identifier")
+    try expect(appItem?.title == "Sample App", "application bundle drops should use bundle display metadata")
+
+    let folderItem = AppCatalogService.dockItemIfSupported(for: folderURL)
+    try expect(folderItem?.kind == .folder, "plain directory drops should create folder stack items")
+    try expect(folderItem?.title == "Projects", "folder drops should use folder display names")
+    try expect(folderItem?.bundleIdentifier == nil, "folder stack items should not pretend to be applications")
+    try expect(AppCatalogService.dockItemIfSupported(for: plainFileURL) == nil, "plain file drops should not create dock items yet")
+}
+
+func validateFolderStackPresentation() throws {
+    let now = Date(timeIntervalSince1970: 1_700_000_000)
+    let older = now.addingTimeInterval(-3_600)
+    let entries = [
+        FolderStackEntry(
+            title: "Beta",
+            url: URL(fileURLWithPath: "/tmp/Beta.txt"),
+            isDirectory: false,
+            kindDescription: "Plain Text",
+            dateAdded: older,
+            dateModified: older,
+            dateCreated: older
+        ),
+        FolderStackEntry(
+            title: "Alpha",
+            url: URL(fileURLWithPath: "/tmp/Alpha.app"),
+            isDirectory: true,
+            kindDescription: "Application",
+            dateAdded: now,
+            dateModified: now,
+            dateCreated: now
+        )
+    ]
+
+    try expect(
+        FolderStackService.sorted(entries, by: .name).map(\.title) == ["Alpha", "Beta"],
+        "folder stacks should sort by localized name"
+    )
+    try expect(
+        FolderStackService.sorted(entries, by: .dateModified).map(\.title) == ["Alpha", "Beta"],
+        "folder stacks should put newest modified items first"
+    )
+    try expect(
+        FolderStackService.sorted(entries, by: .kind).map(\.title) == ["Alpha", "Beta"],
+        "folder stacks should group by kind before falling back to name"
+    )
+
+    let item = DockItem(
+        kind: .folder,
+        title: "Downloads",
+        bundleIdentifier: nil,
+        url: URL(fileURLWithPath: "/tmp/Downloads"),
+        iconCacheKey: "folder:/tmp/Downloads",
+        folderViewMode: .automatic
+    )
+    try expect(FolderStackPresentation.resolvedViewMode(for: item, entryCount: 4) == .fan, "small automatic folder stacks should use fan")
+    try expect(FolderStackPresentation.resolvedViewMode(for: item, entryCount: 20) == .grid, "medium automatic folder stacks should use grid")
+    try expect(FolderStackPresentation.resolvedViewMode(for: item, entryCount: 80) == .list, "large automatic folder stacks should use list")
+
+    let downloadsURL = URL(fileURLWithPath: "/tmp/DockingValidation/Downloads", isDirectory: true)
+    try expect(
+        SpecialFolderIconFactory.symbolName(forFolderAt: downloadsURL, downloadsDirectory: downloadsURL) == "arrow.down.circle",
+        "Downloads should use the Finder-style symbolic folder icon"
+    )
+    try expect(
+        SpecialFolderIconFactory.symbolName(
+            forFolderAt: URL(fileURLWithPath: "/tmp/DockingValidation/Documents", isDirectory: true),
+            downloadsDirectory: downloadsURL
+        ) == nil,
+        "ordinary folders should keep folder or stack-preview icons"
+    )
 }
 
 func validateRunningApplicationMatcher() throws {
     let item = DockItem(
         title: "Editor",
         bundleIdentifier: "com.example.Editor",
-        appURL: URL(fileURLWithPath: "/Applications/Editor.app"),
+        url: URL(fileURLWithPath: "/Applications/Editor.app"),
         iconCacheKey: "com.example.Editor"
     )
 
@@ -385,7 +486,7 @@ func validateRunningApplicationMatcher() throws {
     let pathOnlyItem = DockItem(
         title: "Unsigned Tool",
         bundleIdentifier: nil,
-        appURL: URL(fileURLWithPath: "/Applications/Unsigned Tool.app"),
+        url: URL(fileURLWithPath: "/Applications/Unsigned Tool.app"),
         iconCacheKey: "/Applications/Unsigned Tool.app"
     )
     try expect(
@@ -456,27 +557,27 @@ func validateUnpinnedRunningAppResolver() throws {
     let pinned = DockItem(
         title: "Pinned Editor",
         bundleIdentifier: "com.example.editor",
-        appURL: URL(fileURLWithPath: "/Applications/Pinned Editor.app"),
+        url: URL(fileURLWithPath: "/Applications/Pinned Editor.app"),
         iconCacheKey: "com.example.editor"
     )
     let runningPinned = DockItem(
         title: "Pinned Editor",
         bundleIdentifier: "com.example.editor",
-        appURL: URL(fileURLWithPath: "/Applications/Pinned Editor.app"),
+        url: URL(fileURLWithPath: "/Applications/Pinned Editor.app"),
         iconCacheKey: "com.example.editor",
         isPinned: false
     )
     let runningTransient = DockItem(
         title: "Zed",
         bundleIdentifier: "dev.zed.Zed",
-        appURL: URL(fileURLWithPath: "/Applications/Zed.app"),
+        url: URL(fileURLWithPath: "/Applications/Zed.app"),
         iconCacheKey: "dev.zed.Zed",
         isPinned: false
     )
     let duplicateTransient = DockItem(
         title: "Zed",
         bundleIdentifier: "dev.zed.Zed",
-        appURL: URL(fileURLWithPath: "/Applications/Zed.app"),
+        url: URL(fileURLWithPath: "/Applications/Zed.app"),
         iconCacheKey: "dev.zed.Zed",
         isPinned: false
     )
@@ -517,9 +618,9 @@ func validateExplicitAppReorderControls() async throws {
             cache: WeatherCache(fileURL: weatherCacheURL)
         )
     )
-    let first = DockItem(title: "First", bundleIdentifier: "com.example.first", appURL: nil, iconCacheKey: "first")
-    let second = DockItem(title: "Second", bundleIdentifier: "com.example.second", appURL: nil, iconCacheKey: "second")
-    let third = DockItem(title: "Third", bundleIdentifier: "com.example.third", appURL: nil, iconCacheKey: "third")
+    let first = DockItem(title: "First", bundleIdentifier: "com.example.first", url: nil, iconCacheKey: "first")
+    let second = DockItem(title: "Second", bundleIdentifier: "com.example.second", url: nil, iconCacheKey: "second")
+    let third = DockItem(title: "Third", bundleIdentifier: "com.example.third", url: nil, iconCacheKey: "third")
 
     model.dockItems = [first, second, third]
 
@@ -1441,7 +1542,8 @@ let validations: [(String, () throws -> Void)] = [
     ("dock window collection behavior", validateDockingWindowCollectionBehavior),
     ("dock window level toggle", validateDockWindowLevelToggle),
     ("apple dock mirroring", validateAppleDockMirroring),
-    ("app catalog bundle recognition", validateAppCatalogRecognizesOnlyApplicationBundles),
+    ("app catalog item recognition", validateAppCatalogRecognizesApplicationsAndFolders),
+    ("folder stack presentation", validateFolderStackPresentation),
     ("running app matcher", validateRunningApplicationMatcher),
     ("settings store", validateSettingsStore),
     ("settings refresh keys", validateSettingsRefreshKeys),

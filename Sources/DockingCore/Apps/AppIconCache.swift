@@ -6,12 +6,17 @@ final class AppIconCache {
     private var icons: [String: NSImage] = [:]
 
     func icon(for item: DockItem) -> NSImage {
-        if let cached = icons[item.iconCacheKey] {
+        let cacheKey = item.renderedIconCacheKey
+        if let cached = icons[cacheKey] {
             return cached
         }
 
         let icon: NSImage
-        if let url = item.appURL {
+        if let specialFolderIcon = SpecialFolderIconFactory.icon(for: item) {
+            icon = specialFolderIcon
+        } else if item.isFolder, item.folderDisplayMode == .stack, let stackIcon = FolderStackIconFactory.icon(for: item) {
+            icon = stackIcon
+        } else if let url = item.url {
             icon = NSWorkspace.shared.icon(forFile: url.path)
         } else if let bundleIdentifier = item.bundleIdentifier,
                   let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) {
@@ -20,10 +25,11 @@ final class AppIconCache {
             icon = NSImage(systemSymbolName: "app.dashed", accessibilityDescription: item.title) ?? NSImage()
         }
 
-        // App icon decoding is not something we want SwiftUI to redo on every
-        // body recomputation. The cache is intentionally keyed by bundle/path so
-        // reordering items does not invalidate images.
-        icons[item.iconCacheKey] = icon
+        // Icon decoding and stack-preview composition are expensive enough that
+        // SwiftUI body recomputation should not redo them. The cache key is
+        // based on item identity plus the folder choices that affect rendering,
+        // so simple reordering does not invalidate images.
+        icons[cacheKey] = icon
         return icon
     }
 

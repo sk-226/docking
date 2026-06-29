@@ -58,16 +58,16 @@ enum AppleDockPreferences {
         return didApply
     }
 
-    static func persistentAppItems(from dockDefaults: UserDefaults? = UserDefaults(suiteName: "com.apple.dock")) -> [DockItem] {
-        guard let rawItems = dockDefaults?.array(forKey: "persistent-apps") else {
-            return []
-        }
-
+    static func persistentDockItems(from dockDefaults: UserDefaults? = UserDefaults(suiteName: "com.apple.dock")) -> [DockItem] {
         var seenKeys: Set<String> = []
-        return rawItems.compactMap { rawItem in
-            guard let item = rawItem as? [String: Any],
-                  item["tile-type"] as? String == "file-tile",
-                  let tileData = item["tile-data"] as? [String: Any] else {
+        let appItems = persistentAppItems(from: dockDefaults, seenKeys: &seenKeys)
+        let folderItems = persistentFolderItems(from: dockDefaults, seenKeys: &seenKeys)
+        return appItems + folderItems
+    }
+
+    private static func persistentAppItems(from dockDefaults: UserDefaults?, seenKeys: inout Set<String>) -> [DockItem] {
+        dockDefaults?.array(forKey: "persistent-apps")?.compactMap { rawItem in
+            guard let tileData = tileData(from: rawItem, tileType: "file-tile") else {
                 return nil
             }
 
@@ -76,25 +76,119 @@ enum AppleDockPreferences {
             let url = (fileData?["_CFURLString"] as? String).flatMap(URL.init(string:))
                 ?? bundleIdentifier.flatMap { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }
 
-            guard let appURL = url, appURL.pathExtension == "app" else {
+            guard let applicationURL = url, applicationURL.pathExtension == "app" else {
                 return nil
             }
 
-            let stableKey = bundleIdentifier ?? appURL.path
+            let stableKey = "app:\(bundleIdentifier ?? applicationURL.standardizedFileURL.path)"
             guard !seenKeys.contains(stableKey) else {
                 return nil
             }
             seenKeys.insert(stableKey)
 
             let title = (tileData["file-label"] as? String)?.nilIfBlank
-                ?? appURL.deletingPathExtension().lastPathComponent
+                ?? applicationURL.deletingPathExtension().lastPathComponent
             return DockItem(
+                kind: .application,
                 title: title,
                 bundleIdentifier: bundleIdentifier,
-                appURL: appURL,
-                iconCacheKey: stableKey
+                url: applicationURL.standardizedFileURL,
+                iconCacheKey: bundleIdentifier ?? "application:\(applicationURL.standardizedFileURL.path)"
             )
+        } ?? []
+    }
+
+    private static func persistentFolderItems(from dockDefaults: UserDefaults?, seenKeys: inout Set<String>) -> [DockItem] {
+        dockDefaults?.array(forKey: "persistent-others")?.compactMap { rawItem in
+            guard let tileData = tileData(from: rawItem, tileType: "directory-tile"),
+                  let fileData = tileData["file-data"] as? [String: Any],
+                  let url = (fileData["_CFURLString"] as? String).flatMap(URL.init(string:))?.standardizedFileURL,
+                  isReadableFolder(url) else {
+                return nil
+            }
+
+            let stableKey = "folder:\(url.path)"
+            guard !seenKeys.contains(stableKey) else {
+                return nil
+            }
+            seenKeys.insert(stableKey)
+
+            let title = (tileData["file-label"] as? String)?.nilIfBlank
+                ?? AppCatalogService.localizedDisplayName(for: url)
+
+            var folderItem = AppCatalogService.folderDockItem(
+                for: url,
+                displayMode: folderDisplayMode(from: tileData["displayas"]),
+                viewMode: folderViewMode(from: tileData["showas"]),
+                sortMode: folderSortMode(from: tileData["arrangement"])
+            )
+            folderItem.title = title
+            return folderItem
+        } ?? []
+    }
+
+    private static func tileData(from rawItem: Any, tileType: String) -> [String: Any]? {
+        guard let item = rawItem as? [String: Any],
+              item["tile-type"] as? String == tileType,
+              let tileData = item["tile-data"] as? [String: Any] else {
+            return nil
         }
+        return tileData
+    }
+
+    private static func isReadableFolder(_ url: URL) -> Bool {
+        let values = try? url.resourceValues(forKeys: [.contentTypeKey, .isDirectoryKey])
+        guard values?.isDirectory == true else {
+            return false
+        }
+
+        // Keep application packages in persistent-apps. The Apple Dock can put
+        // unusual file tiles in persistent-others, but this 0.0.0 build should
+        // not grow a document-launcher abstraction until the UI intentionally
+        // supports it.
+        return values?.contentType?.conforms(to: .applicationBundle) != true
+    }
+
+    private static func folderDisplayMode(from rawValue: Any?) -> DockFolderDisplayMode {
+        intValue(rawValue) == 0 ? .stack : .folder
+    }
+
+    private static func folderViewMode(from rawValue: Any?) -> DockFolderViewMode {
+        switch intValue(rawValue) {
+        case 1:
+            return .fan
+        case 2:
+            return .grid
+        case 3:
+            return .list
+        default:
+            return .automatic
+        }
+    }
+
+    private static func folderSortMode(from rawValue: Any?) -> DockFolderSortMode {
+        switch intValue(rawValue) {
+        case 2:
+            return .dateAdded
+        case 3:
+            return .dateModified
+        case 4:
+            return .dateCreated
+        case 5:
+            return .kind
+        default:
+            return .name
+        }
+    }
+
+    private static func intValue(_ rawValue: Any?) -> Int? {
+        if let value = rawValue as? Int {
+            return value
+        }
+        if let value = rawValue as? NSNumber {
+            return value.intValue
+        }
+        return nil
     }
 
     private static func dockAutohideValue(from dockDefaults: UserDefaults?) -> Bool? {

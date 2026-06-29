@@ -81,9 +81,10 @@ final class RunningAppObserver {
         // persisted insert happens explicitly through "Keep in Docking".
         return DockItem(
             id: id,
+            kind: .application,
             title: title,
             bundleIdentifier: bundleIdentifier,
-            appURL: application.bundleURL,
+            url: application.bundleURL,
             iconCacheKey: key,
             isPinned: false
         )

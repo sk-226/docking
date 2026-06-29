@@ -56,7 +56,7 @@ enum ControlCenterSection: String, CaseIterable, Identifiable {
         case .appearance:
             return "Appearance"
         case .apps:
-            return "Apps"
+            return "Items"
         case .widgets:
             return "Widgets"
         case .restore:
@@ -71,7 +71,7 @@ enum ControlCenterSection: String, CaseIterable, Identifiable {
         case .appearance:
             return "paintbrush"
         case .apps:
-            return "app.badge"
+            return "square.grid.2x2"
         case .widgets:
             return "calendar.badge.clock"
         case .restore:

@@ -21,10 +21,32 @@ macOS Dock. This file keeps that scope explicit while the app is still `0.0.0`.
 | Assign to Desktop / All Desktops | Not implemented | Spaces assignment is Dock/System UI behavior without a stable public API suitable for a third-party dock. |
 | App-specific recent documents or New Window actions | Not implemented | Those actions are app-specific and require per-app integration rather than a generic dock item model. |
 
+## Folder / stack context menu
+
+Apple's Dock treats folders as stack items stored separately from app tiles. In
+Docking, ordinary directories can be added from the picker, Finder drag/drop, or
+Apple Dock mirroring from `persistent-others`.
+
+| Capability | Docking status | Notes |
+| --- | --- | --- |
+| Click to show contents | Implemented | Opens a Docking stack panel anchored to the folder icon instead of launching Finder. |
+| Click again to close | Implemented | The source icon is exempt from outside-click dismissal so the same click path can close the panel. |
+| Open | Implemented | Opens the folder in Finder through `NSWorkspace.open`. |
+| Sort By: Name / Date Added / Date Modified / Date Created / Kind | Implemented | Sort state is saved per folder item and drives stack-panel ordering and stack-preview icons. |
+| Display as: Folder / Stack | Implemented | Folder uses the system folder icon; Stack composes a small preview from folder contents. |
+| View content as: Automatic / Fan / Grid / List | Implemented | Fan/Grid/List change the Docking panel presentation; Automatic chooses based on item count without using private Dock geometry. |
+| Remove from Docking | Implemented | Removes the Docking item only; it never deletes the folder. |
+| Show in Finder | Implemented | Reveals the folder location in Finder. |
+| Documents or arbitrary files as Dock items | Not implemented | The Apple Dock can hold some non-folder items in persistent-others, but Docking keeps this 0.0.0 item model to apps and folders until the UI intentionally supports document launching. |
+
 ## Quality bar
 
 - Process actions appear only when Docking believes the app is running.
+- Process actions do not appear for folder items.
+- Folder context menus expose the stack-specific display, view, and sorting
+  choices users expect from the macOS Dock.
 - Force Quit always shows a confirmation before termination.
 - Docking never removes an app bundle from disk.
+- Docking never removes a folder from disk.
 - Docking avoids private Dock or Mission Control APIs even when that means an
   action is an approximation rather than a pixel-for-pixel Dock clone.

@@ -1,30 +1,167 @@
 import Foundation
 
+enum DockItemKind: String, Codable, Equatable {
+    case application
+    case folder
+
+    var label: String {
+        switch self {
+        case .application:
+            return "Application"
+        case .folder:
+            return "Folder"
+        }
+    }
+}
+
+enum DockFolderDisplayMode: String, CaseIterable, Codable, Identifiable {
+    case folder
+    case stack
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .folder:
+            return "Folder"
+        case .stack:
+            return "Stack"
+        }
+    }
+}
+
+enum DockFolderViewMode: String, CaseIterable, Codable, Identifiable {
+    case automatic
+    case fan
+    case grid
+    case list
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .automatic:
+            return "Automatic"
+        case .fan:
+            return "Fan"
+        case .grid:
+            return "Grid"
+        case .list:
+            return "List"
+        }
+    }
+}
+
+enum DockFolderSortMode: String, CaseIterable, Codable, Identifiable {
+    case name
+    case dateAdded
+    case dateModified
+    case dateCreated
+    case kind
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .name:
+            return "Name"
+        case .dateAdded:
+            return "Date Added"
+        case .dateModified:
+            return "Date Modified"
+        case .dateCreated:
+            return "Date Created"
+        case .kind:
+            return "Kind"
+        }
+    }
+}
+
 struct DockItem: Identifiable, Codable, Equatable {
     var id: UUID
+    var kind: DockItemKind
     var title: String
     var bundleIdentifier: String?
-    var appURL: URL?
+    var url: URL?
     var iconCacheKey: String
     var isPinned: Bool
     var groupID: UUID?
+    var folderDisplayMode: DockFolderDisplayMode
+    var folderViewMode: DockFolderViewMode
+    var folderSortMode: DockFolderSortMode
 
     init(
         id: UUID = UUID(),
+        kind: DockItemKind = .application,
         title: String,
         bundleIdentifier: String?,
-        appURL: URL?,
+        url: URL?,
         iconCacheKey: String,
         isPinned: Bool = true,
-        groupID: UUID? = nil
+        groupID: UUID? = nil,
+        folderDisplayMode: DockFolderDisplayMode = .folder,
+        folderViewMode: DockFolderViewMode = .automatic,
+        folderSortMode: DockFolderSortMode = .name
     ) {
         self.id = id
+        self.kind = kind
         self.title = title
         self.bundleIdentifier = bundleIdentifier
-        self.appURL = appURL
+        self.url = url
         self.iconCacheKey = iconCacheKey
         self.isPinned = isPinned
         self.groupID = groupID
+        self.folderDisplayMode = folderDisplayMode
+        self.folderViewMode = folderViewMode
+        self.folderSortMode = folderSortMode
+    }
+
+    var isApplication: Bool {
+        kind == .application
+    }
+
+    var isFolder: Bool {
+        kind == .folder
+    }
+
+    var renderedIconCacheKey: String {
+        guard isFolder else {
+            return iconCacheKey
+        }
+
+        // Folder icons can be a plain folder or a stack preview. The preview is
+        // derived from user-controlled folder view state, so the render cache
+        // key includes those choices instead of forcing broad cache invalidation
+        // every time a folder context-menu option changes.
+        return [
+            iconCacheKey,
+            folderDisplayMode.rawValue,
+            folderSortMode.rawValue
+        ].joined(separator: "|")
+    }
+
+    var identityKey: String {
+        if let bundleIdentifier, isApplication {
+            return "app:\(bundleIdentifier)"
+        }
+
+        if let url {
+            return "\(kind.rawValue):\(url.standardizedFileURL.path)"
+        }
+
+        // This fallback is not meant to be user-facing identity. It keeps
+        // malformed development data from collapsing unrelated items together
+        // while AppListStore falls back to defaults on decode failures.
+        return "\(kind.rawValue):\(iconCacheKey)"
+    }
+
+    var subtitle: String {
+        switch kind {
+        case .application:
+            return bundleIdentifier ?? url?.path ?? "Application"
+        case .folder:
+            return url?.path ?? "Folder"
+        }
     }
 }
 
@@ -195,7 +332,7 @@ enum DockRunningItemResolver {
     }
 
     private static func stableKey(for item: DockItem) -> String {
-        item.bundleIdentifier ?? item.appURL?.path ?? item.iconCacheKey
+        item.identityKey
     }
 }
 

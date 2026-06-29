@@ -54,11 +54,12 @@ final class AppListStore {
     }
 
     private static func item(title: String, bundleIdentifier: String) -> DockItem {
-        let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
+        let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
         return DockItem(
+            kind: .application,
             title: title,
             bundleIdentifier: bundleIdentifier,
-            appURL: appURL,
+            url: url,
             iconCacheKey: bundleIdentifier
         )
     }

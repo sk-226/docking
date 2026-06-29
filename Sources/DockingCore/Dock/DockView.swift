@@ -48,16 +48,16 @@ struct DockView: View {
             }
 
             Button {
-                model.addApplication()
+                model.addDockItem()
             } label: {
                 Image(systemName: "plus")
                     .frame(width: model.settings.iconSize, height: model.settings.iconSize)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .dockTooltip("Add application")
-            .accessibilityLabel("Add application")
-            .accessibilityHint("Choose an application bundle to add to Docking")
+            .dockTooltip("Add app or folder")
+            .accessibilityLabel("Add app or folder")
+            .accessibilityHint("Choose an application bundle or folder to add to Docking")
         }
         .padding(.horizontal, isVertical ? 0 : dockThickness * 0.16)
         .padding(.vertical, isVertical ? dockThickness * 0.16 : 0)
@@ -109,7 +109,7 @@ private struct DockItemDropDelegate: DropDelegate {
 
         loadFileURL(from: provider) { url in
             Task { @MainActor in
-                model.addApplication(fromDroppedURL: url, before: target)
+                model.addDockItem(fromDroppedURL: url, before: target)
             }
         }
         return true
@@ -153,7 +153,7 @@ private struct DockExternalAppDropDelegate: DropDelegate {
 
         loadFileURL(from: provider) { url in
             Task { @MainActor in
-                model.addApplication(fromDroppedURL: url)
+                model.addDockItem(fromDroppedURL: url)
             }
         }
         return true

@@ -55,6 +55,7 @@ public final class DockingAppModel: ObservableObject {
     private let iconCache = AppIconCache()
     private let dockPanelController = DockPanelController()
     private let widgetDetailPanelController = WidgetDetailPanelController()
+    private let folderStackPanelController = FolderStackPanelController()
     private let restoreService = DockSettingsRestoreService()
     private let launchAtLoginService = LaunchAtLoginService()
     private let menuBarStatusController = MenuBarStatusController()
@@ -63,6 +64,7 @@ public final class DockingAppModel: ObservableObject {
     private var environmentObserverTokens: [(NotificationCenter, NSObjectProtocol)] = []
     private var pendingSettingsSaveTask: Task<Void, Never>?
     private var widgetFrames: [DockWidgetKind: NSRect] = [:]
+    private var dockItemFrames: [UUID: NSRect] = [:]
     // Auto-hide should hide after pointer exit, but an explicit Show Dock
     // button/menu command is different from a passive edge reveal. The user has
     // asked to see the dock, so a previously scheduled hide must not win while
@@ -86,6 +88,10 @@ public final class DockingAppModel: ObservableObject {
 
     var visibleAppItemCount: Int {
         dockItems.count + unpinnedRunningItems.count
+    }
+
+    private var isDockAnchoredPanelVisible: Bool {
+        widgetDetailPanelController.isVisible || folderStackPanelController.isVisible
     }
 
     public var showsMenuBarIcon: Bool {
@@ -213,7 +219,7 @@ public final class DockingAppModel: ObservableObject {
     func pointerExitedDock() {
         isPointerInsideDock = false
         holdsDockAfterExplicitShow = false
-        guard !widgetDetailPanelController.isVisible else {
+        guard !isDockAnchoredPanelVisible else {
             return
         }
         dockPanelController.scheduleAutoHide(model: self)
@@ -228,6 +234,10 @@ public final class DockingAppModel: ObservableObject {
     }
 
     func isRunning(_ item: DockItem) -> Bool {
+        guard item.isApplication else {
+            return false
+        }
+
         if let bundleIdentifier = item.bundleIdentifier {
             return runningBundleIDs.contains(bundleIdentifier)
         }
@@ -240,7 +250,7 @@ public final class DockingAppModel: ObservableObject {
             RunningApplicationMatcher.matches(
                 item: item,
                 applicationBundleIdentifier: runningItem.bundleIdentifier,
-                applicationBundleURL: runningItem.appURL
+                applicationBundleURL: runningItem.url
             )
         }
     }
@@ -265,30 +275,34 @@ public final class DockingAppModel: ObservableObject {
         appLauncherService.showInFinder(item)
     }
 
-    func addApplication() {
-        guard let item = appCatalogService.chooseApplication() else {
+    func addDockItem() {
+        guard let item = appCatalogService.chooseDockItem() else {
             return
         }
         insertDockItemIfNeeded(item)
     }
 
-    func addApplication(fromDroppedURL url: URL, before target: DockItem? = nil) {
-        guard let item = AppCatalogService.dockItemIfApplication(for: url) else {
+    func addDockItem(fromDroppedURL url: URL, before target: DockItem? = nil) {
+        guard let item = AppCatalogService.dockItemIfSupported(for: url) else {
             return
         }
         insertDockItemIfNeeded(item, before: target)
     }
 
     func remove(_ item: DockItem) {
+        if item.isFolder {
+            folderStackPanelController.close()
+        }
         dockItems.removeAll { $0.id == item.id }
     }
 
     func pinRunningItem(_ item: DockItem) {
         insertDockItemIfNeeded(
             DockItem(
+                kind: .application,
                 title: item.title,
                 bundleIdentifier: item.bundleIdentifier,
-                appURL: item.appURL,
+                url: item.url,
                 iconCacheKey: item.iconCacheKey,
                 isPinned: true
             )
@@ -300,7 +314,7 @@ public final class DockingAppModel: ObservableObject {
     }
 
     func moveDockItem(_ item: DockItem, by offset: Int) {
-        guard let sourceIndex = dockItems.firstIndex(of: item) else {
+        guard let sourceIndex = dockItems.firstIndex(where: { $0.id == item.id }) else {
             return
         }
 
@@ -319,9 +333,9 @@ public final class DockingAppModel: ObservableObject {
     }
 
     func moveDockItem(_ item: DockItem, before target: DockItem) {
-        guard item != target,
-              let from = dockItems.firstIndex(of: item),
-              let to = dockItems.firstIndex(of: target) else {
+        guard item.id != target.id,
+              let from = dockItems.firstIndex(where: { $0.id == item.id }),
+              let to = dockItems.firstIndex(where: { $0.id == target.id }) else {
             return
         }
 
@@ -335,12 +349,24 @@ public final class DockingAppModel: ObservableObject {
         iconCache.clear()
     }
 
-    private func insertDockItemIfNeeded(_ item: DockItem, before target: DockItem? = nil) {
-        guard !dockItems.contains(where: { $0.bundleIdentifier == item.bundleIdentifier && $0.appURL == item.appURL }) else {
+    private func updateDockItem(_ item: DockItem, update: (inout DockItem) -> Void) {
+        guard let index = dockItems.firstIndex(where: { $0.id == item.id }) else {
             return
         }
 
-        if let target, let targetIndex = dockItems.firstIndex(of: target) {
+        // DockItem carries user-facing per-item preferences now, not only app
+        // identity. Updating in place preserves order, UUID, drag targets, and
+        // Control Center row identity while still letting AppListStore persist
+        // the new folder stack choice through the normal @Published didSet.
+        update(&dockItems[index])
+    }
+
+    private func insertDockItemIfNeeded(_ item: DockItem, before target: DockItem? = nil) {
+        guard !dockItems.contains(where: { $0.identityKey == item.identityKey }) else {
+            return
+        }
+
+        if let target, let targetIndex = dockItems.firstIndex(where: { $0.id == target.id }) {
             dockItems.insert(item, at: targetIndex)
         } else {
             dockItems.append(item)
@@ -384,7 +410,8 @@ public final class DockingAppModel: ObservableObject {
                 }
                 if self.settings.dockVisibility == .autoHide,
                    !self.isPointerInsideDock,
-                   !self.holdsDockAfterExplicitShow {
+                   !self.holdsDockAfterExplicitShow,
+                   !self.isDockAnchoredPanelVisible {
                     self.dockPanelController.scheduleAutoHide(model: self)
                 }
             }
@@ -399,11 +426,78 @@ public final class DockingAppModel: ObservableObject {
         }
     }
 
+    func toggleFolderStack(_ item: DockItem) {
+        guard item.isFolder else {
+            launch(item)
+            return
+        }
+
+        folderStackPanelController.toggle(
+            item: item,
+            model: self,
+            dockFrame: dockPanelController.frame,
+            anchorFrame: dockItemFrames[item.id],
+            onClose: { [weak self] in
+                guard let self else {
+                    return
+                }
+                if self.settings.dockVisibility == .autoHide,
+                   !self.isPointerInsideDock,
+                   !self.holdsDockAfterExplicitShow,
+                   !self.isDockAnchoredPanelVisible {
+                    self.dockPanelController.scheduleAutoHide(model: self)
+                }
+            }
+        )
+
+        if folderStackPanelController.isVisible {
+            // Folder stacks are Dock-attached panels just like widgets. Hiding
+            // the dock while the stack is visible would remove the user's
+            // source control for the open panel and break the standard "click
+            // the same dock item again to close" interaction.
+            dockPanelController.cancelScheduledAutoHide()
+        }
+    }
+
+    func openFolderStackEntry(_ entry: FolderStackEntry) {
+        NSWorkspace.shared.open(entry.url)
+        folderStackPanelController.close()
+    }
+
+    func openFolderInFinderFromStack(_ item: DockItem) {
+        launch(item)
+        folderStackPanelController.close()
+    }
+
+    func updateFolderDisplayMode(_ mode: DockFolderDisplayMode, for item: DockItem) {
+        updateDockItem(item) { dockItem in
+            dockItem.folderDisplayMode = mode
+        }
+        iconCache.clear()
+    }
+
+    func updateFolderViewMode(_ mode: DockFolderViewMode, for item: DockItem) {
+        updateDockItem(item) { dockItem in
+            dockItem.folderViewMode = mode
+        }
+    }
+
+    func updateFolderSortMode(_ mode: DockFolderSortMode, for item: DockItem) {
+        updateDockItem(item) { dockItem in
+            dockItem.folderSortMode = mode
+        }
+        iconCache.clear()
+    }
+
     func updateWidgetFrame(kind: DockWidgetKind, frame: NSRect) {
         // This frame is runtime geometry, not user-visible state. Keeping it out
         // of @Published storage avoids re-rendering the dock every time AppKit
         // reports the same widget position during layout.
         widgetFrames[kind] = frame
+    }
+
+    func updateDockItemFrame(itemID: UUID, frame: NSRect) {
+        dockItemFrames[itemID] = frame
     }
 
     public func openControlCenterWindow() {
@@ -488,10 +582,11 @@ public final class DockingAppModel: ObservableObject {
             savedValues: restoreService.savedDockPreferenceValues()
         )
 
-        // The Apple Dock app list is not changed by primary mode, so it remains
-        // the best source for reproducing the user's original pinned apps even
-        // after Docking has already pushed Apple Dock into strong auto-hide.
-        let mirroredItems = AppleDockPreferences.persistentAppItems()
+        // The Apple Dock item list is not changed by primary mode, so it
+        // remains the best source for reproducing the user's original pinned
+        // apps and folder stacks even after Docking has pushed Apple Dock into
+        // strong auto-hide.
+        let mirroredItems = AppleDockPreferences.persistentDockItems()
         if !mirroredItems.isEmpty {
             dockItems = mirroredItems
         }
@@ -506,7 +601,7 @@ public final class DockingAppModel: ObservableObject {
         }
 
         if didApplyPreferences || !mirroredItems.isEmpty {
-            restoreStatusMessage = "Docking matched the saved Apple Dock layout: \(mirroredItems.count) pinned apps imported, with original visibility, position, and size applied where available."
+            restoreStatusMessage = "Docking matched the saved Apple Dock layout: \(mirroredItems.count) Dock items imported, with original visibility, position, and size applied where available."
         } else {
             restoreStatusMessage = "Docking could not read enough Apple Dock layout data to mirror it. Use the manual restore instructions if Apple Dock itself needs to be restored."
         }
@@ -647,7 +742,7 @@ public final class DockingAppModel: ObservableObject {
             // hidden and be revived by the edge trigger, matching standard Dock
             // behavior and avoiding a resident overlay that covers workspace
             // content immediately after launch.
-            if !isPointerInsideDock && !holdsDockAfterExplicitShow && !widgetDetailPanelController.isVisible {
+            if !isPointerInsideDock && !holdsDockAfterExplicitShow && !isDockAnchoredPanelVisible {
                 dockPanelController.hide()
             }
         case .alwaysVisible:
