@@ -75,17 +75,72 @@ assert_permission_description() {
 
 fail_if_matches() {
   local description="$1"
+  local pattern="$2"
   local status
-  shift
+  shift 2
 
-  # ripgrep uses 1 for "no matches" and 2+ for real search errors. Treating all
-  # non-zero exits as success would make this gate look green when a path typo or
-  # missing tool prevented the check from running, so handle the statuses
-  # explicitly instead of relying on the usual `if rg ...` shortcut.
-  set +e
-  rg -n "$@"
-  status=$?
-  set -e
+  if command -v rg >/dev/null 2>&1; then
+    # ripgrep is the preferred local path because it respects gitignore-style
+    # globs and stays fast as the authored surface grows. We still avoid
+    # depending on it as a release prerequisite: GitHub's macOS runners do not
+    # guarantee `rg`, and installing tooling during CI would make the release
+    # gate depend on Homebrew/network state instead of just the checkout.
+    set +e
+    rg -n "$pattern" "$@"
+    status=$?
+    set -e
+  else
+    local grep_paths=()
+    local grep_excludes=("--exclude-dir=.git" "--exclude-dir=.build" "--exclude-dir=dist")
+
+    # The current fallback only needs the small subset of ripgrep's argument
+    # shape used by this script: explicit search roots plus negative `-g`
+    # excludes. Failing closed on unsupported include globs is intentional; a
+    # future release check should not silently broaden or narrow hygiene scans
+    # just because CI is using the POSIX tool path.
+    while (($#)); do
+      case "$1" in
+        -g)
+          shift
+          if [[ $# -eq 0 ]]; then
+            printf 'Release check failed: missing glob after -g while checking %s\n' "$description" >&2
+            exit 1
+          fi
+          if [[ "$1" == !* ]]; then
+            local excluded="${1#!}"
+            case "$excluded" in
+              */**)
+                excluded="${excluded%/**}"
+                grep_excludes+=("--exclude-dir=${excluded##*/}")
+                ;;
+              */*)
+                grep_excludes+=("--exclude=${excluded##*/}")
+                ;;
+              *)
+                grep_excludes+=("--exclude=$excluded")
+                ;;
+            esac
+          else
+            printf 'Release check failed: grep fallback does not support include glob %s while checking %s\n' "$1" "$description" >&2
+            exit 1
+          fi
+          ;;
+        *)
+          grep_paths+=("$1")
+          ;;
+      esac
+      shift
+    done
+
+    if ((${#grep_paths[@]} == 0)); then
+      grep_paths=(".")
+    fi
+
+    set +e
+    /usr/bin/grep -R -n -E "${grep_excludes[@]}" -- "$pattern" "${grep_paths[@]}"
+    status=$?
+    set -e
+  fi
 
   case "$status" in
     0)
