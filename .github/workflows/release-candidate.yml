@@ -1,0 +1,129 @@
+name: Release Candidate
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-candidate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-macos26-artifacts:
+    name: Build macOS 26 artifacts
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Confirm macOS 26 runner
+        run: |
+          set -euo pipefail
+
+          runner_version="$(/usr/bin/sw_vers -productVersion)"
+          runner_major="${runner_version%%.*}"
+
+          # Docking 0.0.0 deliberately targets only macOS 26. Keeping this
+          # explicit check in the workflow avoids a quiet downgrade if GitHub
+          # ever changes a label or if this file is copied to a broader matrix.
+          if [[ "$runner_major" != "26" ]]; then
+            echo "Expected a macOS 26 runner, got ${runner_version}." >&2
+            exit 1
+          fi
+
+          echo "Using macOS ${runner_version}."
+
+      - name: Run local release gate
+        run: ./script/release_check.sh
+
+      - name: Audit Homebrew cask
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # Homebrew audits casks through a tap, not arbitrary file paths. The
+          # checked-out repository is already the release tap, so use it
+          # directly instead of creating a separate homebrew-* repository for a
+          # 0.0.0 app.
+          brew tap sk-226/docking "$GITHUB_WORKSPACE"
+          brew audit --cask --strict --online --tap=sk-226/docking docking
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: Docking-0.0.0-macos26-release-candidate
+          if-no-files-found: error
+          path: |
+            dist/Docking-0.0.0-macos26.zip
+            dist/Docking-0.0.0-macos26.zip.sha256
+            dist/Docking-0.0.0-macos26.dmg
+            dist/Docking-0.0.0-macos26.dmg.sha256
+
+      - name: Attach artifacts to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          tag_name="${GITHUB_REF_NAME}"
+          notes_file="$(/usr/bin/mktemp)"
+
+          # Tag builds are the only automation path that touches GitHub
+          # Releases. Manual workflow_dispatch runs stay as workflow artifacts
+          # so release publication remains an explicit tag-driven act.
+          {
+            echo "Docking 0.0.0 macOS 26 release."
+            echo
+            echo "Artifacts are produced by ./script/release_check.sh on the macos-26 runner."
+            echo
+            echo "SHA-256:"
+            /bin/cat dist/Docking-0.0.0-macos26.zip.sha256
+            /bin/cat dist/Docking-0.0.0-macos26.dmg.sha256
+            echo
+            echo "This release is created as a draft so the artifact can be checked before publication."
+          } >"$notes_file"
+
+          release_is_draft="$(gh release view "$tag_name" --json isDraft --jq '.isDraft' 2>/dev/null || true)"
+
+          if [[ "$release_is_draft" == "true" ]]; then
+            # Re-running a tag workflow should replace stale local-candidate
+            # artifacts instead of forcing a maintainer to delete assets by
+            # hand before the corrected DMG can be reviewed. This branch is
+            # limited to draft releases; published releases should not be
+            # mutated by a retry of an automation job.
+            gh release upload "$tag_name" \
+              dist/Docking-0.0.0-macos26.zip \
+              dist/Docking-0.0.0-macos26.zip.sha256 \
+              dist/Docking-0.0.0-macos26.dmg \
+              dist/Docking-0.0.0-macos26.dmg.sha256 \
+              --clobber
+          elif [[ "$release_is_draft" == "false" ]]; then
+            # A locally published release may already contain the reviewed DMG
+            # and checksum files before the tag workflow starts. In that case
+            # the workflow should still prove that GitHub can rebuild the
+            # artifacts, but it must not mutate the public release assets behind
+            # the maintainer's back.
+            echo "Release ${tag_name} already exists and is not a draft; leaving published assets unchanged."
+          else
+            gh release create "$tag_name" \
+              dist/Docking-0.0.0-macos26.zip \
+              dist/Docking-0.0.0-macos26.zip.sha256 \
+              dist/Docking-0.0.0-macos26.dmg \
+              dist/Docking-0.0.0-macos26.dmg.sha256 \
+              --draft \
+              --title "Docking ${tag_name}" \
+              --notes-file "$notes_file"
+          fi

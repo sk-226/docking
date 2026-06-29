@@ -1,0 +1,372 @@
+import Foundation
+
+final class OpenMeteoWeatherProvider: WeatherProvider {
+    private let session: URLSession
+    private let locationProvider: LocationProviding
+
+    init(session: URLSession = .shared, locationProvider: LocationProviding = CoreLocationProvider()) {
+        self.session = session
+        self.locationProvider = locationProvider
+    }
+
+    func fetchWeather(configuration: WeatherRequestConfiguration) async throws -> WeatherSnapshot {
+        if configuration.usesCurrentLocation {
+            do {
+                let location = try await locationProvider.currentLocation()
+                return try await forecast(
+                    latitude: location.latitude,
+                    longitude: location.longitude,
+                    locationName: location.displayName,
+                    unit: configuration.unit
+                )
+            } catch LocationProviderError.denied, LocationProviderError.restricted {
+                throw WeatherProviderError.locationDenied
+            } catch LocationProviderError.servicesDisabled {
+                throw WeatherProviderError.locationPermissionNeeded
+            } catch let error as LocationProviderError {
+                throw WeatherProviderError.providerUnavailable(error.localizedDescription)
+            } catch {
+                throw WeatherProviderError.providerUnavailable(error.localizedDescription)
+            }
+        }
+
+        guard let location = configuration.manualLocation?.nilIfBlank else {
+            throw WeatherProviderError.manualLocationMissing
+        }
+
+        let place = try await geocode(location)
+        return try await forecast(
+            latitude: place.latitude,
+            longitude: place.longitude,
+            locationName: place.displayName,
+            unit: configuration.unit
+        )
+    }
+
+    private func geocode(_ query: String) async throws -> WeatherLocation {
+        var components = URLComponents(string: "https://geocoding-api.open-meteo.com/v1/search")
+        components?.queryItems = [
+            URLQueryItem(name: "name", value: query),
+            URLQueryItem(name: "count", value: "1"),
+            URLQueryItem(name: "language", value: Locale.autoupdatingCurrent.language.languageCode?.identifier ?? "en"),
+            URLQueryItem(name: "format", value: "json")
+        ]
+
+        guard let url = components?.url else {
+            throw WeatherProviderError.providerUnavailable("Weather location could not be encoded.")
+        }
+
+        do {
+            let (data, _) = try await session.data(from: url)
+            let response = try JSONDecoder().decode(GeocodingResponse.self, from: data)
+            guard let place = response.results?.first else {
+                throw WeatherProviderError.providerUnavailable("No matching city was found for \"\(query)\".")
+            }
+            return place.location
+        } catch let error as WeatherProviderError {
+            throw error
+        } catch {
+            throw WeatherProviderError.network(error.localizedDescription)
+        }
+    }
+
+    private func forecast(latitude: Double, longitude: Double, locationName: String, unit: TemperatureUnit) async throws -> WeatherSnapshot {
+        var components = URLComponents(string: "https://api.open-meteo.com/v1/forecast")
+        components?.queryItems = [
+            URLQueryItem(name: "latitude", value: "\(latitude)"),
+            URLQueryItem(name: "longitude", value: "\(longitude)"),
+            URLQueryItem(name: "current", value: "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code"),
+            URLQueryItem(name: "hourly", value: "temperature_2m,weather_code"),
+            URLQueryItem(name: "daily", value: "weather_code,temperature_2m_max,temperature_2m_min"),
+            URLQueryItem(name: "forecast_days", value: "7"),
+            URLQueryItem(name: "temperature_unit", value: unit == .fahrenheit ? "fahrenheit" : "celsius"),
+            URLQueryItem(name: "timezone", value: "auto"),
+            URLQueryItem(name: "timeformat", value: "unixtime")
+        ]
+
+        guard let url = components?.url else {
+            throw WeatherProviderError.providerUnavailable("Weather request could not be encoded.")
+        }
+
+        do {
+            let (data, _) = try await session.data(from: url)
+            let response = try JSONDecoder().decode(ForecastResponse.self, from: data)
+            // Air quality is useful when the provider has it, but it is not the
+            // weather widget's source of truth. Open-Meteo serves AQI through a
+            // separate endpoint, so we let that request fail quietly and keep
+            // the forecast visible. Showing no AQI row is more honest than
+            // turning a valid weather forecast into a generic provider error.
+            let airQualityLabel = try? await airQualityLabel(latitude: latitude, longitude: longitude)
+            return response.snapshot(locationName: locationName, unit: unit, airQualityLabel: airQualityLabel)
+        } catch let error as WeatherProviderError {
+            throw error
+        } catch {
+            throw WeatherProviderError.network(error.localizedDescription)
+        }
+    }
+
+    private func airQualityLabel(latitude: Double, longitude: Double) async throws -> String? {
+        var components = URLComponents(string: "https://air-quality-api.open-meteo.com/v1/air-quality")
+        components?.queryItems = [
+            URLQueryItem(name: "latitude", value: "\(latitude)"),
+            URLQueryItem(name: "longitude", value: "\(longitude)"),
+            URLQueryItem(name: "current", value: "us_aqi"),
+            URLQueryItem(name: "timezone", value: "auto")
+        ]
+
+        guard let url = components?.url else {
+            throw WeatherProviderError.providerUnavailable("Air quality request could not be encoded.")
+        }
+
+        let (data, _) = try await session.data(from: url)
+        let response = try JSONDecoder().decode(AirQualityResponse.self, from: data)
+        return OpenMeteoAirQualityFormatter.usAQILabel(response.current?.usAQI)
+    }
+}
+
+private struct GeocodingResponse: Decodable {
+    var results: [GeocodingPlace]?
+}
+
+private struct GeocodingPlace: Decodable {
+    var name: String
+    var latitude: Double
+    var longitude: Double
+    var country: String?
+    var admin1: String?
+
+    var location: WeatherLocation {
+        WeatherLocation(latitude: latitude, longitude: longitude, displayName: displayName)
+    }
+
+    private var displayName: String {
+        [name, admin1, country]
+            .compactMap { $0?.nilIfBlank }
+            .joined(separator: ", ")
+    }
+}
+
+private struct ForecastResponse: Decodable {
+    var timezone: String?
+    var utcOffsetSeconds: Int?
+    var current: CurrentBlock
+    var hourly: HourlyBlock
+    var daily: DailyBlock
+
+    enum CodingKeys: String, CodingKey {
+        case timezone
+        case utcOffsetSeconds = "utc_offset_seconds"
+        case current
+        case hourly
+        case daily
+    }
+
+    func snapshot(locationName: String, unit: TemperatureUnit, airQualityLabel: String?) -> WeatherSnapshot {
+        let code = current.weatherCode
+        let clock = OpenMeteoForecastClock(
+            timeZoneIdentifier: timezone,
+            utcOffsetSeconds: utcOffsetSeconds
+        )
+        return WeatherSnapshot(
+            locationName: locationName,
+            fetchedAt: Date(),
+            unit: unit,
+            current: CurrentWeatherSummary(
+                temperature: current.temperature,
+                feelsLike: current.apparentTemperature,
+                conditionCode: code,
+                conditionLabel: WeatherCodeMapping.label(for: code),
+                symbolName: WeatherCodeMapping.symbolName(for: code)
+            ),
+            hourly: hourly.items(clock: clock).prefix(6).map { $0 },
+            daily: daily.items(clock: clock).prefix(7).map { $0 },
+            humidity: current.relativeHumidity,
+            airQualityLabel: airQualityLabel,
+            timeZoneIdentifier: clock.timeZoneIdentifier,
+            dataSource: .openMeteo
+        )
+    }
+}
+
+struct OpenMeteoForecastClock {
+    let timeZoneIdentifier: String?
+    let utcOffsetSeconds: TimeInterval
+    private let hasExplicitUTCOffset: Bool
+
+    init(timeZoneIdentifier: String?, utcOffsetSeconds: Int?) {
+        let resolvedTimeZone = timeZoneIdentifier.flatMap(TimeZone.init(identifier:))
+        self.utcOffsetSeconds = TimeInterval(utcOffsetSeconds ?? 0)
+        self.hasExplicitUTCOffset = utcOffsetSeconds != nil
+        self.timeZoneIdentifier = resolvedTimeZone?.identifier
+            ?? utcOffsetSeconds.flatMap { TimeZone(secondsFromGMT: $0)?.identifier }
+    }
+
+    var displayTimeZone: TimeZone? {
+        if let timeZoneIdentifier {
+            return TimeZone(identifier: timeZoneIdentifier)
+        }
+        guard hasExplicitUTCOffset else {
+            return nil
+        }
+        return TimeZone(secondsFromGMT: Int(utcOffsetSeconds))
+    }
+
+    func absoluteDate(fromUnixTime seconds: Double) -> Date {
+        Date(timeIntervalSince1970: seconds)
+    }
+
+    func localForecastDay(fromUnixTime seconds: Double) -> Date {
+        let shiftedDate = Date(timeIntervalSince1970: seconds + utcOffsetSeconds)
+        var utcCalendar = Calendar(identifier: .gregorian)
+        utcCalendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let components = utcCalendar.dateComponents([.year, .month, .day], from: shiftedDate)
+
+        guard let displayTimeZone else {
+            return utcCalendar.date(from: components) ?? absoluteDate(fromUnixTime: seconds)
+        }
+
+        var localNoonComponents = components
+        localNoonComponents.timeZone = displayTimeZone
+        localNoonComponents.hour = 12
+
+        var forecastCalendar = Calendar(identifier: .gregorian)
+        forecastCalendar.timeZone = displayTimeZone
+        // Daily forecast rows only display a weekday, not a wall-clock time.
+        // We intentionally anchor the date at noon in the forecast timezone:
+        // midnight is where DST transitions and missing local times tend to
+        // live, while noon preserves the intended local day for formatting.
+        return forecastCalendar.date(from: localNoonComponents) ?? absoluteDate(fromUnixTime: seconds)
+    }
+
+    func isUpcoming(unixTime seconds: Double, now: Date = Date()) -> Bool {
+        // This comparison must happen against the absolute epoch time, not a
+        // wall-clock string. Otherwise a Tokyo Mac can drop future New York
+        // hours simply because "09:00" was parsed as Japan time.
+        absoluteDate(fromUnixTime: seconds) >= now
+    }
+}
+
+private struct AirQualityResponse: Decodable {
+    var current: AirQualityCurrentBlock?
+}
+
+private struct AirQualityCurrentBlock: Decodable {
+    var usAQI: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case usAQI = "us_aqi"
+    }
+}
+
+enum OpenMeteoAirQualityFormatter {
+    static func usAQILabel(_ value: Double?) -> String? {
+        guard let value else {
+            return nil
+        }
+
+        let rounded = Int(value.rounded())
+        guard rounded >= 0 else {
+            return nil
+        }
+
+        return "\(rounded) \(category(forUSValue: rounded))"
+    }
+
+    private static func category(forUSValue value: Int) -> String {
+        // Open-Meteo exposes several air-quality variables. Docking asks for
+        // the consolidated U.S. AQI because its category bands are familiar,
+        // compact, and global enough for a small widget row. We keep the
+        // original numeric value in the label so users who prefer exact AQI can
+        // still read it, while the category supplies the quick glance.
+        switch value {
+        case ...50:
+            return "Good"
+        case 51...100:
+            return "Moderate"
+        case 101...150:
+            return "Sensitive"
+        case 151...200:
+            return "Unhealthy"
+        case 201...300:
+            return "Very unhealthy"
+        default:
+            return "Hazardous"
+        }
+    }
+}
+
+private struct CurrentBlock: Decodable {
+    var temperature: Double
+    var apparentTemperature: Double?
+    var relativeHumidity: Double?
+    var weatherCode: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case temperature = "temperature_2m"
+        case apparentTemperature = "apparent_temperature"
+        case relativeHumidity = "relative_humidity_2m"
+        case weatherCode = "weather_code"
+    }
+}
+
+private struct HourlyBlock: Decodable {
+    var time: [Double]
+    var temperature: [Double]
+    var weatherCode: [Int?]
+
+    enum CodingKeys: String, CodingKey {
+        case time
+        case temperature = "temperature_2m"
+        case weatherCode = "weather_code"
+    }
+
+    func items(clock: OpenMeteoForecastClock) -> [HourlyWeatherSummary] {
+        zip3(time, temperature, weatherCode).compactMap { unixTime, temperature, code in
+            guard clock.isUpcoming(unixTime: unixTime) else {
+                return nil
+            }
+            return HourlyWeatherSummary(
+                date: clock.absoluteDate(fromUnixTime: unixTime),
+                temperature: temperature,
+                conditionCode: code,
+                symbolName: WeatherCodeMapping.symbolName(for: code)
+            )
+        }
+    }
+}
+
+private struct DailyBlock: Decodable {
+    var time: [Double]
+    var weatherCode: [Int?]
+    var high: [Double]
+    var low: [Double]
+
+    enum CodingKeys: String, CodingKey {
+        case time
+        case weatherCode = "weather_code"
+        case high = "temperature_2m_max"
+        case low = "temperature_2m_min"
+    }
+
+    func items(clock: OpenMeteoForecastClock) -> [DailyWeatherSummary] {
+        zip4(time, weatherCode, high, low).map { unixTime, code, high, low in
+            return DailyWeatherSummary(
+                date: clock.localForecastDay(fromUnixTime: unixTime),
+                high: high,
+                low: low,
+                conditionCode: code,
+                symbolName: WeatherCodeMapping.symbolName(for: code)
+            )
+        }
+    }
+}
+
+private func zip3<A, B, C>(_ a: [A], _ b: [B], _ c: [C]) -> [(A, B, C)] {
+    let count = min(a.count, b.count, c.count)
+    return (0..<count).map { (a[$0], b[$0], c[$0]) }
+}
+
+private func zip4<A, B, C, D>(_ a: [A], _ b: [B], _ c: [C], _ d: [D]) -> [(A, B, C, D)] {
+    let count = min(a.count, b.count, c.count, d.count)
+    return (0..<count).map { (a[$0], b[$0], c[$0], d[$0]) }
+}
