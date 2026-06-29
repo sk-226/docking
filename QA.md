@@ -82,7 +82,15 @@ Docking resident after the settle window, sampled it at 0.0% CPU with roughly
 160 MB RSS, and showed no SwiftUI publish-within-update warning in the launch
 log.
 
-## Manual gates before GitHub cutover
+Release evidence: `Release/0.0.0 candidate` was merged on 2026-06-29 as
+`bfb50cc`, with the `v0.0.0` tag on `c30222c`. The published GitHub Release
+contains the DMG, zip, and matching checksum files. The Homebrew cask points at
+the published DMG checksum
+`4886c28298ecf1bf47f1118d5b5347bafde7020ec3f5e70f5cee3bc43982918b`, and
+`brew audit --cask --strict --online --tap=sk-226/docking docking` passes
+against that published artifact.
+
+## Manual gates and post-release follow-up
 
 | Area | Steps | Pass condition | Status |
 | --- | --- | --- | --- |
@@ -111,7 +119,27 @@ log.
 
 ## Git/GitHub readiness
 
-Start the GitHub handoff only after:
+GitHub handoff for `0.0.0` is complete:
+
+- PR #1 was merged into `main`.
+- The release tag is reachable from `origin/main`.
+- The GitHub Release includes DMG/zip artifacts and checksum files.
+- The Homebrew cask audits successfully against the published DMG.
+
+Do not mark the broader product goal fully complete until the remaining
+partially covered target-machine checks in the table above are either passed on
+the user's machine or deliberately accepted as known limitations:
+
+- Live macOS Calendar grant and denial flows.
+- Live Location Services denial flow.
+- Finder-to-Docking drag/drop for apps, folders, documents, and stack entries.
+- Physical pointer-edge auto-hide reveal.
+- Live Spaces/full-screen and multi-display movement.
+- Actual sleep/wake behavior.
+- Longer Activity Monitor idle CPU/memory observation.
+- Live network cadence observation after opening Weather.
+
+For future release handoffs, start only after:
 
 - All automated gates pass on the current worktree.
 - Manual gates above are either passed or deliberately recorded as known
