@@ -175,6 +175,24 @@ if [[ ! -s "$PACKAGE_ZIP" ]]; then
   exit 1
 fi
 
+# A valid staged `.app` is not enough if the zip accidentally contains the
+# wrong root, misses resources, or packages a stale file from a previous run.
+# Inspect the archive itself because this is the exact artifact that will be
+# attached to a PR or handed to a tester. We check only the stable bundle
+# contract here; enumerating every file would make harmless Swift compiler
+# layout changes look like release failures.
+ZIP_LIST="$(/usr/bin/unzip -Z -1 "$PACKAGE_ZIP")"
+for archived_path in \
+  "$APP_NAME.app/Contents/Info.plist" \
+  "$APP_NAME.app/Contents/MacOS/$APP_NAME" \
+  "$APP_NAME.app/Contents/Resources/DockingAppIcon.icns" \
+  "$APP_NAME.app/Contents/Resources/DockingMenuBarTemplate.png"; do
+  if ! /usr/bin/grep -qx "$archived_path" <<<"$ZIP_LIST"; then
+    printf 'Release check failed: package is missing %s\n' "$archived_path" >&2
+    exit 1
+  fi
+done
+
 printf 'Release candidate package: %s\n' "$PACKAGE_ZIP"
 
 section "Release identity"
@@ -194,6 +212,10 @@ PACKAGE_SHA256="$(/usr/bin/shasum -a 256 "$PACKAGE_ZIP" | /usr/bin/awk '{print $
 # shasum file rather than inventing a JSON manifest: the 0.0.0 release surface
 # needs to stay simple, and `shasum -c` can consume this format directly.
 printf '%s  %s\n' "$PACKAGE_SHA256" "${PACKAGE_ZIP##*/}" >"$PACKAGE_SHA256_FILE"
+(
+  cd "$DIST_DIR"
+  /usr/bin/shasum -c "${PACKAGE_SHA256_FILE##*/}"
+)
 
 printf 'Branch: %s\n' "${GIT_BRANCH:-unknown}"
 printf 'Commit: %s\n' "${GIT_COMMIT:-unknown}"

@@ -24,6 +24,9 @@ Expected results:
 - A local release-candidate zip is written to `dist/Docking-0.0.0-macos26.zip`.
 - A matching checksum file is written to
   `dist/Docking-0.0.0-macos26.zip.sha256`.
+- The zip contains the expected `Docking.app` bundle root, executable,
+  `Info.plist`, app icon, and menu bar template icon.
+- The checksum file validates with `shasum -c`.
 - Both bundle version values are `0.0.0`.
 - The bundle identifier is `app.docking.docking`.
 - The bundle minimum system version is `26.0`.
