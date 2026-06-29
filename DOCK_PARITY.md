@@ -40,7 +40,7 @@ Apple Dock mirroring from `persistent-others`.
 | Drag stack entries to other apps | Implemented | Stack entries vend `public.file-url` through `NSItemProvider`, leaving the receiving app/Finder to decide open/import/copy/move semantics. |
 | Remove from Docking | Implemented | Removes the Docking item only; it never deletes the folder. |
 | Show in Finder | Implemented | Reveals the folder location in Finder. |
-| Drop files onto a Dock folder to copy/move into that folder | Not implemented | This mutates the user's filesystem. Docking should only add it with clear Finder-like copy/move semantics and failure UI, not as a silent side effect of the existing add-to-dock drop target. |
+| Drop files onto a Dock folder to copy/move into that folder | Implemented | Option copies; otherwise same-volume drops move and cross-volume drops copy. Existing-name collisions and recursive folder drops fail with a visible alert instead of overwriting or producing low-level errors. |
 | Documents or arbitrary files as Dock items | Not implemented | The Apple Dock can hold some non-folder items in persistent-others, but Docking keeps this 0.0.0 item model to apps and folders until the UI intentionally supports document launching. |
 
 ## Quality bar
@@ -51,6 +51,9 @@ Apple Dock mirroring from `persistent-others`.
   choices users expect from the macOS Dock.
 - Stack entry menus and drags operate on the real file URLs, not copied cache
   files or Docking-private proxies.
+- Dropping files onto a Dock folder mutates the real destination folder only
+  after routing through explicit folder-drop logic, not through the add-to-Dock
+  target path.
 - Force Quit always shows a confirmation before termination.
 - Docking never removes an app bundle from disk.
 - Docking never removes a folder from disk.

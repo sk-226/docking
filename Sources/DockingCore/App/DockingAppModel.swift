@@ -289,6 +289,22 @@ public final class DockingAppModel: ObservableObject {
         insertDockItemIfNeeded(item, before: target)
     }
 
+    func dropFile(_ url: URL, ontoFolder item: DockItem) {
+        // A drop directly on a Dock folder should behave like dropping onto a
+        // Finder folder proxy. We keep this separate from `addDockItem` because
+        // the two gestures look similar in SwiftUI, but one mutates the
+        // Docking item list while the other mutates the user's filesystem.
+        guard item.isFolder, let targetFolderURL = item.url else {
+            return
+        }
+
+        do {
+            _ = try FolderDropService.performDrop(sourceURL: url, into: targetFolderURL)
+        } catch {
+            presentFolderDropFailure(error, sourceURL: url, target: item)
+        }
+    }
+
     func remove(_ item: DockItem) {
         if item.isFolder {
             folderStackPanelController.close()
@@ -492,6 +508,20 @@ public final class DockingAppModel: ObservableObject {
             dockItem.folderSortMode = mode
         }
         iconCache.clear()
+    }
+
+    private func presentFolderDropFailure(_ error: Error, sourceURL: URL, target: DockItem) {
+        // Successful Dock folder drops should stay lightweight and non-modal, as
+        // in Finder. Failures are different: silently losing a file operation is
+        // worse than briefly activating Docking, so we show a plain AppKit alert
+        // only when the filesystem rejected the operation.
+        let alert = NSAlert()
+        alert.messageText = "Could not add \(sourceURL.lastPathComponent) to \(target.title)"
+        alert.informativeText = error.localizedDescription
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     func updateWidgetFrame(kind: DockWidgetKind, frame: NSRect) {
