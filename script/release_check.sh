@@ -5,6 +5,9 @@ APP_NAME="Docking"
 BUNDLE_ID="app.docking.docking"
 APP_VERSION="0.0.0"
 MIN_SYSTEM_VERSION="26.0"
+CALENDAR_USAGE_DESCRIPTION="Docking shows your upcoming events in the calendar widget."
+CALENDAR_FULL_ACCESS_DESCRIPTION="Docking needs full calendar access to read upcoming events for the calendar widget."
+LOCATION_USAGE_DESCRIPTION="Docking can use your location for the weather widget when you enable current-location weather."
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
@@ -33,6 +36,20 @@ assert_plist_value() {
     printf 'Release check failed: %s expected %s, got %s\n' "$key" "$expected" "$actual" >&2
     exit 1
   fi
+}
+
+assert_permission_description() {
+  local key="$1"
+  local expected="$2"
+
+  # Permission prompts are part of the product safety contract, not incidental
+  # bundle metadata. macOS will show these strings before users trust Docking
+  # with Calendar or Location access, so a missing or generic placeholder should
+  # fail the release gate just like a wrong bundle identifier. Checking the
+  # exact local text is intentionally stricter than "non-empty": for a 0.0.0
+  # personal app, changing prompt wording should be a deliberate review point,
+  # not an unnoticed side effect of touching the build script.
+  assert_plist_value "$key" "$expected"
 }
 
 fail_if_matches() {
@@ -82,6 +99,12 @@ assert_plist_value CFBundleIdentifier "$BUNDLE_ID"
 assert_plist_value CFBundleIconFile "DockingAppIcon"
 assert_plist_value LSMinimumSystemVersion "$MIN_SYSTEM_VERSION"
 assert_plist_value NSHighResolutionCapable "true"
+
+section "Permission descriptions"
+assert_permission_description NSCalendarsUsageDescription "$CALENDAR_USAGE_DESCRIPTION"
+assert_permission_description NSCalendarsFullAccessUsageDescription "$CALENDAR_FULL_ACCESS_DESCRIPTION"
+assert_permission_description NSLocationWhenInUseUsageDescription "$LOCATION_USAGE_DESCRIPTION"
+assert_permission_description NSLocationUsageDescription "$LOCATION_USAGE_DESCRIPTION"
 
 if [[ ! -s "$APP_ICON" || ! -s "$MENU_BAR_ICON" ]]; then
   printf 'Release check failed: icon resources were not copied into %s\n' "$APP_BUNDLE" >&2

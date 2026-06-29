@@ -100,6 +100,18 @@ Useful modes:
 CONFIGURATION=release ./script/build_and_run.sh --package
 ```
 
+For launch-only regression checks that should not be part of artifact
+packaging, run:
+
+```bash
+./script/launch_smoke_check.sh
+```
+
+That script relaunches Docking, waits for the resident app to settle, confirms
+the process is still alive, and fails if the launch logs contain the SwiftUI
+publish-within-view-update warning that previously broke the first Control
+Center render.
+
 The Codex app Run action is wired to the same script through
 `.codex/environments/environment.toml`.
 
@@ -124,14 +136,28 @@ Run the local release gate before sharing a build:
 ```
 
 It runs the validation executable, builds and stages a release `Docking.app`,
-checks bundle metadata, icon resources, signature integrity, and WeatherKit
-entitlement/profile consistency, rejects user-specific authored
-paths/identifiers, verifies that the debug mock weather provider is not in the
-release executable, and writes `dist/Docking-0.0.0-macos26.zip`. It also prints
-the current branch, commit, worktree cleanliness, and package SHA-256 so the
-tested zip can be tied back to the exact local candidate. This is a local 0.0.0
-candidate gate; Developer ID signing, hardened runtime, notarization, and
-GitHub push remain separate explicit release steps.
+checks bundle metadata, Calendar/Location permission descriptions, icon
+resources, signature integrity, and WeatherKit entitlement/profile consistency,
+rejects user-specific authored paths/identifiers, verifies that the debug mock
+weather provider is not in the release executable, and writes
+`dist/Docking-0.0.0-macos26.zip`. It also prints the current branch, commit,
+worktree cleanliness, and package SHA-256 so the tested zip can be tied back to
+the exact local candidate. This is a local 0.0.0 candidate gate; Developer ID
+signing, hardened runtime, notarization, and GitHub push remain separate
+explicit release steps.
+
+Run the launch smoke check after changes that touch startup, windows, widgets,
+or AppKit/SwiftUI lifecycle:
+
+```bash
+./script/launch_smoke_check.sh
+```
+
+This intentionally stays separate from `release_check.sh`. The release gate
+inspects a packaged artifact without mutating local app state; the smoke check
+launches Docking, waits for it to remain resident, prints a short CPU/RSS sample,
+and fails if SwiftUI logs the publish-within-update warning that can leave the
+Control Center blank during first launch.
 
 ## Permissions
 

@@ -25,6 +25,8 @@ Expected results:
 - Both bundle version values are `0.0.0`.
 - The bundle identifier is `app.docking.docking`.
 - The bundle minimum system version is `26.0`.
+- Calendar and Location usage descriptions match the reviewed Docking-specific
+  permission copy.
 - `codesign --verify --deep` accepts the staged app bundle.
 - The source/docs search returns no matches. `QA.md` is intentionally excluded
   because this file documents the automated gate itself.
@@ -40,11 +42,27 @@ Expected results:
 release gate packages without launching so an artifact inspection does not also
 change app windows, permissions, or local user defaults.
 
+Run this after launch, windowing, widget, or SwiftUI/AppKit lifecycle changes:
+
+```bash
+./script/launch_smoke_check.sh
+```
+
+Expected results:
+
+- `Docking` is still running after the settle window, not just immediately after
+  LaunchServices opens the bundle.
+- The script prints a short `ps` sample for CPU and RSS.
+- The unified log contains no SwiftUI `Publishing changes from within view
+  updates` warning for Docking during launch.
+
 Latest automated evidence: passed 2026-06-29 on the current release-candidate
 path. The run created `dist/Docking-0.0.0-macos26.zip`, verified the staged app
 signature, and confirmed that unprovisioned builds omit the WeatherKit
 entitlement so Weather uses the Open-Meteo real-data fallback instead of failing
-at launch.
+at launch. A launch smoke pass on the same path kept Docking resident after the
+settle window, sampled it at 0.0% CPU with roughly 160 MB RSS, and showed no
+SwiftUI publish-within-update warning in the launch log.
 
 ## Manual gates before GitHub cutover
 
