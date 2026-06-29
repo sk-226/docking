@@ -13,6 +13,7 @@ INFO_PLIST="$APP_BUNDLE/Contents/Info.plist"
 PACKAGE_ZIP="$DIST_DIR/$APP_NAME-$APP_VERSION-macos26.zip"
 APP_ICON="$APP_BUNDLE/Contents/Resources/DockingAppIcon.icns"
 MENU_BAR_ICON="$APP_BUNDLE/Contents/Resources/DockingMenuBarTemplate.png"
+EMBEDDED_PROFILE="$APP_BUNDLE/Contents/embedded.provisionprofile"
 
 cd "$ROOT_DIR"
 
@@ -91,6 +92,24 @@ section "Code signature"
 # and should remain an explicit follow-up instead of being silently approximated
 # by a 0.0.0 local candidate.
 /usr/bin/codesign --verify --deep --verbose=2 "$APP_BUNDLE"
+
+section "WeatherKit entitlement mode"
+ENTITLEMENTS_DUMP="$(mktemp "${TMPDIR:-/tmp}/docking-entitlements.XXXXXX.plist")"
+trap 'rm -f "$ENTITLEMENTS_DUMP"' EXIT
+/usr/bin/codesign -d --entitlements :- "$APP_BUNDLE" >"$ENTITLEMENTS_DUMP" 2>/dev/null || true
+
+if [[ -s "$EMBEDDED_PROFILE" ]]; then
+  if ! /usr/bin/grep -q "com.apple.developer.weatherkit" "$ENTITLEMENTS_DUMP"; then
+    printf 'Release check failed: embedded profile exists but WeatherKit entitlement was not sealed into %s\n' "$APP_BUNDLE" >&2
+    exit 1
+  fi
+else
+  if /usr/bin/grep -q "com.apple.developer.weatherkit" "$ENTITLEMENTS_DUMP"; then
+    printf 'Release check failed: WeatherKit entitlement is present without an embedded provisioning profile\n' >&2
+    exit 1
+  fi
+  printf 'WeatherKit entitlement absent; release candidate will use Open-Meteo fallback unless a matching profile is supplied.\n'
+fi
 
 section "Source hygiene"
 fail_if_matches \

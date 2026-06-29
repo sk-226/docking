@@ -124,8 +124,8 @@ Run the local release gate before sharing a build:
 ```
 
 It runs the validation executable, builds and stages a release `Docking.app`,
-checks bundle metadata, icon resources, and signature integrity, rejects
-user-specific authored paths/identifiers, and writes
+checks bundle metadata, icon resources, signature integrity, and WeatherKit
+entitlement/profile consistency, rejects user-specific authored paths/identifiers, and writes
 `dist/Docking-0.0.0-macos26.zip`. This is a local 0.0.0 candidate gate;
 Developer ID signing, hardened runtime, notarization, and GitHub push remain
 separate explicit release steps.
@@ -145,8 +145,11 @@ Weather can use either a manual city or current location:
   that coordinate with WeatherKit or Open-Meteo forecast data.
 - If current location is unavailable and a manual city is set, Docking retries
   with that manual city instead of leaving the widget stuck on a location error.
-- WeatherKit requires the appropriate Apple entitlement in real distribution.
-  Unsigned SwiftPM bundles usually fall back to Open-Meteo.
+- WeatherKit requires a provisioning profile that grants
+  `com.apple.developer.weatherkit` for `app.docking.docking`. The run script
+  attaches that entitlement only when it detects a matching profile, or when
+  `DOCKING_WEATHERKIT_PROFILE` points at one. Otherwise Docking launches without
+  the restricted entitlement and falls back to Open-Meteo.
 
 ## Primary Dock Mode and Restore
 
@@ -185,8 +188,8 @@ above.
 
 ## Known Limitations
 
-- WeatherKit is wired as the primary provider, but unsigned or non-entitled
-  SwiftPM bundles are expected to fall back to Open-Meteo.
+- WeatherKit is wired as the primary provider, but builds without a matching
+  WeatherKit provisioning profile are expected to fall back to Open-Meteo.
 - Launch at login uses `SMAppService.mainApp`. It may fail for unsigned or
   nonstandard development bundles; Control Center keeps the checkbox synced to
   macOS's actual Login Items state and shows the error.
