@@ -99,6 +99,10 @@ struct CalendarDetailPanelView: View {
                     }
                 }
 
+                if let nextEvent = model.calendarViewModel.events.first {
+                    CalendarNextEventSummary(event: nextEvent, showLocation: model.settings.calendarShowsLocation)
+                }
+
                 ForEach(Array(CalendarGrouping.groupEvents(model.calendarViewModel.events).enumerated()), id: \.offset) { _, group in
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 8) {
@@ -118,6 +122,68 @@ struct CalendarDetailPanelView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+private struct CalendarNextEventSummary: View {
+    let event: CalendarEventSummary
+    let showLocation: Bool
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(Color.accentColor)
+                .frame(width: 3, height: 58)
+
+            HStack(alignment: .center, spacing: 12) {
+                VStack(spacing: 1) {
+                    Text(DockingFormatters.timeFormatter.string(from: event.startDate))
+                        .font(.system(size: 22, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                    Text(DockingFormatters.durationString(from: event.startDate, to: event.endDate))
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .frame(width: 72)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Next")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(event.title.nilIfBlank ?? "Untitled event")
+                        .font(.headline.weight(.semibold))
+                        .lineLimit(2)
+                    Text(metadataText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        // The top item deserves more visual weight than the remaining schedule,
+        // but it should still belong to the same glass panel. We use a flat
+        // band and accent rail instead of a nested rounded card: the panel is
+        // already a framed surface, and another card would make a compact
+        // schedule popover feel heavier without adding information.
+        .padding(.horizontal, 2)
+        .padding(.vertical, 10)
+        .background(Color.primary.opacity(0.035))
+    }
+
+    private var metadataText: String {
+        var pieces = [
+            "Until \(DockingFormatters.timeFormatter.string(from: event.endDate))",
+            event.calendarName
+        ].compactMap { $0.nilIfBlank }
+
+        if showLocation, let location = event.location?.nilIfBlank {
+            pieces.append(location)
+        }
+
+        return pieces.joined(separator: " · ")
     }
 }
 
