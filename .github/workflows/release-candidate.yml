@@ -46,6 +46,19 @@ jobs:
       - name: Run local release gate
         run: ./script/release_check.sh
 
+      - name: Audit Homebrew cask
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: |
+          set -euo pipefail
+
+          # Homebrew audits casks through a tap, not arbitrary file paths. The
+          # checked-out repository is already the release tap, so use it
+          # directly instead of creating a separate homebrew-* repository for a
+          # 0.0.0 app.
+          brew tap sk-226/docking "$GITHUB_WORKSPACE"
+          brew audit --cask --strict --online --tap=sk-226/docking docking
+
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -71,7 +84,7 @@ jobs:
           # Releases. Manual workflow_dispatch runs stay as workflow artifacts
           # so release publication remains an explicit tag-driven act.
           {
-            echo "Docking 0.0.0 macOS 26 release candidate."
+            echo "Docking 0.0.0 macOS 26 release."
             echo
             echo "Artifacts are produced by ./script/release_check.sh on the macos-26 runner."
             echo
@@ -97,9 +110,9 @@ jobs:
               dist/Docking-0.0.0-macos26.dmg.sha256 \
               --clobber
           elif [[ "$release_is_draft" == "false" ]]; then
-            # A locally published pre-release may already contain the reviewed
-            # DMG and checksum files before the tag workflow starts. In that
-            # case the workflow should still prove that GitHub can rebuild the
+            # A locally published release may already contain the reviewed DMG
+            # and checksum files before the tag workflow starts. In that case
+            # the workflow should still prove that GitHub can rebuild the
             # artifacts, but it must not mutate the public release assets behind
             # the maintainer's back.
             echo "Release ${tag_name} already exists and is not a draft; leaving published assets unchanged."

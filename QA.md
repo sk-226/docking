@@ -50,6 +50,9 @@ Expected results:
   artifacts, attaches the same files to a draft GitHub Release when no published
   release exists, and refuses to mutate assets that were already published from
   a reviewed local candidate.
+- The Homebrew cask at `Casks/docking.rb` points at the published DMG, uses the
+  release DMG checksum, requires macOS 26 or newer, and passes the workflow's
+  `brew audit --cask --strict --online` check.
 
 `./script/build_and_run.sh --verify` remains the quick launch smoke test. The
 release gate packages without launching so an artifact inspection does not also

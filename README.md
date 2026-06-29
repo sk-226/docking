@@ -49,6 +49,21 @@ text, or layout.
 - Primary Dock mode imports readable Apple Dock layout details, pinned apps, and
   folder stacks into Docking before moving Apple Dock out of the way.
 
+## Install
+
+Download the DMG from the
+[v0.0.0 release](https://github.com/sk-226/docking/releases/tag/v0.0.0), or
+install the same DMG with Homebrew:
+
+```bash
+brew tap sk-226/docking https://github.com/sk-226/docking
+brew install --cask docking
+```
+
+This repository is the tap, so the explicit URL is intentional. Homebrew's
+short `owner/name` tap form expects a separate `homebrew-*` repository, which
+would add another repo to keep in sync for a 0.0.0 app.
+
 ## Build
 
 ```bash
@@ -152,9 +167,9 @@ separate explicit release steps.
 GitHub Actions has the same artifact contract in
 `.github/workflows/release-candidate.yml`. Manual workflow runs upload the zip,
 DMG, and checksum files as workflow artifacts. Tag builds attach those files to
-a draft GitHub Release when one does not already exist; if a reviewed
-pre-release was already published locally with `gh release create`, the workflow
-rebuilds the artifacts but leaves the published assets unchanged.
+a draft GitHub Release when one does not already exist; if a reviewed release
+was already published locally with `gh release create`, the workflow rebuilds
+the artifacts but leaves the published assets unchanged.
 
 Run the launch smoke check after changes that touch startup, windows, widgets,
 or AppKit/SwiftUI lifecycle:
