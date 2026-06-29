@@ -6,7 +6,7 @@ struct FolderStackPanelView: View {
     let item: DockItem
     let entries: [FolderStackEntry]
     @State private var visibleLimit: Int
-    @State private var downloadsVisibleEndIndex: Int?
+    @State private var downloadsVisibleRange: ClosedRange<Int>?
     @State private var isDownloadsScrollActive = false
 
     init(item: DockItem, entries: [FolderStackEntry]) {
@@ -247,8 +247,8 @@ struct FolderStackPanelView: View {
             return "\(entries.count) items"
         }
 
-        let visibleEnd = downloadsVisibleEndIndex ?? min(visibleLimit, entries.count)
-        return "\(visibleEnd) of \(entries.count) items"
+        let visibleRange = downloadsVisibleRange ?? 1...min(visibleLimit, entries.count)
+        return "\(visibleRange.lowerBound)-\(visibleRange.upperBound) of \(entries.count) items"
     }
 
     private var isDownloadsStack: Bool {
@@ -298,9 +298,10 @@ struct FolderStackPanelView: View {
         // decode lazily as newly visible cells appear.
         let newVisibleLimit = min(entries.count, visibleLimit + FolderStackService.downloadsInitialVisibleCount)
         visibleLimit = newVisibleLimit
-        downloadsVisibleEndIndex = Self.downloadsVisibleEndIndex(
+        downloadsVisibleRange = Self.downloadsVisibleRange(
             visibleCount: newVisibleLimit,
             totalCount: entries.count,
+            contentOffsetY: scrollState.contentOffsetY,
             visibleMaxY: scrollState.visibleMaxY,
             contentHeight: scrollState.contentHeight
         )
@@ -311,36 +312,46 @@ struct FolderStackPanelView: View {
             return
         }
 
-        downloadsVisibleEndIndex = Self.downloadsVisibleEndIndex(
+        downloadsVisibleRange = Self.downloadsVisibleRange(
             visibleCount: visibleLimit,
             totalCount: entries.count,
+            contentOffsetY: scrollState.contentOffsetY,
             visibleMaxY: scrollState.visibleMaxY,
             contentHeight: scrollState.contentHeight
         )
     }
 
-    nonisolated static func downloadsVisibleEndIndex(
+    nonisolated static func downloadsVisibleRange(
         visibleCount: Int,
         totalCount: Int,
+        contentOffsetY: CGFloat,
         visibleMaxY: CGFloat,
         contentHeight: CGFloat
-    ) -> Int {
+    ) -> ClosedRange<Int> {
         guard totalCount > 0, visibleCount > 0 else {
-            return 0
+            return 0...0
         }
 
+        let clampedVisibleCount = min(visibleCount, totalCount)
         guard contentHeight > 0, visibleMaxY > 0 else {
-            return min(visibleCount, totalCount)
+            return 1...clampedVisibleCount
         }
 
-        // The Downloads grid grows a page at a time, so the header must describe
-        // scroll position, not only the number of entries already loaded. We use
-        // ScrollView geometry instead of per-cell observers because LazyVGrid
-        // may recycle cells and because attaching geometry readers to every file
-        // would be expensive in a folder with hundreds or thousands of items.
-        let ratio = min(max(visibleMaxY / contentHeight, 0), 1)
-        let estimatedEnd = Int(ceil(Double(visibleCount) * Double(ratio)))
-        return min(max(estimatedEnd, 1), min(visibleCount, totalCount))
+        // The Downloads stack can contain thousands of files, so the header
+        // should explain the user's current position without forcing every file
+        // cell to report geometry. A loaded-count label like "48 of 1500" stays
+        // stuck after more pages are revealed and makes scrolling back to the
+        // top feel broken. Estimating the visible range from the ScrollView
+        // geometry keeps the UI honest enough for orientation while avoiding
+        // per-cell observers, which would add avoidable work to the heaviest
+        // stack users are likely to have.
+        let lowerRatio = min(max(contentOffsetY / contentHeight, 0), 1)
+        let upperRatio = min(max(visibleMaxY / contentHeight, 0), 1)
+        let lowerBound = Int(floor(Double(clampedVisibleCount) * Double(lowerRatio))) + 1
+        let upperBound = Int(ceil(Double(clampedVisibleCount) * Double(upperRatio)))
+        let clampedLowerBound = min(max(lowerBound, 1), clampedVisibleCount)
+        let clampedUpperBound = min(max(upperBound, clampedLowerBound), clampedVisibleCount)
+        return clampedLowerBound...clampedUpperBound
     }
 
     nonisolated static func shouldRevealMoreDownloads(

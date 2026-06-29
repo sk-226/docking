@@ -562,20 +562,28 @@ func validateFolderStackPresentation() throws {
         ),
         "Downloads should ignore layout-only geometry changes even when the current content is short"
     )
-    let topVisibleEnd = FolderStackPanelView.downloadsVisibleEndIndex(
+    let topVisibleRange = FolderStackPanelView.downloadsVisibleRange(
         visibleCount: 48,
         totalCount: 1_500,
+        contentOffsetY: 0,
         visibleMaxY: 320,
         contentHeight: 1_280
     )
-    let lowerVisibleEnd = FolderStackPanelView.downloadsVisibleEndIndex(
+    let lowerVisibleRange = FolderStackPanelView.downloadsVisibleRange(
         visibleCount: 48,
         totalCount: 1_500,
+        contentOffsetY: 640,
         visibleMaxY: 960,
         contentHeight: 1_280
     )
-    try expect(topVisibleEnd == 12, "Downloads header should return toward the first visible page when the user scrolls back up")
-    try expect(lowerVisibleEnd == 36, "Downloads header should advance as the user scrolls down through the loaded entries")
+    try expect(
+        topVisibleRange == 1...12,
+        "Downloads header should return toward the first visible page when the user scrolls back up"
+    )
+    try expect(
+        lowerVisibleRange == 25...36,
+        "Downloads header should show the current loaded range, not only the total number of loaded entries"
+    )
 
     try expect(
         SpecialFolderIconFactory.symbolName(
