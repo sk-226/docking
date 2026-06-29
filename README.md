@@ -140,11 +140,12 @@ checks bundle metadata, Calendar/Location permission descriptions, icon
 resources, signature integrity, and WeatherKit entitlement/profile consistency,
 rejects user-specific authored paths/identifiers, verifies that the debug mock
 weather provider is not in the release executable, and writes
-`dist/Docking-0.0.0-macos26.zip`. It also prints the current branch, commit,
-worktree cleanliness, and package SHA-256 so the tested zip can be tied back to
-the exact local candidate. This is a local 0.0.0 candidate gate; Developer ID
-signing, hardened runtime, notarization, and GitHub push remain separate
-explicit release steps.
+`dist/Docking-0.0.0-macos26.zip` plus
+`dist/Docking-0.0.0-macos26.zip.sha256`. It also prints the current branch,
+commit, worktree cleanliness, and package SHA-256 so the tested zip can be tied
+back to the exact local candidate. This is a local 0.0.0 candidate gate;
+Developer ID signing, hardened runtime, notarization, and GitHub push remain
+separate explicit release steps.
 
 Run the launch smoke check after changes that touch startup, windows, widgets,
 or AppKit/SwiftUI lifecycle:

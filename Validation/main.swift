@@ -1227,6 +1227,70 @@ func validateCalendarLaunchDoesNotRequestPermission() async throws {
 }
 
 @MainActor
+func validateCalendarGrantedPublishesEventsAndSources() async throws {
+    let start = Date(timeIntervalSince1970: 1_800_000_000)
+    let end = start.addingTimeInterval(3_600)
+    let expectedEvent = CalendarEventSummary(
+        id: "granted-event",
+        title: "Release review",
+        calendarName: "Work",
+        startDate: start,
+        endDate: end,
+        location: "Studio"
+    )
+    let expectedCalendars = [
+        CalendarSourceSummary(id: "work", title: "Work", colorHex: "#0A84FF"),
+        CalendarSourceSummary(id: "personal", title: "Personal", colorHex: "#FF375F")
+    ]
+    let provider = StaticCalendarProvider(events: [expectedEvent], calendars: expectedCalendars)
+    let viewModel = CalendarWidgetViewModel(provider: provider)
+
+    var settings = DockingSettings.default
+    settings.calendarLookaheadDays = 9
+    settings.calendarMaxEventCount = 12
+    settings.calendarSelectedCalendarIDs = ["work"]
+
+    await viewModel.refreshIfNeeded(settings: settings)
+
+    // This is the non-permission half of the real "Calendar access granted"
+    // flow. TCC itself still needs live machine QA, but once EventKit is
+    // readable the resident widget must show schedule data, not remain in a
+    // permission/loading state. We also assert the query shape so future UI
+    // settings changes cannot silently stop reaching the provider.
+    try expect(provider.upcomingEventRequestCount == 1, "granted calendar launch refresh should request upcoming events once")
+    try expect(provider.lastLookaheadDays == settings.calendarLookaheadDays, "granted calendar refresh should pass the configured lookahead")
+    try expect(provider.lastMaxEvents == settings.calendarMaxEventCount, "granted calendar refresh should pass the configured max event count")
+    try expect(provider.lastSelectedCalendarIDs == settings.calendarSelectedCalendarIDs, "granted calendar refresh should preserve selected calendar IDs")
+    try expect(viewModel.state == .loaded, "granted calendar with events should publish loaded state")
+    try expect(viewModel.events.map(\.id) == ["granted-event"], "granted calendar should publish provider events")
+    try expect(viewModel.compactText.primary == DockingFormatters.timeFormatter.string(from: start), "granted calendar compact widget should show the next event time")
+    try expect(viewModel.compactText.secondary == "Release review", "granted calendar compact widget should show the event title")
+    try expect(viewModel.nextEventLine.contains("Release review"), "granted calendar detail header should point to the loaded event")
+
+    await viewModel.refreshAvailableCalendars(settings: settings)
+
+    try expect(provider.availableCalendarRequestCount == 1, "granted calendar source load should enumerate calendars once")
+    try expect(viewModel.sourceState == .loaded, "granted calendar source load should publish loaded state")
+    try expect(viewModel.availableCalendars.map(\.id) == ["work", "personal"], "granted calendar source load should publish selectable calendars")
+}
+
+@MainActor
+func validateCalendarGrantedEmptyState() async throws {
+    let provider = StaticCalendarProvider(events: [], calendars: [])
+    let viewModel = CalendarWidgetViewModel(provider: provider)
+
+    await viewModel.refresh(settings: .default, reason: "validation-granted-empty")
+
+    // An empty but authorized calendar is materially different from a disabled
+    // or denied calendar. This protects the first-run happy path for users who
+    // grant access but simply have no upcoming events in the configured window.
+    try expect(provider.upcomingEventRequestCount == 1, "granted empty calendar should still make one provider request")
+    try expect(viewModel.state == .empty, "granted calendar with no events should publish empty state")
+    try expect(viewModel.compactText == ("Today", "No events"), "granted empty calendar should look calm, not permission-blocked")
+    try expect(viewModel.nextEventLine == "No upcoming events", "granted empty calendar detail header should show the empty schedule state")
+}
+
+@MainActor
 func validateDisabledCalendarIgnoresStoreChanges() async throws {
     let provider = CountingCalendarProvider()
     let viewModel = CalendarWidgetViewModel(provider: provider)
@@ -1678,6 +1742,45 @@ private final class CountingCalendarProvider: CalendarProviding {
     }
 }
 
+private final class StaticCalendarProvider: CalendarProviding {
+    let changeNotificationName = Notification.Name("StaticCalendarProviderChanged")
+    var changeNotificationObject: Any? {
+        nil
+    }
+    let authorizationState: CalendarAuthorizationState = .granted
+    private let events: [CalendarEventSummary]
+    private let calendars: [CalendarSourceSummary]
+    private(set) var upcomingEventRequestCount = 0
+    private(set) var availableCalendarRequestCount = 0
+    private(set) var lastLookaheadDays: Int?
+    private(set) var lastMaxEvents: Int?
+    private(set) var lastSelectedCalendarIDs: [String]?
+
+    init(events: [CalendarEventSummary], calendars: [CalendarSourceSummary]) {
+        self.events = events
+        self.calendars = calendars
+    }
+
+    func availableCalendars() async throws -> [CalendarSourceSummary] {
+        availableCalendarRequestCount += 1
+        return calendars
+    }
+
+    func upcomingEvents(lookaheadDays: Int, maxEvents: Int, selectedCalendarIDs: [String]) async throws -> [CalendarEventSummary] {
+        upcomingEventRequestCount += 1
+        lastLookaheadDays = lookaheadDays
+        lastMaxEvents = maxEvents
+        lastSelectedCalendarIDs = selectedCalendarIDs
+
+        // The EventKit-backed provider is responsible for date-windowing,
+        // sorting, and trimming before the ViewModel sees data. This static
+        // provider intentionally returns exactly the fixture it was given so
+        // the test checks the ViewModel's authorized-state publication contract
+        // rather than duplicating EventKit query behavior in validation code.
+        return events
+    }
+}
+
 private final class ThrowingCalendarProvider: CalendarProviding {
     let changeNotificationName = Notification.Name("ThrowingCalendarProviderChanged")
     var changeNotificationObject: Any? {
@@ -1845,6 +1948,8 @@ let asyncValidations: [(String, () async throws -> Void)] = [
     ("widget task lifecycle", { try await validateWidgetTaskLifecycle() }),
     ("explicit app reorder controls", { try await validateExplicitAppReorderControls() }),
     ("calendar launch does not request permission", { try await validateCalendarLaunchDoesNotRequestPermission() }),
+    ("calendar granted event and source states", { try await validateCalendarGrantedPublishesEventsAndSources() }),
+    ("calendar granted empty state", { try await validateCalendarGrantedEmptyState() }),
     ("disabled calendar ignores store changes", { try await validateDisabledCalendarIgnoresStoreChanges() }),
     ("calendar denied permission state", { try await validateCalendarDeniedPublishesPermissionState() }),
     ("calendar restricted permission state", { try await validateCalendarRestrictedPublishesPermissionState() }),

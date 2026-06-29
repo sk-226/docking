@@ -14,6 +14,7 @@ DIST_DIR="$ROOT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 INFO_PLIST="$APP_BUNDLE/Contents/Info.plist"
 PACKAGE_ZIP="$DIST_DIR/$APP_NAME-$APP_VERSION-macos26.zip"
+PACKAGE_SHA256_FILE="$PACKAGE_ZIP.sha256"
 APP_ICON="$APP_BUNDLE/Contents/Resources/DockingAppIcon.icns"
 MENU_BAR_ICON="$APP_BUNDLE/Contents/Resources/DockingMenuBarTemplate.png"
 EMBEDDED_PROFILE="$APP_BUNDLE/Contents/embedded.provisionprofile"
@@ -188,10 +189,16 @@ GIT_BRANCH="$(git branch --show-current 2>/dev/null || true)"
 GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || true)"
 GIT_STATUS="$(git status --short 2>/dev/null || true)"
 PACKAGE_SHA256="$(/usr/bin/shasum -a 256 "$PACKAGE_ZIP" | /usr/bin/awk '{print $1}')"
+# Keep the checksum beside the zip so the artifact can be verified even after
+# this terminal scrollback is gone. We intentionally write a standard two-column
+# shasum file rather than inventing a JSON manifest: the 0.0.0 release surface
+# needs to stay simple, and `shasum -c` can consume this format directly.
+printf '%s  %s\n' "$PACKAGE_SHA256" "${PACKAGE_ZIP##*/}" >"$PACKAGE_SHA256_FILE"
 
 printf 'Branch: %s\n' "${GIT_BRANCH:-unknown}"
 printf 'Commit: %s\n' "${GIT_COMMIT:-unknown}"
 printf 'Package SHA-256: %s\n' "$PACKAGE_SHA256"
+printf 'Checksum file: %s\n' "$PACKAGE_SHA256_FILE"
 if [[ -n "$GIT_STATUS" ]]; then
   printf 'Git status: dirty worktree; review before GitHub handoff.\n'
 else

@@ -22,6 +22,8 @@ Expected results:
 - `DockingValidation` prints `All Docking validation checks passed.`
 - A release app bundle is staged at `dist/Docking.app`.
 - A local release-candidate zip is written to `dist/Docking-0.0.0-macos26.zip`.
+- A matching checksum file is written to
+  `dist/Docking-0.0.0-macos26.zip.sha256`.
 - Both bundle version values are `0.0.0`.
 - The bundle identifier is `app.docking.docking`.
 - The bundle minimum system version is `26.0`.
@@ -36,7 +38,8 @@ Expected results:
 - `MockWeatherProvider.swift` remains DEBUG-only and the release executable does
   not contain the mock provider implementation.
 - The final release identity section prints the current branch, short commit,
-  worktree cleanliness, and SHA-256 for `dist/Docking-0.0.0-macos26.zip`.
+  worktree cleanliness, SHA-256 for `dist/Docking-0.0.0-macos26.zip`, and the
+  checksum file path.
 
 `./script/build_and_run.sh --verify` remains the quick launch smoke test. The
 release gate packages without launching so an artifact inspection does not also
@@ -70,7 +73,7 @@ SwiftUI publish-within-update warning in the launch log.
 | --- | --- | --- | --- |
 | First launch | Run `./script/build_and_run.sh --verify`, then open Control Center from the app menu and menu bar item. | Dock panel appears, menu bar item works, Control Center opens without crash. | Passed 2026-06-28 via `--verify` and Computer Use: Overview, app menu, and Control Center opened without crash. |
 | Calendar permission not requested while disabled | Turn Calendar widget off, reopen Control Center > Widgets. | No Calendar permission prompt appears. | Passed 2026-06-28 via Computer Use: disabling the Calendar widget kept the Widgets tab stable, disabled the Load button, showed `Enable the Calendar widget to choose calendars.`, and did not show a macOS permission prompt. Validation also covers disabled direct refresh/source load/store-change paths. |
-| Calendar permission granted | Turn Calendar widget on and grant Calendar access. | Detail panel shows grouped events or a clear empty state. | Not yet manually verified |
+| Calendar permission granted | Turn Calendar widget on and grant Calendar access. | Detail panel shows grouped events or a clear empty state. | Partially covered 2026-06-29 by validation: an authorized provider with events now publishes `loaded`, forwards lookahead/max-event/selected-calendar settings, updates compact/detail copy from the loaded event, and loads selectable calendar sources; an authorized provider with no events publishes the calm empty state. Live macOS TCC grant flow is still not yet manually verified. |
 | Calendar permission denied | Deny Calendar access in System Settings, then open the widget. | Detail panel shows a permission state and does not crash. | Partially covered 2026-06-29 by validation: denied authorization publishes `permissionDenied`, restricted publishes `permissionRestricted`, write-only publishes `permissionWriteOnly`, compact text becomes `Off` / `Calendar`, detail/source copy stays permission-specific, and direct refresh/source loading do not crash. Live System Settings denial is still not yet manually verified. |
 | Weather manual city | Disable current location, set a city such as `Tokyo`, open Weather. | Real weather loads or a provider/network error is shown with no mock values. | Passed 2026-06-28 via Computer Use: manual city `Tokyo` showed real weather for `Tokyo, Tokyo, Japan`, updated at 19:05, with temperature, condition, hourly/daily forecast, and humidity. Missing manual city with cached data now shows a stale-cache message instead of a contradictory bare city prompt. |
 | Weather location denial | Enable current location and deny Location Services. | Weather shows the location-denied state and does not silently fall back to fake data. | Partially covered 2026-06-28 by validation: current-location denial with no manual fallback publishes `locationDenied` and no fabricated snapshot; with cached weather it shows stale cached data; with a manual city it falls back to the configured city. Live Location Services denial is still not yet manually verified. |
