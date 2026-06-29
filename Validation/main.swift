@@ -42,6 +42,16 @@ func validateCalendarGrouping() throws {
     let grouped = CalendarGrouping.groupEvents(events, calendar: calendar)
     try expect(grouped.count == 1, "events on the same day should share one section")
     try expect(grouped[0].events.map(\.id) == ["earlier", "later"], "events should sort by start time inside each section")
+
+    try expect(
+        CalendarDetailPanelPresentation.summaryEvent(from: events)?.id == "earlier",
+        "calendar detail summary should promote the actual next event even when provider/test data arrives unsorted"
+    )
+    let detailGroups = CalendarDetailPanelPresentation.groupedEventsAfterSummary(events, calendar: calendar)
+    try expect(
+        detailGroups.flatMap(\.events).map(\.id) == ["later"],
+        "calendar detail list should not duplicate the event already shown in the next-event summary"
+    )
 }
 
 func validateDockLayout() throws {

@@ -99,11 +99,14 @@ struct CalendarDetailPanelView: View {
                     }
                 }
 
-                if let nextEvent = model.calendarViewModel.events.first {
+                if let nextEvent = CalendarDetailPanelPresentation.summaryEvent(from: model.calendarViewModel.events) {
                     CalendarNextEventSummary(event: nextEvent, showLocation: model.settings.calendarShowsLocation)
                 }
 
-                ForEach(Array(CalendarGrouping.groupEvents(model.calendarViewModel.events).enumerated()), id: \.offset) { _, group in
+                ForEach(
+                    Array(CalendarDetailPanelPresentation.groupedEventsAfterSummary(model.calendarViewModel.events).enumerated()),
+                    id: \.offset
+                ) { _, group in
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 8) {
                             Text(group.title)
@@ -121,6 +124,39 @@ struct CalendarDetailPanelView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+enum CalendarDetailPanelPresentation {
+    static func summaryEvent(from events: [CalendarEventSummary]) -> CalendarEventSummary? {
+        sortedEvents(events).first
+    }
+
+    static func groupedEventsAfterSummary(
+        _ events: [CalendarEventSummary],
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> [(title: String, events: [CalendarEventSummary])] {
+        let remainingEvents = Array(sortedEvents(events).dropFirst())
+        return CalendarGrouping.groupEvents(remainingEvents, calendar: calendar)
+    }
+
+    private static func sortedEvents(_ events: [CalendarEventSummary]) -> [CalendarEventSummary] {
+        // EventKit already returns upcoming events sorted, but this detail panel
+        // also renders cached/test/provider-fallback data. Keeping the ordering
+        // rule at the presentation boundary prevents a subtle UI regression
+        // where "Next" could point at one event while the grouped schedule puts
+        // an earlier event below it. We sort the tiny bounded event list here
+        // instead of adding state to the ViewModel because this is view
+        // presentation policy, not a data-fetching concern.
+        events.sorted { lhs, rhs in
+            if lhs.startDate != rhs.startDate {
+                return lhs.startDate < rhs.startDate
+            }
+            if lhs.endDate != rhs.endDate {
+                return lhs.endDate < rhs.endDate
+            }
+            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
         }
     }
 }
