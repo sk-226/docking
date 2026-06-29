@@ -458,6 +458,49 @@ func validateFolderStackPresentation() throws {
     )
 }
 
+func validateFolderStackPanelDismissHitTesting() throws {
+    let panelFrame = NSRect(x: 100, y: 100, width: 360, height: 320)
+    let folderIconFrame = NSRect(x: 260, y: 40, width: 58, height: 58)
+
+    // The folder icon is intentionally exempt from the generic outside-click
+    // closer. A seemingly simpler implementation would close every floating
+    // stack before the SwiftUI dock item receives the click, but that can turn
+    // a user's second click into "close, then immediately reopen" instead of
+    // the Apple-Dock-style toggle the app promises.
+    try expect(
+        !FolderStackPanelController.shouldDismissPointerEvent(
+            pointerLocation: NSPoint(x: panelFrame.midX, y: panelFrame.midY),
+            panelFrame: panelFrame,
+            anchorFrame: folderIconFrame
+        ),
+        "clicks inside the folder stack panel should not dismiss it"
+    )
+    try expect(
+        !FolderStackPanelController.shouldDismissPointerEvent(
+            pointerLocation: NSPoint(x: folderIconFrame.midX, y: folderIconFrame.midY),
+            panelFrame: panelFrame,
+            anchorFrame: folderIconFrame
+        ),
+        "clicking the source folder should be left for toggle(item:) so a second click closes the stack"
+    )
+    try expect(
+        FolderStackPanelController.shouldDismissPointerEvent(
+            pointerLocation: NSPoint(x: 20, y: 20),
+            panelFrame: panelFrame,
+            anchorFrame: folderIconFrame
+        ),
+        "ordinary outside clicks should still dismiss folder stack panels"
+    )
+    try expect(
+        FolderStackPanelController.shouldDismissPointerEvent(
+            pointerLocation: NSPoint(x: 20, y: 20),
+            panelFrame: panelFrame,
+            anchorFrame: nil
+        ),
+        "outside clicks should still dismiss when the folder icon frame is unavailable"
+    )
+}
+
 func validateRunningApplicationMatcher() throws {
     let item = DockItem(
         title: "Editor",
@@ -1544,6 +1587,7 @@ let validations: [(String, () throws -> Void)] = [
     ("apple dock mirroring", validateAppleDockMirroring),
     ("app catalog item recognition", validateAppCatalogRecognizesApplicationsAndFolders),
     ("folder stack presentation", validateFolderStackPresentation),
+    ("folder stack dismiss hit testing", validateFolderStackPanelDismissHitTesting),
     ("running app matcher", validateRunningApplicationMatcher),
     ("settings store", validateSettingsStore),
     ("settings refresh keys", validateSettingsRefreshKeys),
