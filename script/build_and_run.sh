@@ -20,6 +20,7 @@ PACKAGE_ZIP="$DIST_DIR/$APP_NAME-$APP_VERSION-macos26.zip"
 RESOURCES_DIR="$ROOT_DIR/Resources"
 APP_ICON_RESOURCE="$RESOURCES_DIR/DockingAppIcon.icns"
 MENU_BAR_ICON_RESOURCE="$RESOURCES_DIR/DockingMenuBarTemplate.png"
+WEATHERKIT_ENTITLEMENTS_PLIST="$RESOURCES_DIR/DockingWeatherKit.entitlements"
 
 case "$CONFIGURATION" in
   debug)
@@ -52,6 +53,51 @@ detect_code_sign_identity() {
   /usr/bin/security find-identity -v -p codesigning 2>/dev/null |
     /usr/bin/sed -n 's/.*"\(Apple Development:.*\)"/\1/p' |
     /usr/bin/head -n 1 || true
+}
+
+profile_supports_weatherkit() {
+  local profile_path="$1"
+  local decoded_profile
+  local app_identifier
+  local has_weatherkit
+
+  decoded_profile="$(mktemp "${TMPDIR:-/tmp}/docking-weatherkit-profile.XXXXXX.plist")"
+  if ! /usr/bin/security cms -D -i "$profile_path" -o "$decoded_profile" >/dev/null 2>&1; then
+    rm -f "$decoded_profile"
+    return 1
+  fi
+
+  app_identifier="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$decoded_profile" 2>/dev/null || true)"
+  has_weatherkit="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.weatherkit' "$decoded_profile" 2>/dev/null || true)"
+  rm -f "$decoded_profile"
+
+  [[ "$app_identifier" == *".$BUNDLE_ID" && "$has_weatherkit" == "true" ]]
+}
+
+detect_weatherkit_profile() {
+  local profiles_dir="$HOME/Library/MobileDevice/Provisioning Profiles"
+  local profile_path
+
+  if [[ -n "${DOCKING_WEATHERKIT_PROFILE:-}" ]]; then
+    printf '%s\n' "$DOCKING_WEATHERKIT_PROFILE"
+    return
+  fi
+
+  [[ -d "$profiles_dir" ]] || return 0
+
+  # WeatherKit is a restricted entitlement. Codesign can attach the key from a
+  # local plist, but macOS will refuse to launch the app unless a provisioning
+  # profile proves that this Team/App ID is allowed to use it. Auto-detecting a
+  # matching local profile keeps ordinary 0.0.0 development builds launchable
+  # while letting a properly provisioned machine use WeatherKit without a second
+  # signing script.
+  while IFS= read -r profile_path; do
+    if profile_supports_weatherkit "$profile_path"; then
+      printf '%s\n' "$profile_path"
+      return
+    fi
+  done < <(/usr/bin/find "$profiles_dir" \( -name '*.provisionprofile' -o -name '*.mobileprovision' \) -print 2>/dev/null)
+  return 0
 }
 
 pkill -x "$APP_NAME" >/dev/null 2>&1 || true
@@ -127,16 +173,41 @@ CODE_SIGN_IDENTITY="$(detect_code_sign_identity)"
 if [[ -z "$CODE_SIGN_IDENTITY" ]]; then
   CODE_SIGN_IDENTITY="-"
 fi
+WEATHERKIT_PROFILE="$(detect_weatherkit_profile)"
 
 # Sign the completed bundle, not only the executable. The Info.plist must be
 # sealed into the signature so LaunchServices, TCC, and Activity Monitor all see
 # one stable app identity during repeated debug launches. The identifier is
 # deliberately product-scoped rather than user-scoped because it can show up in
-# screenshots, logs, and eventual GitHub-visible artifacts. We do not use
-# hardened runtime or entitlements here because this is a local 0.0.0 development
-# build; adding distribution-era signing constraints would make the debugging
-# loop more fragile without improving these permission flows.
-/usr/bin/codesign --force --sign "$CODE_SIGN_IDENTITY" --timestamp=none "$APP_BUNDLE"
+# screenshots, logs, and eventual GitHub-visible artifacts.
+#
+# WeatherKit is included only when the matching provisioning profile is present.
+# A local entitlement plist alone is actively harmful here: WeatherKit is a
+# restricted entitlement, so macOS rejects the launch with "No matching profile
+# found" before Docking can even fall back to Open-Meteo. We therefore bias
+# toward a working app unless the machine has a profile proving that
+# app.docking.docking is entitled to WeatherKit for the detected signing team.
+CODE_SIGN_ARGS=(--force --sign "$CODE_SIGN_IDENTITY" --timestamp=none)
+if [[ -n "$WEATHERKIT_PROFILE" ]]; then
+  if [[ ! -s "$WEATHERKIT_PROFILE" ]]; then
+    echo "WeatherKit provisioning profile does not exist: $WEATHERKIT_PROFILE" >&2
+    exit 1
+  fi
+  if [[ ! -s "$WEATHERKIT_ENTITLEMENTS_PLIST" ]]; then
+    echo "Missing Docking WeatherKit entitlements file: $WEATHERKIT_ENTITLEMENTS_PLIST" >&2
+    exit 1
+  fi
+  if ! profile_supports_weatherkit "$WEATHERKIT_PROFILE"; then
+    echo "Provisioning profile does not grant WeatherKit for $BUNDLE_ID: $WEATHERKIT_PROFILE" >&2
+    exit 1
+  fi
+
+  cp "$WEATHERKIT_PROFILE" "$APP_CONTENTS/embedded.provisionprofile"
+  CODE_SIGN_ARGS+=(--entitlements "$WEATHERKIT_ENTITLEMENTS_PLIST")
+else
+  echo "WeatherKit entitlement not attached: no matching provisioning profile found for $BUNDLE_ID; Weather will fall back to Open-Meteo." >&2
+fi
+/usr/bin/codesign "${CODE_SIGN_ARGS[@]}" "$APP_BUNDLE"
 
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"
