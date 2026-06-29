@@ -45,6 +45,11 @@ Expected results:
 - The final release identity section prints the current branch, short commit,
   worktree cleanliness, SHA-256 values for the zip and DMG, and both checksum
   file paths.
+- The GitHub Actions release-candidate workflow runs the same local release
+  gate on a macOS 26 runner, uploads the zip/DMG/checksum set as workflow
+  artifacts, attaches the same files to a draft GitHub Release when no published
+  release exists, and refuses to mutate assets that were already published from
+  a reviewed local candidate.
 
 `./script/build_and_run.sh --verify` remains the quick launch smoke test. The
 release gate packages without launching so an artifact inspection does not also

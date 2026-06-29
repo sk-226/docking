@@ -17,6 +17,15 @@ opt-in, confirmation-gated, and restoreable from Control Center > Restore.
 - [ ] The zip and DMG SHA-256 values from `release_check.sh` are recorded in Notes.
 - [ ] The worktree contains no unrelated local changes.
 
+## GitHub Release Gate
+
+- [ ] `.github/workflows/release-candidate.yml` is present and uses the same
+      `./script/release_check.sh` gate.
+- [ ] The workflow uploads both `Docking-0.0.0-macos26.zip` and
+      `Docking-0.0.0-macos26.dmg` with their `.sha256` files.
+- [ ] Tag-triggered runs create/update only draft Release assets, and leave
+      already-published Release assets unchanged.
+
 ## Manual QA
 
 - [ ] Review [QA.md](QA.md) and either complete the remaining target-machine

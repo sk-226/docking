@@ -149,6 +149,13 @@ tied back to the exact local candidate. This is a local 0.0.0 candidate gate;
 Developer ID signing, hardened runtime, notarization, and GitHub push remain
 separate explicit release steps.
 
+GitHub Actions has the same artifact contract in
+`.github/workflows/release-candidate.yml`. Manual workflow runs upload the zip,
+DMG, and checksum files as workflow artifacts. Tag builds attach those files to
+a draft GitHub Release when one does not already exist; if a reviewed
+pre-release was already published locally with `gh release create`, the workflow
+rebuilds the artifacts but leaves the published assets unchanged.
+
 Run the launch smoke check after changes that touch startup, windows, widgets,
 or AppKit/SwiftUI lifecycle:
 
