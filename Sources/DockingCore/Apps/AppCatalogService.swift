@@ -14,11 +14,35 @@ final class AppCatalogService {
         panel.allowsMultipleSelection = false
         panel.allowedContentTypes = [.applicationBundle, .folder]
 
+        prepareForUserDrivenModalSelection()
         guard panel.runModal() == .OK, let url = panel.url else {
             return nil
         }
 
         return Self.dockItemIfSupported(for: url)
+    }
+
+    private func prepareForUserDrivenModalSelection() {
+        // Docking's primary surface is intentionally a non-activating panel: a
+        // normal dock click should launch, reveal, or inspect something without
+        // stealing keyboard focus from the user's current app. The add-item
+        // picker is different because the next required action is inside the
+        // system file chooser itself. If Docking is still inactive when
+        // `runModal()` presents `NSOpenPanel`, macOS can order the chooser
+        // without making it the key/frontmost target, leaving the user to hunt
+        // for the Applications folder window manually.
+        //
+        // We activate only at this explicit selection boundary rather than
+        // making the dock panel activating. That preserves the day-to-day Dock
+        // behavior and keeps the focus steal proportional to the user's intent:
+        // pressing plus means "let me choose a file or folder now."
+        //
+        // A sheet would look simpler from a document-window app, but the plus
+        // button is also available from the borderless dock panel, which has no
+        // meaningful titled parent window. Keeping the chooser app-modal avoids
+        // inventing a hidden owner window and matches the existing synchronous
+        // add flow used by both Dock and Control Center entry points.
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     static func dockItemIfSupported(for url: URL) -> DockItem? {
