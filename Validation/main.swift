@@ -514,6 +514,54 @@ func validateFolderStackPresentation() throws {
     let allRecentDownloads = FolderStackService.recentDownloads(recentSourceEntries)
     try expect(allRecentDownloads.count == 14, "Downloads panel data should keep older entries available for scroll reveal")
     try expect(allRecentDownloads.last?.title == "Item 0", "Downloads full recent list should preserve the oldest direct entry at the end")
+    try expect(
+        !FolderStackPanelView.shouldRevealMoreDownloads(
+            isDownloadsStack: true,
+            visibleCount: 12,
+            totalCount: 24,
+            isUserScroll: false,
+            contentOffsetY: 0,
+            visibleMaxY: 320,
+            contentHeight: 340
+        ),
+        "Downloads should not load the next page before the user scrolls"
+    )
+    try expect(
+        FolderStackPanelView.shouldRevealMoreDownloads(
+            isDownloadsStack: true,
+            visibleCount: 12,
+            totalCount: 24,
+            isUserScroll: true,
+            contentOffsetY: 16,
+            visibleMaxY: 320,
+            contentHeight: 380
+        ),
+        "Downloads should load another page after the user scrolls near the current end"
+    )
+    try expect(
+        !FolderStackPanelView.shouldRevealMoreDownloads(
+            isDownloadsStack: true,
+            visibleCount: 12,
+            totalCount: 24,
+            isUserScroll: true,
+            contentOffsetY: 16,
+            visibleMaxY: 180,
+            contentHeight: 420
+        ),
+        "Downloads should not load another page while the user is still far from the current end"
+    )
+    try expect(
+        !FolderStackPanelView.shouldRevealMoreDownloads(
+            isDownloadsStack: true,
+            visibleCount: 12,
+            totalCount: 24,
+            isUserScroll: false,
+            contentOffsetY: 16,
+            visibleMaxY: 320,
+            contentHeight: 380
+        ),
+        "Downloads should ignore layout-only geometry changes even when the current content is short"
+    )
 
     try expect(
         SpecialFolderIconFactory.symbolName(

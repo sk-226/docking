@@ -6,6 +6,7 @@ struct FolderStackPanelView: View {
     let item: DockItem
     let entries: [FolderStackEntry]
     @State private var visibleLimit: Int
+    @State private var isDownloadsScrollActive = false
 
     init(item: DockItem, entries: [FolderStackEntry]) {
         self.item = item
@@ -131,9 +132,29 @@ struct FolderStackPanelView: View {
                         .dockTooltip(entry.title)
                     }
                 }
-                loadMoreTrigger
+                scrollMoreAffordance
             }
             .padding(.vertical, 2)
+        }
+        .onScrollGeometryChange(for: DownloadsScrollState.self) { geometry in
+            DownloadsScrollState(
+                contentOffsetY: geometry.contentOffset.y,
+                visibleMaxY: geometry.visibleRect.maxY,
+                contentHeight: geometry.contentSize.height
+            )
+        } action: { _, newValue in
+            revealMoreDownloadsIfNeeded(scrollState: newValue, isUserScroll: isDownloadsScrollActive)
+        }
+        .onScrollPhaseChange { _, newPhase, context in
+            isDownloadsScrollActive = newPhase.isScrolling
+            revealMoreDownloadsIfNeeded(
+                scrollState: DownloadsScrollState(
+                    contentOffsetY: context.geometry.contentOffset.y,
+                    visibleMaxY: context.geometry.visibleRect.maxY,
+                    contentHeight: context.geometry.contentSize.height
+                ),
+                isUserScroll: newPhase.isScrolling
+            )
         }
     }
 
@@ -189,23 +210,6 @@ struct FolderStackPanelView: View {
         item.url.map { FolderStackService.isDownloadsFolder($0) } ?? false
     }
 
-    @ViewBuilder
-    private var loadMoreTrigger: some View {
-        if isDownloadsStack, visibleLimit < entries.count {
-            HStack {
-                Spacer()
-                Text("Scroll for more")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .frame(height: 18)
-            .onAppear {
-                revealMoreDownloads()
-            }
-        }
-    }
-
     private var visibleEntries: [FolderStackEntry] {
         guard isDownloadsStack else {
             return entries
@@ -213,15 +217,61 @@ struct FolderStackPanelView: View {
         return Array(entries.prefix(visibleLimit))
     }
 
-    private func revealMoreDownloads() {
-        guard isDownloadsStack, visibleLimit < entries.count else {
+    @ViewBuilder
+    private var scrollMoreAffordance: some View {
+        if isDownloadsStack, visibleLimit < entries.count {
+            // This small footer is not a button because the user asked for
+            // scrolling to reveal more. It creates enough scrollable content for
+            // a 12-item page that already fits in the panel, while the actual
+            // page expansion is driven by ScrollGeometry below instead of this
+            // view's lifetime.
+            Text("Scroll for more")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .frame(height: 28)
+        }
+    }
+
+    private func revealMoreDownloadsIfNeeded(scrollState: DownloadsScrollState, isUserScroll: Bool) {
+        guard Self.shouldRevealMoreDownloads(
+            isDownloadsStack: isDownloadsStack,
+            visibleCount: visibleLimit,
+            totalCount: entries.count,
+            isUserScroll: isUserScroll,
+            contentOffsetY: scrollState.contentOffsetY,
+            visibleMaxY: scrollState.visibleMaxY,
+            contentHeight: scrollState.contentHeight
+        ) else {
             return
         }
 
-        // Do not decode every Downloads icon at panel-open time. The entries
-        // are already sorted by direct-child metadata; this only expands the
-        // number of SwiftUI cells allowed to create icons as the user scrolls.
+        // The previous sentinel-view approach could fire once and then remain in
+        // the hierarchy, leaving later scrolls with no new `onAppear` event.
+        // Geometry is tied to the actual scroll position, so every new page gets
+        // another chance to load when the user reaches its end. Icons still
+        // decode lazily as newly visible cells appear.
         visibleLimit = min(entries.count, visibleLimit + FolderStackService.downloadsInitialVisibleCount)
+    }
+
+    nonisolated static func shouldRevealMoreDownloads(
+        isDownloadsStack: Bool,
+        visibleCount: Int,
+        totalCount: Int,
+        isUserScroll: Bool,
+        contentOffsetY: CGFloat,
+        visibleMaxY: CGFloat,
+        contentHeight: CGFloat
+    ) -> Bool {
+        let distanceToBottom = contentHeight - visibleMaxY
+        guard isDownloadsStack,
+              visibleCount < totalCount,
+              isUserScroll,
+              contentOffsetY > 4,
+              distanceToBottom <= 80 else {
+            return false
+        }
+        return true
     }
 
     @ViewBuilder
@@ -233,4 +283,10 @@ struct FolderStackPanelView: View {
                 .padding(.leading, 8)
         }
     }
+}
+
+private struct DownloadsScrollState: Equatable {
+    var contentOffsetY: CGFloat = 0
+    var visibleMaxY: CGFloat = 0
+    var contentHeight: CGFloat = 0
 }
