@@ -7,7 +7,6 @@ struct FolderStackPanelView: View {
     let entries: [FolderStackEntry]
     @State private var visibleLimit: Int
     @State private var downloadsVisibleRange: ClosedRange<Int>?
-    @State private var isDownloadsScrollActive = false
 
     init(item: DockItem, entries: [FolderStackEntry]) {
         self.item = item
@@ -157,20 +156,26 @@ struct FolderStackPanelView: View {
             )
         } action: { _, newValue in
             updateDownloadsScrollPosition(scrollState: newValue)
-            revealMoreDownloadsIfNeeded(scrollState: newValue, isUserScroll: isDownloadsScrollActive)
+            revealMoreDownloadsIfNeeded(scrollState: newValue)
         }
         .onScrollPhaseChange { _, newPhase, context in
-            isDownloadsScrollActive = newPhase.isScrolling
+            // Keep this handler even though page loading no longer depends on
+            // ScrollPhase. SwiftUI can coalesce geometry updates during trackpad
+            // inertia, and this hook gives the header one more update at the
+            // boundary between active scrolling and rest. We intentionally do
+            // not gate loading on `newPhase.isScrolling`: Docking's stack panel
+            // is a non-activating NSPanel, and tying correctness to phase
+            // delivery made Downloads feel broken when geometry changed but
+            // phase did not.
             let scrollState = DownloadsScrollState(
                 contentOffsetY: context.geometry.contentOffset.y,
                 visibleMaxY: context.geometry.visibleRect.maxY,
                 contentHeight: context.geometry.contentSize.height
             )
             updateDownloadsScrollPosition(scrollState: scrollState)
-            revealMoreDownloadsIfNeeded(
-                scrollState: scrollState,
-                isUserScroll: newPhase.isScrolling
-            )
+            if !newPhase.isScrolling {
+                revealMoreDownloadsIfNeeded(scrollState: scrollState)
+            }
         }
     }
 
@@ -278,12 +283,11 @@ struct FolderStackPanelView: View {
         }
     }
 
-    private func revealMoreDownloadsIfNeeded(scrollState: DownloadsScrollState, isUserScroll: Bool) {
+    private func revealMoreDownloadsIfNeeded(scrollState: DownloadsScrollState) {
         guard Self.shouldRevealMoreDownloads(
             isDownloadsStack: isDownloadsStack,
             visibleCount: visibleLimit,
             totalCount: entries.count,
-            isUserScroll: isUserScroll,
             contentOffsetY: scrollState.contentOffsetY,
             visibleMaxY: scrollState.visibleMaxY,
             contentHeight: scrollState.contentHeight
@@ -358,7 +362,6 @@ struct FolderStackPanelView: View {
         isDownloadsStack: Bool,
         visibleCount: Int,
         totalCount: Int,
-        isUserScroll: Bool,
         contentOffsetY: CGFloat,
         visibleMaxY: CGFloat,
         contentHeight: CGFloat
@@ -366,11 +369,17 @@ struct FolderStackPanelView: View {
         let distanceToBottom = contentHeight - visibleMaxY
         guard isDownloadsStack,
               visibleCount < totalCount,
-              isUserScroll,
               contentOffsetY > 4,
               distanceToBottom <= 80 else {
             return false
         }
+        // We deliberately treat "positive offset and near the end" as the
+        // source of truth instead of requiring ScrollPhase to say the user is
+        // actively scrolling. ScrollPhase is useful for polish, but for this
+        // stack it is not a correctness signal: a non-activating panel can
+        // receive geometry changes from wheel/trackpad inertia after the phase
+        // has already settled. The offset guard still prevents the initial
+        // layout pass from eagerly reading thousands of Downloads entries.
         return true
     }
 
