@@ -85,12 +85,15 @@ detect_weatherkit_profile() {
 
   [[ -d "$profiles_dir" ]] || return 0
 
-  # WeatherKit is a restricted entitlement. Codesign can attach the key from a
-  # local plist, but macOS will refuse to launch the app unless a provisioning
-  # profile proves that this Team/App ID is allowed to use it. Auto-detecting a
-  # matching local profile keeps ordinary 0.0.0 development builds launchable
-  # while letting a properly provisioned machine use WeatherKit without a second
-  # signing script.
+  # WeatherKit is a restricted entitlement, not a normal framework capability.
+  # Codesign can attach the key from a local plist, but macOS will refuse to
+  # launch the app unless an Apple-issued provisioning profile proves that this
+  # Team/App ID is allowed to use it. That means other people who clone Docking
+  # and build it locally will also get Open-Meteo unless they provision their
+  # own bundle ID, or unless they run a distribution build signed by someone who
+  # has enabled WeatherKit for this app. Auto-detecting a matching local profile
+  # keeps ordinary 0.0.0 development builds launchable while letting a properly
+  # provisioned machine use WeatherKit without a second signing script.
   while IFS= read -r profile_path; do
     if profile_supports_weatherkit "$profile_path"; then
       printf '%s\n' "$profile_path"
@@ -184,9 +187,11 @@ WEATHERKIT_PROFILE="$(detect_weatherkit_profile)"
 # WeatherKit is included only when the matching provisioning profile is present.
 # A local entitlement plist alone is actively harmful here: WeatherKit is a
 # restricted entitlement, so macOS rejects the launch with "No matching profile
-# found" before Docking can even fall back to Open-Meteo. We therefore bias
-# toward a working app unless the machine has a profile proving that
-# app.docking.docking is entitled to WeatherKit for the detected signing team.
+# found" before Docking can even fall back to Open-Meteo. We deliberately do not
+# make every local user solve Apple's paid provisioning flow just to see weather;
+# Open-Meteo remains the honest default for unprovisioned builds, and WeatherKit
+# becomes active only when the signature can prove this bundle is allowed to use
+# Apple's service.
 CODE_SIGN_ARGS=(--force --sign "$CODE_SIGN_IDENTITY" --timestamp=none)
 if [[ -n "$WEATHERKIT_PROFILE" ]]; then
   if [[ ! -s "$WEATHERKIT_PROFILE" ]]; then

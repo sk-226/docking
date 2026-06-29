@@ -752,20 +752,9 @@ enum WeatherDataSource: String, Codable, Equatable {
         case .weatherKit:
             return "Apple WeatherKit"
         case .openMeteo:
-            return "Open-Meteo fallback"
+            return "Open-Meteo"
         case .mock:
             return "Debug mock"
-        }
-    }
-
-    var controlCenterDetail: String {
-        switch self {
-        case .weatherKit:
-            return "The latest loaded weather came directly from Apple's WeatherKit provider."
-        case .openMeteo:
-            return "The latest loaded weather came from Open-Meteo after WeatherKit was unavailable or could not complete."
-        case .mock:
-            return "The latest loaded weather came from Docking's debug-only mock provider, not a production weather service."
         }
     }
 }

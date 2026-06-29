@@ -1107,8 +1107,8 @@ func validateWeatherDataSourceLabels() throws {
         "WeatherKit snapshots should identify the Apple provider in Control Center"
     )
     try expect(
-        WeatherDataSource.openMeteo.controlCenterLabel == "Open-Meteo fallback",
-        "Open-Meteo snapshots should make fallback status explicit in Control Center"
+        WeatherDataSource.openMeteo.controlCenterLabel == "Open-Meteo",
+        "Open-Meteo snapshots should report the loaded provider without inferring why fallback happened"
     )
     try expect(
         WeatherDataSource.mock.controlCenterLabel == "Debug mock",

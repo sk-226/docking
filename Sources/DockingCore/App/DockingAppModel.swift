@@ -143,10 +143,14 @@ public final class DockingAppModel: ObservableObject {
 
     private static func defaultWeatherProvider() -> WeatherProvider {
         let sharedLocationProvider = CoreLocationProvider()
-        // WeatherKit is the product-preferred provider, but personal unsigned
-        // SwiftPM app bundles often lack the entitlement needed for it. The
-        // fallback preserves a real-data path without ever showing mock weather
-        // in production.
+        // WeatherKit is the product-preferred provider only for builds that
+        // Apple has explicitly provisioned for the WeatherKit entitlement. A
+        // locally cloned SwiftPM build, or a copy shared without that signed
+        // provisioning profile, cannot make WeatherKit work merely because this
+        // code imports WeatherKit.framework. Keeping Open-Meteo as the fallback
+        // is therefore not just a developer convenience: it is the normal
+        // real-data path for users who run an unsigned/local build, while a
+        // properly signed distribution can still take the Apple path first.
         return CompositeWeatherProvider(
             primary: WeatherKitProvider(locationProvider: sharedLocationProvider),
             fallback: OpenMeteoWeatherProvider(locationProvider: sharedLocationProvider)

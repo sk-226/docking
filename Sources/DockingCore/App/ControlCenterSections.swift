@@ -658,14 +658,11 @@ private struct WeatherDataSourceStatus: View {
     @ObservedObject var viewModel: WeatherWidgetViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("Latest data source")
-                Text(label)
-                    .fontWeight(.medium)
-                    .foregroundStyle(viewModel.snapshot == nil ? .secondary : .primary)
-            }
-            ControlCenterHelpText(detail)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("Latest weather source")
+            Text(label)
+                .fontWeight(.medium)
+                .foregroundStyle(viewModel.snapshot == nil ? .secondary : .primary)
         }
     }
 
@@ -675,18 +672,6 @@ private struct WeatherDataSourceStatus: View {
         }
 
         return snapshot.dataSource.controlCenterLabel
-    }
-
-    private var detail: String {
-        guard let snapshot = viewModel.snapshot else {
-            return "After Weather refreshes, this shows whether Docking used Apple WeatherKit or the Open-Meteo fallback."
-        }
-
-        // This row intentionally lives only in Control Center. The dock tile
-        // and weather panel are glanceable weather surfaces; provider
-        // provenance is operational context that matters while configuring
-        // WeatherKit entitlements, fallback behavior, or API trust.
-        return snapshot.dataSource.controlCenterDetail
     }
 }
 
