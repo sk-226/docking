@@ -129,3 +129,25 @@ if [[ ! -s "$PACKAGE_ZIP" ]]; then
 fi
 
 printf 'Release candidate package: %s\n' "$PACKAGE_ZIP"
+
+section "Release identity"
+# The release zip can be reviewed later, attached to a draft PR, or compared
+# against a user-tested build. Printing branch, commit, cleanliness, and a
+# checksum here gives that artifact a durable identity without forcing a git
+# push or changing local branch policy. We intentionally report a dirty tree
+# instead of failing: during active 0.0.0 UI work, the script is also useful as
+# a pre-commit gate, while the PR template and QA checklist still require a
+# clean tree before handoff.
+GIT_BRANCH="$(git branch --show-current 2>/dev/null || true)"
+GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || true)"
+GIT_STATUS="$(git status --short 2>/dev/null || true)"
+PACKAGE_SHA256="$(/usr/bin/shasum -a 256 "$PACKAGE_ZIP" | /usr/bin/awk '{print $1}')"
+
+printf 'Branch: %s\n' "${GIT_BRANCH:-unknown}"
+printf 'Commit: %s\n' "${GIT_COMMIT:-unknown}"
+printf 'Package SHA-256: %s\n' "$PACKAGE_SHA256"
+if [[ -n "$GIT_STATUS" ]]; then
+  printf 'Git status: dirty worktree; review before GitHub handoff.\n'
+else
+  printf 'Git status: clean worktree.\n'
+fi

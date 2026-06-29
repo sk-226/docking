@@ -126,9 +126,11 @@ Run the local release gate before sharing a build:
 It runs the validation executable, builds and stages a release `Docking.app`,
 checks bundle metadata, icon resources, signature integrity, and WeatherKit
 entitlement/profile consistency, rejects user-specific authored paths/identifiers, and writes
-`dist/Docking-0.0.0-macos26.zip`. This is a local 0.0.0 candidate gate;
-Developer ID signing, hardened runtime, notarization, and GitHub push remain
-separate explicit release steps.
+`dist/Docking-0.0.0-macos26.zip`. It also prints the current branch, commit,
+worktree cleanliness, and package SHA-256 so the tested zip can be tied back to
+the exact local candidate. This is a local 0.0.0 candidate gate; Developer ID
+signing, hardened runtime, notarization, and GitHub push remain separate
+explicit release steps.
 
 ## Permissions
 

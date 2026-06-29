@@ -31,6 +31,8 @@ Expected results:
 - The user-specific identifier/path search returns no matches. It intentionally
   excludes build output and `.git` so the check covers authored project files,
   not previous binaries or history.
+- The final release identity section prints the current branch, short commit,
+  worktree cleanliness, and SHA-256 for `dist/Docking-0.0.0-macos26.zip`.
 
 `./script/build_and_run.sh --verify` remains the quick launch smoke test. The
 release gate packages without launching so an artifact inspection does not also
