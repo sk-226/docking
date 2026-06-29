@@ -6,6 +6,7 @@ struct FolderStackPanelView: View {
     let item: DockItem
     let entries: [FolderStackEntry]
     @State private var visibleLimit: Int
+    @State private var downloadsVisibleEndIndex: Int?
     @State private var isDownloadsScrollActive = false
 
     init(item: DockItem, entries: [FolderStackEntry]) {
@@ -155,16 +156,19 @@ struct FolderStackPanelView: View {
                 contentHeight: geometry.contentSize.height
             )
         } action: { _, newValue in
+            updateDownloadsScrollPosition(scrollState: newValue)
             revealMoreDownloadsIfNeeded(scrollState: newValue, isUserScroll: isDownloadsScrollActive)
         }
         .onScrollPhaseChange { _, newPhase, context in
             isDownloadsScrollActive = newPhase.isScrolling
+            let scrollState = DownloadsScrollState(
+                contentOffsetY: context.geometry.contentOffset.y,
+                visibleMaxY: context.geometry.visibleRect.maxY,
+                contentHeight: context.geometry.contentSize.height
+            )
+            updateDownloadsScrollPosition(scrollState: scrollState)
             revealMoreDownloadsIfNeeded(
-                scrollState: DownloadsScrollState(
-                    contentOffsetY: context.geometry.contentOffset.y,
-                    visibleMaxY: context.geometry.visibleRect.maxY,
-                    contentHeight: context.geometry.contentSize.height
-                ),
+                scrollState: scrollState,
                 isUserScroll: newPhase.isScrolling
             )
         }
@@ -239,9 +243,12 @@ struct FolderStackPanelView: View {
             return "\(entries.count) items"
         }
 
-        return visibleLimit >= entries.count
-            ? "\(entries.count) items"
-            : "\(visibleLimit) of \(entries.count) items"
+        guard entries.count > FolderStackService.downloadsInitialVisibleCount else {
+            return "\(entries.count) items"
+        }
+
+        let visibleEnd = downloadsVisibleEndIndex ?? min(visibleLimit, entries.count)
+        return "\(visibleEnd) of \(entries.count) items"
     }
 
     private var isDownloadsStack: Bool {
@@ -289,7 +296,51 @@ struct FolderStackPanelView: View {
         // Geometry is tied to the actual scroll position, so every new page gets
         // another chance to load when the user reaches its end. Icons still
         // decode lazily as newly visible cells appear.
-        visibleLimit = min(entries.count, visibleLimit + FolderStackService.downloadsInitialVisibleCount)
+        let newVisibleLimit = min(entries.count, visibleLimit + FolderStackService.downloadsInitialVisibleCount)
+        visibleLimit = newVisibleLimit
+        downloadsVisibleEndIndex = Self.downloadsVisibleEndIndex(
+            visibleCount: newVisibleLimit,
+            totalCount: entries.count,
+            visibleMaxY: scrollState.visibleMaxY,
+            contentHeight: scrollState.contentHeight
+        )
+    }
+
+    private func updateDownloadsScrollPosition(scrollState: DownloadsScrollState) {
+        guard isDownloadsStack else {
+            return
+        }
+
+        downloadsVisibleEndIndex = Self.downloadsVisibleEndIndex(
+            visibleCount: visibleLimit,
+            totalCount: entries.count,
+            visibleMaxY: scrollState.visibleMaxY,
+            contentHeight: scrollState.contentHeight
+        )
+    }
+
+    nonisolated static func downloadsVisibleEndIndex(
+        visibleCount: Int,
+        totalCount: Int,
+        visibleMaxY: CGFloat,
+        contentHeight: CGFloat
+    ) -> Int {
+        guard totalCount > 0, visibleCount > 0 else {
+            return 0
+        }
+
+        guard contentHeight > 0, visibleMaxY > 0 else {
+            return min(visibleCount, totalCount)
+        }
+
+        // The Downloads grid grows a page at a time, so the header must describe
+        // scroll position, not only the number of entries already loaded. We use
+        // ScrollView geometry instead of per-cell observers because LazyVGrid
+        // may recycle cells and because attaching geometry readers to every file
+        // would be expensive in a folder with hundreds or thousands of items.
+        let ratio = min(max(visibleMaxY / contentHeight, 0), 1)
+        let estimatedEnd = Int(ceil(Double(visibleCount) * Double(ratio)))
+        return min(max(estimatedEnd, 1), min(visibleCount, totalCount))
     }
 
     nonisolated static func shouldRevealMoreDownloads(

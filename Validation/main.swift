@@ -562,6 +562,20 @@ func validateFolderStackPresentation() throws {
         ),
         "Downloads should ignore layout-only geometry changes even when the current content is short"
     )
+    let topVisibleEnd = FolderStackPanelView.downloadsVisibleEndIndex(
+        visibleCount: 48,
+        totalCount: 1_500,
+        visibleMaxY: 320,
+        contentHeight: 1_280
+    )
+    let lowerVisibleEnd = FolderStackPanelView.downloadsVisibleEndIndex(
+        visibleCount: 48,
+        totalCount: 1_500,
+        visibleMaxY: 960,
+        contentHeight: 1_280
+    )
+    try expect(topVisibleEnd == 12, "Downloads header should return toward the first visible page when the user scrolls back up")
+    try expect(lowerVisibleEnd == 36, "Downloads header should advance as the user scrolls down through the loaded entries")
 
     try expect(
         SpecialFolderIconFactory.symbolName(
@@ -1343,7 +1357,7 @@ func validationWeatherSnapshot(locationName: String = "Fallback City", fetchedAt
         daily: [],
         humidity: nil,
         airQualityLabel: nil,
-        dataSource: nil
+        dataSource: .openMeteo
     )
 }
 

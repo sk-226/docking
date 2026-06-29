@@ -663,7 +663,7 @@ private struct WeatherDataSourceStatus: View {
                 Text("Latest data source")
                 Text(label)
                     .fontWeight(.medium)
-                    .foregroundStyle(viewModel.snapshot?.dataSource == nil ? .secondary : .primary)
+                    .foregroundStyle(viewModel.snapshot == nil ? .secondary : .primary)
             }
             ControlCenterHelpText(detail)
         }
@@ -674,7 +674,7 @@ private struct WeatherDataSourceStatus: View {
             return "Not loaded yet"
         }
 
-        return snapshot.dataSource?.controlCenterLabel ?? "Unknown cached data"
+        return snapshot.dataSource.controlCenterLabel
     }
 
     private var detail: String {
@@ -682,15 +682,11 @@ private struct WeatherDataSourceStatus: View {
             return "After Weather refreshes, this shows whether Docking used Apple WeatherKit or the Open-Meteo fallback."
         }
 
-        if let source = snapshot.dataSource {
-            // This row intentionally lives only in Control Center. The dock tile
-            // and weather panel are glanceable weather surfaces; provider
-            // provenance is operational context that matters while configuring
-            // WeatherKit entitlements, fallback behavior, or API trust.
-            return source.controlCenterDetail
-        }
-
-        return "This cached forecast was saved before Docking tracked provider provenance. Refresh weather to identify the current source."
+        // This row intentionally lives only in Control Center. The dock tile
+        // and weather panel are glanceable weather surfaces; provider
+        // provenance is operational context that matters while configuring
+        // WeatherKit entitlements, fallback behavior, or API trust.
+        return snapshot.dataSource.controlCenterDetail
     }
 }
 

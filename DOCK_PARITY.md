@@ -9,6 +9,7 @@ macOS Dock. This file keeps that scope explicit while the app is still `0.0.0`.
 | Capability | Docking status | Notes |
 | --- | --- | --- |
 | Open | Implemented | Opens the app through `NSWorkspace`, not shell commands. |
+| Command-click to reveal in Finder | Implemented | Command-clicking an app or folder reveals the backing item instead of launching the app or opening the stack. |
 | Drop a document onto an app icon to open it in that app | Implemented | Ordinary files dropped on an app icon are opened through LaunchServices with that app. Dragged `.app` bundles and folders remain Docking item additions so app/folder placement stays predictable. |
 | Show All Windows | Implemented as activate all windows | Public AppKit does not expose Dock's Mission Control window picker. Docking activates the app with all windows instead of using private APIs. |
 | Hide | Implemented | Uses `NSRunningApplication.hide()` for running apps. |
@@ -48,6 +49,7 @@ Apple Dock mirroring from `persistent-others`.
 
 - Process actions appear only when Docking believes the app is running.
 - Process actions do not appear for folder items.
+- Command-click reveals the backing item in Finder for both apps and folders.
 - Ordinary file drops on an app icon open with that app; app bundles and
   folders still add/reorder Docking items instead of becoming app inputs.
 - Folder context menus expose the stack-specific display, view, and sorting

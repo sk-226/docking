@@ -25,7 +25,14 @@ struct DockItemView: View {
         let hoverScale: CGFloat = isHovering && !reduceMotion ? 1.08 : 1.0
 
         Button {
-            if item.isFolder {
+            if NSEvent.modifierFlags.contains(.command) {
+                // Match the long-standing Dock shortcut: Command-click asks
+                // Finder to reveal the backing app bundle or folder instead of
+                // launching the app or opening the stack. This intentionally
+                // lives in the primary click path, not only the context menu,
+                // because the shortcut is muscle memory for macOS Dock users.
+                model.showInFinder(item)
+            } else if item.isFolder {
                 model.toggleFolderStack(item)
             } else {
                 model.launch(item)

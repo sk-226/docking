@@ -779,12 +779,10 @@ struct WeatherSnapshot: Codable, Equatable {
     var daily: [DailyWeatherSummary]
     var humidity: Double?
     var airQualityLabel: String?
-    // This is optional for cache compatibility. Users may already have a
-    // WeatherSnapshot.json written by older Docking builds, and failing to
-    // decode that cache just to show provider diagnostics would discard useful
-    // real weather. New provider fetches always set this so Control Center can
-    // distinguish Apple WeatherKit from the Open-Meteo fallback.
-    var dataSource: WeatherDataSource? = nil
+    // Every persisted weather snapshot should identify its provider. Docking is
+    // still a 0.0.0 app, so a cache without this field is simply stale data to
+    // discard, not a format we need to preserve.
+    var dataSource: WeatherDataSource
 }
 
 enum DockWidgetKind: String, Identifiable {
