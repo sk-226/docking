@@ -35,8 +35,12 @@ Apple Dock mirroring from `persistent-others`.
 | Sort By: Name / Date Added / Date Modified / Date Created / Kind | Implemented | Sort state is saved per folder item and drives stack-panel ordering and stack-preview icons. |
 | Display as: Folder / Stack | Implemented | Folder uses the system folder icon; Stack composes a small preview from folder contents. |
 | View content as: Automatic / Fan / Grid / List | Implemented | Fan/Grid/List change the Docking panel presentation; Automatic chooses based on item count without using private Dock geometry. |
+| Stack entry Open | Implemented | Open is available both by normal click and by the entry context menu. |
+| Stack entry Show in Finder | Implemented | Reveals the real item URL in Finder, then closes the transient stack panel. |
+| Drag stack entries to other apps | Implemented | Stack entries vend `public.file-url` through `NSItemProvider`, leaving the receiving app/Finder to decide open/import/copy/move semantics. |
 | Remove from Docking | Implemented | Removes the Docking item only; it never deletes the folder. |
 | Show in Finder | Implemented | Reveals the folder location in Finder. |
+| Drop files onto a Dock folder to copy/move into that folder | Not implemented | This mutates the user's filesystem. Docking should only add it with clear Finder-like copy/move semantics and failure UI, not as a silent side effect of the existing add-to-dock drop target. |
 | Documents or arbitrary files as Dock items | Not implemented | The Apple Dock can hold some non-folder items in persistent-others, but Docking keeps this 0.0.0 item model to apps and folders until the UI intentionally supports document launching. |
 
 ## Quality bar
@@ -45,6 +49,8 @@ Apple Dock mirroring from `persistent-others`.
 - Process actions do not appear for folder items.
 - Folder context menus expose the stack-specific display, view, and sorting
   choices users expect from the macOS Dock.
+- Stack entry menus and drags operate on the real file URLs, not copied cache
+  files or Docking-private proxies.
 - Force Quit always shows a confirmation before termination.
 - Docking never removes an app bundle from disk.
 - Docking never removes a folder from disk.
