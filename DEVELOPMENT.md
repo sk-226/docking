@@ -62,7 +62,7 @@ boundaries, and generated zip/DMG artifacts.
 
 This is not a notarization gate. Developer ID signing, hardened runtime,
 notarization, GitHub release publication, and Homebrew cask updates should stay
-explicit release steps so a local 0.0.0 candidate is not mistaken for a fully
+explicit release steps so a local pre-release candidate is not mistaken for a fully
 notarized public build.
 
 ## WeatherKit

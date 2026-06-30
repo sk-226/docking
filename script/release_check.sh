@@ -3,7 +3,7 @@ set -euo pipefail
 
 APP_NAME="Docking"
 BUNDLE_ID="app.docking.docking"
-APP_VERSION="0.0.0"
+APP_VERSION="0.0.1"
 MIN_SYSTEM_VERSION="26.0"
 CALENDAR_USAGE_DESCRIPTION="Docking shows your upcoming events in the calendar widget."
 CALENDAR_FULL_ACCESS_DESCRIPTION="Docking needs full calendar access to read upcoming events for the calendar widget."
@@ -67,7 +67,7 @@ assert_permission_description() {
   # bundle metadata. macOS will show these strings before users trust Docking
   # with Calendar or Location access, so a missing or generic placeholder should
   # fail the release gate just like a wrong bundle identifier. Checking the
-  # exact local text is intentionally stricter than "non-empty": for a 0.0.0
+  # exact local text is intentionally stricter than "non-empty": for a pre-release
   # personal app, changing prompt wording should be a deliberate review point,
   # not an unnoticed side effect of touching the build script.
   assert_plist_value "$key" "$expected"
@@ -191,7 +191,7 @@ section "Code signature"
 # This is a local signature-integrity gate, not a notarization claim. Developer
 # ID signing, hardened runtime, and notarization need distribution credentials
 # and should remain an explicit follow-up instead of being silently approximated
-# by a 0.0.0 local candidate.
+# by a local pre-release candidate.
 /usr/bin/codesign --verify --deep --verbose=2 "$APP_BUNDLE"
 
 section "WeatherKit entitlement mode"
@@ -256,7 +256,7 @@ fi
 
 # Keep a plain zip as a mechanically simple fallback, but make the DMG the
 # tester-facing artifact. A decorative DMG layout would require Finder metadata
-# and background assets, which is extra surface area for a 0.0.0 candidate. The
+# and background assets, which is extra surface area for a pre-release candidate. The
 # minimal macOS convention is enough here: the app bundle plus an Applications
 # symlink so testers can drag-install without guessing where the app belongs.
 DMG_SOURCE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/docking-dmg-source.XXXXXX")"
@@ -321,7 +321,7 @@ section "Release identity"
 # compared against a user-tested build. Printing branch, commit, cleanliness,
 # and checksums here gives those artifacts a durable identity without forcing a
 # git push or changing local branch policy. We intentionally report a dirty tree
-# instead of failing: during active 0.0.0 UI work, the script is also useful as
+# instead of failing: during active pre-release UI work, the script is also useful as
 # a pre-commit gate, while the PR template and QA checklist still require a
 # clean tree before handoff.
 GIT_BRANCH="$(git branch --show-current 2>/dev/null || true)"
@@ -331,7 +331,7 @@ PACKAGE_SHA256="$(/usr/bin/shasum -a 256 "$PACKAGE_ZIP" | /usr/bin/awk '{print $
 DMG_SHA256="$(/usr/bin/shasum -a 256 "$PACKAGE_DMG" | /usr/bin/awk '{print $1}')"
 # Keep checksums beside the artifacts so they can be verified even after this
 # terminal scrollback is gone. We intentionally write standard two-column shasum
-# files rather than inventing a JSON manifest: the 0.0.0 release surface needs
+# files rather than inventing a JSON manifest: the pre-release surface needs
 # to stay simple, and `shasum -c` can consume this format directly.
 printf '%s  %s\n' "$PACKAGE_SHA256" "${PACKAGE_ZIP##*/}" >"$PACKAGE_SHA256_FILE"
 printf '%s  %s\n' "$DMG_SHA256" "${PACKAGE_DMG##*/}" >"$PACKAGE_DMG_SHA256_FILE"

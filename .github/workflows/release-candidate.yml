@@ -12,6 +12,10 @@ on:
 permissions:
   contents: write
 
+env:
+  DOCKING_RELEASE_VERSION: "0.0.1"
+  DOCKING_RELEASE_ARTIFACT_PREFIX: "Docking-0.0.1-macos26"
+
 concurrency:
   group: release-candidate-${{ github.ref }}
   cancel-in-progress: false
@@ -33,7 +37,7 @@ jobs:
           runner_version="$(/usr/bin/sw_vers -productVersion)"
           runner_major="${runner_version%%.*}"
 
-          # Docking 0.0.0 deliberately targets only macOS 26. Keeping this
+          # Docking's pre-release builds deliberately target only macOS 26. Keeping this
           # explicit check in the workflow avoids a quiet downgrade if GitHub
           # ever changes a label or if this file is copied to a broader matrix.
           if [[ "$runner_major" != "26" ]]; then
@@ -46,30 +50,16 @@ jobs:
       - name: Run local release gate
         run: ./script/release_check.sh
 
-      - name: Audit Homebrew cask
-        env:
-          HOMEBREW_NO_AUTO_UPDATE: "1"
-          HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-
-          # Homebrew audits casks through a tap, not arbitrary file paths. The
-          # checked-out repository is already the release tap, so use it
-          # directly instead of creating a separate homebrew-* repository for a
-          # 0.0.0 app.
-          brew tap sk-226/docking "$GITHUB_WORKSPACE"
-          brew audit --cask --strict --online --tap=sk-226/docking docking
-
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: Docking-0.0.0-macos26-release-candidate
+          name: ${{ env.DOCKING_RELEASE_ARTIFACT_PREFIX }}-release-candidate
           if-no-files-found: error
           path: |
-            dist/Docking-0.0.0-macos26.zip
-            dist/Docking-0.0.0-macos26.zip.sha256
-            dist/Docking-0.0.0-macos26.dmg
-            dist/Docking-0.0.0-macos26.dmg.sha256
+            dist/${{ env.DOCKING_RELEASE_ARTIFACT_PREFIX }}.zip
+            dist/${{ env.DOCKING_RELEASE_ARTIFACT_PREFIX }}.zip.sha256
+            dist/${{ env.DOCKING_RELEASE_ARTIFACT_PREFIX }}.dmg
+            dist/${{ env.DOCKING_RELEASE_ARTIFACT_PREFIX }}.dmg.sha256
 
       - name: Attach artifacts to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
@@ -79,19 +69,32 @@ jobs:
           set -euo pipefail
 
           tag_name="${GITHUB_REF_NAME}"
+          expected_tag="v${DOCKING_RELEASE_VERSION}"
           notes_file="$(/usr/bin/mktemp)"
+
+          if [[ "$tag_name" != "$expected_tag" ]]; then
+            # The artifact names and cask version are intentionally advanced in
+            # lockstep by a release-prep change. Failing here is preferable to
+            # accidentally attaching the reviewed 0.0.1 DMG to a different tag
+            # just because the workflow trigger accepts every v* tag.
+            echo "Expected tag ${expected_tag}, got ${tag_name}." >&2
+            exit 1
+          fi
 
           # Tag builds are the only automation path that touches GitHub
           # Releases. Manual workflow_dispatch runs stay as workflow artifacts
           # so release publication remains an explicit tag-driven act.
           {
-            echo "Docking 0.0.0 macOS 26 release."
+            echo "Docking ${DOCKING_RELEASE_VERSION} macOS 26 release."
+            echo
+            echo "Changes:"
+            echo "- Fixes standard Quit targeting so Docking quits the visible Dock tile scope instead of sibling app processes."
             echo
             echo "Artifacts are produced by ./script/release_check.sh on the macos-26 runner."
             echo
             echo "SHA-256:"
-            /bin/cat dist/Docking-0.0.0-macos26.zip.sha256
-            /bin/cat dist/Docking-0.0.0-macos26.dmg.sha256
+            /bin/cat "dist/${DOCKING_RELEASE_ARTIFACT_PREFIX}.zip.sha256"
+            /bin/cat "dist/${DOCKING_RELEASE_ARTIFACT_PREFIX}.dmg.sha256"
             echo
             echo "This release is created as a draft so the artifact can be checked before publication."
           } >"$notes_file"
@@ -105,10 +108,10 @@ jobs:
             # limited to draft releases; published releases should not be
             # mutated by a retry of an automation job.
             gh release upload "$tag_name" \
-              dist/Docking-0.0.0-macos26.zip \
-              dist/Docking-0.0.0-macos26.zip.sha256 \
-              dist/Docking-0.0.0-macos26.dmg \
-              dist/Docking-0.0.0-macos26.dmg.sha256 \
+              "dist/${DOCKING_RELEASE_ARTIFACT_PREFIX}.zip" \
+              "dist/${DOCKING_RELEASE_ARTIFACT_PREFIX}.zip.sha256" \
+              "dist/${DOCKING_RELEASE_ARTIFACT_PREFIX}.dmg" \
+              "dist/${DOCKING_RELEASE_ARTIFACT_PREFIX}.dmg.sha256" \
               --clobber
           elif [[ "$release_is_draft" == "false" ]]; then
             # A locally published release may already contain the reviewed DMG
@@ -119,11 +122,40 @@ jobs:
             echo "Release ${tag_name} already exists and is not a draft; leaving published assets unchanged."
           else
             gh release create "$tag_name" \
-              dist/Docking-0.0.0-macos26.zip \
-              dist/Docking-0.0.0-macos26.zip.sha256 \
-              dist/Docking-0.0.0-macos26.dmg \
-              dist/Docking-0.0.0-macos26.dmg.sha256 \
+              "dist/${DOCKING_RELEASE_ARTIFACT_PREFIX}.zip" \
+              "dist/${DOCKING_RELEASE_ARTIFACT_PREFIX}.zip.sha256" \
+              "dist/${DOCKING_RELEASE_ARTIFACT_PREFIX}.dmg" \
+              "dist/${DOCKING_RELEASE_ARTIFACT_PREFIX}.dmg.sha256" \
               --draft \
               --title "Docking ${tag_name}" \
               --notes-file "$notes_file"
+          fi
+
+      - name: Audit Homebrew cask
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          cask_version="$(/usr/bin/awk -F\" '/^[[:space:]]*version / { print $2; exit }' Casks/docking.rb)"
+
+          # Homebrew audits casks through a tap, not arbitrary file paths. The
+          # checked-out repository is already the release tap, so use it
+          # directly instead of creating a separate homebrew-* repository for a
+          # personal pre-release app.
+          brew tap sk-226/docking "$GITHUB_WORKSPACE"
+          brew audit --cask --strict --tap=sk-226/docking docking
+
+          release_is_draft="$(gh release view "v${cask_version}" --json isDraft --jq '.isDraft' 2>/dev/null || true)"
+          if [[ "$release_is_draft" == "false" ]]; then
+            # `--online` proves the cask URL and checksum against the public
+            # GitHub asset. We deliberately skip it for PRs and draft releases
+            # because those assets are not public yet; requiring a public DMG
+            # before the release PR lands would make the release process depend
+            # on publishing first and reviewing second.
+            brew audit --cask --strict --online --tap=sk-226/docking docking
+          else
+            echo "Skipping online cask audit until v${cask_version} is published."
           fi

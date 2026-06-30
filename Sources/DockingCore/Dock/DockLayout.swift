@@ -41,7 +41,7 @@ enum DockLayout {
         // Side docks still render the same widget controls as bottom docks.
         // Clamping the panel to only `dockSize` made detailed widgets overflow
         // the glass, while inventing a second vertical-only widget model would
-        // add settings and state for a 0.0.0 app before the product has proven
+        // add settings and state for a pre-1.0 app before the product has proven
         // it needs that complexity. The invariant here is simple: the resident
         // panel must be at least as wide as the widest enabled child it renders.
         return max(settings.effectiveDockThickness, settings.enabledWidgetWidths.max() ?? 0)

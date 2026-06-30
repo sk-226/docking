@@ -732,7 +732,7 @@ func validateFolderDropService() throws {
         throw ValidationFailure(description: "folder drops should not overwrite an existing item")
     } catch FolderDropError.destinationAlreadyExists {
         // Expected: Finder would ask the user how to resolve the collision. The
-        // 0.0.0 Docking implementation refuses silent overwrite instead.
+        // pre-1.0 Docking implementation refuses silent overwrite instead.
     }
 
     let sourceFolder = root.appendingPathComponent("SourceFolder", isDirectory: true)
@@ -2392,7 +2392,7 @@ private struct DelayedWeatherProvider: WeatherProvider {
 }
 
 func validateRestoreSnapshot() throws {
-    try expect(AppMetadata.version == "0.0.0", "app metadata should keep the explicit pre-release version")
+    try expect(AppMetadata.version == "0.0.1", "app metadata should keep the explicit pre-release version")
 
     let suiteName = "docking.validation.restore.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!
