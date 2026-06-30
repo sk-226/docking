@@ -83,7 +83,9 @@ omit the WeatherKit entitlement so Weather uses the Open-Meteo real-data
 fallback instead of failing at launch. The generated zip SHA-256 was
 `e364bcad70418c634c4afb0adf45702a55c120fbc553eb661fa5569585dcb759`; the
 generated DMG SHA-256 was
-`c673f3d2cb485b0bbd0f78de3a4546e690720798eec9cd381c55272ce4fe0be8`.
+`c673f3d2cb485b0bbd0f78de3a4546e690720798eec9cd381c55272ce4fe0be8`. The
+published Actions-built `v0.0.1` DMG is the cask source of truth and has
+SHA-256 `268df87acd3af003befc2c2fd7b15f4e8c3167867fe969969fe340e98da23195`.
 
 Previous automated evidence: passed 2026-06-29 on the `0.0.0`
 release-candidate path. The run created `dist/Docking-0.0.0-macos26.zip` and
