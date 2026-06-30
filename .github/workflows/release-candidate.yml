@@ -9,8 +9,13 @@ on:
     tags:
       - "v*"
 
+# Keep the workflow-wide default read-only because this workflow also runs for
+# pull_request. PR validation checks out and executes repository-controlled
+# scripts, so granting the release-capable token at the top level would make the
+# trusted release path and the untrusted review path share one credential model.
+# The tag-only publish job below opts into write access at job scope instead.
 permissions:
-  contents: write
+  contents: read
 
 env:
   DOCKING_RELEASE_VERSION: "0.0.1"
@@ -25,10 +30,21 @@ jobs:
     name: Build macOS 26 artifacts
     runs-on: macos-26
     timeout-minutes: 30
+    # This job is the PR-facing path. Keep its permissions explicit even though
+    # they match the workflow default so future release edits do not accidentally
+    # widen the token that PR-authored scripts can observe.
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        # The local release gate is intentionally sourced from the checked-out
+        # tree, so a PR can change it. Avoid persisting the workflow token in the
+        # git config; a simpler default checkout would leave credentials behind
+        # for later shell steps that do not need to push or fetch private data.
+        with:
+          persist-credentials: false
 
       - name: Confirm macOS 26 runner
         run: |
@@ -61,8 +77,54 @@ jobs:
             dist/${{ env.DOCKING_RELEASE_ARTIFACT_PREFIX }}.dmg
             dist/${{ env.DOCKING_RELEASE_ARTIFACT_PREFIX }}.dmg.sha256
 
+      - name: Audit Homebrew cask
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: |
+          set -euo pipefail
+
+          # Homebrew audits casks through a tap, not arbitrary file paths. The
+          # checked-out repository is already the release tap, so use it
+          # directly instead of creating a separate homebrew-* repository for a
+          # personal pre-release app.
+          #
+          # This PR-facing audit deliberately stays offline and tokenless. The
+          # tempting alternative is to reuse the workflow token for release-state
+          # checks and Homebrew's GitHub API calls, but that would expose a token
+          # to a cask and tap tree that a pull request is allowed to modify. The
+          # published-release online audit remains in the tag-only job below.
+          brew tap sk-226/docking "$GITHUB_WORKSPACE"
+          brew audit --cask --strict --tap=sk-226/docking docking
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: build-macos26-artifacts
+    # Only tag pushes are allowed to publish or inspect release state with an
+    # elevated token. Pull requests and workflow_dispatch runs still produce
+    # workflow artifacts through the read-only build job, but they cannot reach
+    # this job's contents: write token.
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: macos-26
+    timeout-minutes: 15
+    permissions:
+      # download-artifact reads the artifact produced by the build job. Keep this
+      # separate from contents: write so the reason for each permission remains
+      # auditable instead of relying on a broad inherited default.
+      actions: read
+      # GitHub Releases are repository contents, so this permission is required
+      # for `gh release create` and `gh release upload`. It is intentionally
+      # scoped to the tag-only job rather than the PR-facing build job.
+      contents: write
+
+    steps:
+      - name: Download workflow artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ env.DOCKING_RELEASE_ARTIFACT_PREFIX }}-release-candidate
+          path: dist
+
       - name: Attach artifacts to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
+        id: publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -71,6 +133,7 @@ jobs:
           tag_name="${GITHUB_REF_NAME}"
           expected_tag="v${DOCKING_RELEASE_VERSION}"
           notes_file="$(/usr/bin/mktemp)"
+          run_online_audit=false
 
           if [[ "$tag_name" != "$expected_tag" ]]; then
             # The artifact names and cask version are intentionally advanced in
@@ -120,6 +183,7 @@ jobs:
             # artifacts, but it must not mutate the public release assets behind
             # the maintainer's back.
             echo "Release ${tag_name} already exists and is not a draft; leaving published assets unchanged."
+            run_online_audit=true
           else
             gh release create "$tag_name" \
               "dist/${DOCKING_RELEASE_ARTIFACT_PREFIX}.zip" \
@@ -131,31 +195,28 @@ jobs:
               --notes-file "$notes_file"
           fi
 
-      - name: Audit Homebrew cask
+          echo "run_online_audit=${run_online_audit}" >>"$GITHUB_OUTPUT"
+
+      - name: Checkout cask for published-release audit
+        if: steps.publish.outputs.run_online_audit == 'true'
+        uses: actions/checkout@v7
+        # Even on the trusted tag path, the online audit only needs the cask
+        # file. Persisting git credentials would add a second, unnecessary way
+        # for later tooling to reach the write token.
+        with:
+          persist-credentials: false
+
+      - name: Audit published Homebrew cask
+        if: steps.publish.outputs.run_online_audit == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
           HOMEBREW_NO_AUTO_UPDATE: "1"
-          HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
-          cask_version="$(/usr/bin/awk -F\" '/^[[:space:]]*version / { print $2; exit }' Casks/docking.rb)"
-
-          # Homebrew audits casks through a tap, not arbitrary file paths. The
-          # checked-out repository is already the release tap, so use it
-          # directly instead of creating a separate homebrew-* repository for a
-          # personal pre-release app.
+          # `--online` proves the cask URL and checksum against a public GitHub
+          # asset. It only runs when the release already exists and is not a
+          # draft; draft assets are intentionally private until maintainers have
+          # reviewed them, so requiring an online audit earlier would force
+          # publication before review.
           brew tap sk-226/docking "$GITHUB_WORKSPACE"
-          brew audit --cask --strict --tap=sk-226/docking docking
-
-          release_is_draft="$(gh release view "v${cask_version}" --json isDraft --jq '.isDraft' 2>/dev/null || true)"
-          if [[ "$release_is_draft" == "false" ]]; then
-            # `--online` proves the cask URL and checksum against the public
-            # GitHub asset. We deliberately skip it for PRs and draft releases
-            # because those assets are not public yet; requiring a public DMG
-            # before the release PR lands would make the release process depend
-            # on publishing first and reviewing second.
-            brew audit --cask --strict --online --tap=sk-226/docking docking
-          else
-            echo "Skipping online cask audit until v${cask_version} is published."
-          fi
+          brew audit --cask --strict --online --tap=sk-226/docking docking
