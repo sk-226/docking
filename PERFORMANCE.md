@@ -8,7 +8,9 @@ not interacting with the dock.
 ## Targets
 
 - Idle CPU should sit close to 0%, ideally below 1% after the dock settles.
-- Memory should stay reasonably stable, ideally below 150 MB for this 0.0.0 app.
+- Memory should stay reasonably stable. Current smoke evidence is around
+  160 MB RSS, so continuous growth is the release risk to investigate rather
+  than a hard 150 MB cap.
 - Calendar and Weather refreshes should be event-driven or conservative, not
   repeated every few seconds.
 - Settings changes should not write continuously while sliders or segmented
