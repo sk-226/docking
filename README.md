@@ -52,6 +52,29 @@ Uninstall:
 brew uninstall --cask sk-226/docking/docking
 ```
 
+## Use and Restore
+
+Installing Docking does not change Apple Dock settings. Docking starts as an
+overlay dock.
+
+To use Docking as the primary dock:
+
+1. Launch Docking.
+2. Open Control Center > Restore.
+3. Click Use Docking as Primary Dock and confirm.
+4. Click Reload Apple Dock to Apply if needed.
+
+To return to the Apple Dock:
+
+1. Open Control Center > Restore.
+2. Click Disable Docking replacement mode, or Restore Original macOS Dock
+   Settings, and confirm.
+3. Click Reload Apple Dock to Apply if needed.
+
+If you enabled Primary Dock mode, restore the Apple Dock before uninstalling.
+Uninstalling Docking removes the app, but it does not restore Apple Dock
+preferences.
+
 ## Build
 
 ```bash
