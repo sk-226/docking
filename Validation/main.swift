@@ -1075,8 +1075,8 @@ func validateDockTerminationState() throws {
         kind: .folder,
         title: "Downloads",
         bundleIdentifier: nil,
-        url: URL(fileURLWithPath: "/Users/example/Downloads", isDirectory: true),
-        iconCacheKey: "folder:/Users/example/Downloads"
+        url: URL(fileURLWithPath: "/tmp/docking-validation-downloads", isDirectory: true),
+        iconCacheKey: "folder:/tmp/docking-validation-downloads"
     )
     try expect(
         DockTerminationState.identityKey(for: folder) == nil,
