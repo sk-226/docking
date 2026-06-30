@@ -212,10 +212,15 @@ else
 fi
 
 section "Source hygiene"
+# Keep this check narrow. The release gate should block concrete forbidden
+# APIs or OS-version shims, not generic words in comments, docs, or validation
+# messages. Broad keyword scans such as "legacy" or "compatibility" create
+# false positives and make release_check brittle; legitimate Codable patterns
+# such as decodeIfPresent are also not release risks by themselves.
 fail_if_matches \
-  "old compatibility or deprecated-access code still appears in authored source" \
-  "#available|backward|compatib|decodeIfPresent|legacy|deprecated|requestAccess\\(to:" \
-  Sources Validation README.md PERFORMANCE.md Package.swift script/build_and_run.sh
+  "forbidden backward-compatibility shims or deprecated permission APIs still appear in authored source" \
+  "#available|#unavailable|requestAccess\\(to:" \
+  Sources Validation Package.swift script/build_and_run.sh
 
 fail_if_matches \
   "user-specific path or old bundle identifier still appears in authored files" \

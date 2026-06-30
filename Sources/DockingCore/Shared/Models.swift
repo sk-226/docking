@@ -77,6 +77,15 @@ enum DockFolderSortMode: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+enum DockRunningTileScope: String, Codable, Equatable {
+    // This enum is intentionally about the visible Dock tile, not the process
+    // list. A regular app process can still exist behind either case; the
+    // difference is whether one user-facing Dock affordance maps to one pid or
+    // to the app's shared Dock identity.
+    case process
+    case singleAppTile
+}
+
 struct DockItem: Identifiable, Codable, Equatable {
     var id: UUID
     var kind: DockItemKind
@@ -84,6 +93,8 @@ struct DockItem: Identifiable, Codable, Equatable {
     var bundleIdentifier: String?
     var url: URL?
     var iconCacheKey: String
+    var runningProcessIdentifier: pid_t?
+    var runningTileScope: DockRunningTileScope?
     var isPinned: Bool
     var groupID: UUID?
     var folderDisplayMode: DockFolderDisplayMode
@@ -97,6 +108,8 @@ struct DockItem: Identifiable, Codable, Equatable {
         bundleIdentifier: String?,
         url: URL?,
         iconCacheKey: String,
+        runningProcessIdentifier: pid_t? = nil,
+        runningTileScope: DockRunningTileScope? = nil,
         isPinned: Bool = true,
         groupID: UUID? = nil,
         folderDisplayMode: DockFolderDisplayMode = .folder,
@@ -109,6 +122,8 @@ struct DockItem: Identifiable, Codable, Equatable {
         self.bundleIdentifier = bundleIdentifier
         self.url = url
         self.iconCacheKey = iconCacheKey
+        self.runningProcessIdentifier = runningProcessIdentifier
+        self.runningTileScope = runningTileScope
         self.isPinned = isPinned
         self.groupID = groupID
         self.folderDisplayMode = folderDisplayMode
@@ -153,6 +168,36 @@ struct DockItem: Identifiable, Codable, Equatable {
         // malformed development data from collapsing unrelated items together
         // while AppListStore falls back to defaults on decode failures.
         return "\(kind.rawValue):\(iconCacheKey)"
+    }
+
+    var runningInstanceKey: String? {
+        guard let runningProcessIdentifier, isApplication else {
+            return nil
+        }
+
+        // A bundle identifier alone is the durable identity for pinned apps,
+        // but it is too coarse for live Dock items that the system Dock exposes
+        // as separate tiles. Calculator and TextEdit launched twice with
+        // `open -n` were observed as two standard Dock icons, so combining the
+        // app identity with the pid lets Docking keep those per-tile runtime
+        // boundaries. Apps that the system Dock collapses to one tile, such as
+        // Ghostty with its Dock tile plug-in, do not receive a pid-bound live
+        // item from RunningAppObserver in the first place.
+        //
+        // The pid is intentionally not part of `identityKey`: persisted items
+        // must keep matching the app across launches, while this key is only
+        // valid inside the current NSWorkspace snapshot and the short
+        // quit-reconciliation window.
+        return "\(identityKey)#pid:\(runningProcessIdentifier)"
+    }
+
+    var representsSingleAppRunningTile: Bool {
+        // A nil pid is ambiguous without this explicit runtime scope: persisted
+        // pinned apps also have no pid, while Ghostty-style live items drop the
+        // pid because the standard Dock exposes several regular processes as
+        // one icon. Keeping that distinction on the item prevents launch/quit
+        // code from guessing based on nil alone.
+        runningTileScope == .singleAppTile
     }
 
     var subtitle: String {
@@ -304,6 +349,32 @@ enum UnpinnedRunningAppVisibility: String, CaseIterable, Codable, Identifiable {
 }
 
 enum DockRunningItemResolver {
+    static func assignedPinnedItems(pinnedItems: [DockItem], runningItems: [DockItem]) -> [DockItem] {
+        let assignments = runningAssignments(pinnedItems: pinnedItems, runningItems: runningItems)
+        return pinnedItems.map { pinnedItem in
+            var item = pinnedItem
+            if let runningItem = assignments[pinnedItem.id] {
+                // Pinned icons are durable user choices, but while an app is
+                // running the visible pinned tile still represents one concrete
+                // standard-Dock slot. Copying the runtime pid/scope onto a
+                // display-only value keeps Quit, active state, and pending
+                // reconciliation pointed at the same process or grouped tile
+                // that this pinned icon consumed from the running snapshot.
+                //
+                // We deliberately do not write these fields back into
+                // AppListStore. Persisting a pid would create stale behavior
+                // across launches, while the assignment is only valid for the
+                // current NSWorkspace snapshot.
+                item.runningProcessIdentifier = runningItem.runningProcessIdentifier
+                item.runningTileScope = runningItem.runningTileScope
+            } else {
+                item.runningProcessIdentifier = nil
+                item.runningTileScope = nil
+            }
+            return item
+        }
+    }
+
     static func unpinnedRunningItems(
         pinnedItems: [DockItem],
         runningItems: [DockItem],
@@ -313,22 +384,45 @@ enum DockRunningItemResolver {
             return []
         }
 
-        // Running apps are intentionally resolved from stable app identity,
-        // not from DockItem.id. Transient items are rebuilt from
-        // NSRunningApplication snapshots, so UUID comparison would treat the
-        // same app as new after every observer refresh. Bundle ID is preferred
-        // because it survives path changes; the path fallback covers unsigned
-        // or helper-like apps that still behave as regular user apps.
-        let pinnedKeys = Set(pinnedItems.map(stableKey))
-        var seenKeys: Set<String> = []
-        return runningItems.filter { item in
-            let key = stableKey(for: item)
-            guard !pinnedKeys.contains(key), !seenKeys.contains(key) else {
-                return false
+        return unresolvedRunningItems(pinnedItems: pinnedItems, runningItems: runningItems)
+    }
+
+    private static func runningAssignments(pinnedItems: [DockItem], runningItems: [DockItem]) -> [UUID: DockItem] {
+        var remainingRunningItems = runningItems
+        var assignments: [UUID: DockItem] = [:]
+
+        for pinnedItem in pinnedItems {
+            guard let index = remainingRunningItems.firstIndex(where: { runningItem in
+                stableKey(for: runningItem) == stableKey(for: pinnedItem)
+            }) else {
+                continue
             }
-            seenKeys.insert(key)
-            return true
+            assignments[pinnedItem.id] = remainingRunningItems.remove(at: index)
         }
+
+        return assignments
+    }
+
+    private static func unresolvedRunningItems(pinnedItems: [DockItem], runningItems: [DockItem]) -> [DockItem] {
+        var remainingRunningItems = runningItems
+        for pinnedItem in pinnedItems {
+            guard let index = remainingRunningItems.firstIndex(where: { runningItem in
+                stableKey(for: runningItem) == stableKey(for: pinnedItem)
+            }) else {
+                continue
+            }
+            // Pinned Dock items consume one running instance of the same app
+            // identity, but they do not consume every sibling Dock tile. This
+            // mirrors the system Dock behavior observed with Calculator and
+            // TextEdit: two `open -n` regular processes produce two standard
+            // Dock icons, so a pinned icon accounts for one tile while a sibling
+            // remains separately addressable. Apps such as Ghostty that the
+            // standard Dock collapses to one tile are already grouped by
+            // RunningAppObserver before they reach this resolver.
+            remainingRunningItems.remove(at: index)
+        }
+
+        return remainingRunningItems
     }
 
     private static func stableKey(for item: DockItem) -> String {

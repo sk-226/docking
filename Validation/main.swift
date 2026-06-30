@@ -12,6 +12,13 @@ func expect(_ condition: @autoclosure () -> Bool, _ message: String) throws {
     }
 }
 
+func expectNotNil<T>(_ value: T?, _ message: String) throws -> T {
+    guard let value else {
+        throw ValidationFailure(description: message)
+    }
+    return value
+}
+
 func validateFormatters() throws {
     let start = Date(timeIntervalSince1970: 0)
     let end = start.addingTimeInterval(100 * 60)
@@ -779,6 +786,376 @@ func validateRunningApplicationMatcher() throws {
         ),
         "running-app process actions should fall back to app path for apps without bundle identifiers"
     )
+
+    let ghostty = DockItem(
+        title: "Ghostty",
+        bundleIdentifier: "com.mitchellh.ghostty",
+        url: URL(fileURLWithPath: "/Applications/Ghostty.app"),
+        iconCacheKey: "com.mitchellh.ghostty"
+    )
+    let ghosttyProcesses = [
+        RunningApplicationSnapshot(
+            processIdentifier: 101,
+            activationPolicy: .regular,
+            bundleIdentifier: "com.mitchellh.ghostty",
+            bundleURL: URL(fileURLWithPath: "/Applications/Ghostty.app")
+        ),
+        RunningApplicationSnapshot(
+            processIdentifier: 102,
+            activationPolicy: .regular,
+            bundleIdentifier: "com.mitchellh.ghostty",
+            bundleURL: URL(fileURLWithPath: "/Applications/Ghostty.app")
+        ),
+        RunningApplicationSnapshot(
+            processIdentifier: 103,
+            activationPolicy: .accessory,
+            bundleIdentifier: "com.mitchellh.ghostty",
+            bundleURL: URL(fileURLWithPath: "/Applications/Ghostty.app")
+        )
+    ]
+    let ghosttyPresentationTargets = ghosttyProcesses.filter {
+        RunningApplicationSelector.matches(
+            item: ghostty,
+            snapshot: $0,
+            selectionPolicy: .foregroundPresentation,
+            currentProcessIdentifier: 999
+        )
+    }
+    try expect(
+        ghosttyPresentationTargets.map(\.processIdentifier) == [101, 102],
+        "Docking Show/Hide should stay limited to ordinary foreground app processes"
+    )
+
+    let ghosttyCandidateTargets = ghosttyProcesses.filter {
+        RunningApplicationSelector.matches(
+            item: ghostty,
+            snapshot: $0,
+            selectionPolicy: .termination,
+            currentProcessIdentifier: 999
+        )
+    }
+    try expect(
+        ghosttyCandidateTargets.map(\.processIdentifier) == [101, 102],
+        "unbound pinned app actions should discover regular process candidates without including accessory resident processes"
+    )
+
+    let groupedGhosttyTile = DockItem(
+        title: "Ghostty",
+        bundleIdentifier: "com.mitchellh.ghostty",
+        url: URL(fileURLWithPath: "/Applications/Ghostty.app"),
+        iconCacheKey: "com.mitchellh.ghostty",
+        runningTileScope: .singleAppTile,
+        isPinned: false
+    )
+    try expect(
+        RunningApplicationTargetResolver.selectedProcessIdentifiers(
+            item: groupedGhosttyTile,
+            snapshots: ghosttyProcesses,
+            selectionPolicy: .termination,
+            currentProcessIdentifier: 999
+        ) == [101, 102],
+        "a grouped single-Dock-tile app should quit all regular processes represented by that one visible tile"
+    )
+    try expect(
+        RunningApplicationTargetResolver.selectedProcessIdentifiers(
+            item: ghostty,
+            snapshots: ghosttyProcesses,
+            selectionPolicy: .termination,
+            currentProcessIdentifier: 999
+        ) == [101],
+        "an unassigned durable app shortcut should still target only one slot instead of every matching process"
+    )
+
+    let liveCalculatorIcon = DockItem(
+        title: "Calculator",
+        bundleIdentifier: "com.apple.calculator",
+        url: URL(fileURLWithPath: "/System/Applications/Calculator.app"),
+        iconCacheKey: "com.apple.calculator",
+        runningProcessIdentifier: 102,
+        runningTileScope: .process,
+        isPinned: false
+    )
+    let calculatorProcesses = [
+        RunningApplicationSnapshot(
+            processIdentifier: 101,
+            activationPolicy: .regular,
+            bundleIdentifier: "com.apple.calculator",
+            bundleURL: URL(fileURLWithPath: "/System/Applications/Calculator.app")
+        ),
+        RunningApplicationSnapshot(
+            processIdentifier: 102,
+            activationPolicy: .regular,
+            bundleIdentifier: "com.apple.calculator",
+            bundleURL: URL(fileURLWithPath: "/System/Applications/Calculator.app")
+        )
+    ]
+    let liveCalculatorQuitTargets = calculatorProcesses.filter {
+        RunningApplicationSelector.matches(
+            item: liveCalculatorIcon,
+            snapshot: $0,
+            selectionPolicy: .termination,
+            currentProcessIdentifier: 999
+        )
+    }
+    try expect(
+        liveCalculatorQuitTargets.map(\.processIdentifier) == [102],
+        "a pid-bound live Dock icon should target only its own process, matching the standard Dock's duplicate Calculator/TextEdit behavior"
+    )
+
+    let backgroundOnlyHelper = RunningApplicationSnapshot(
+        processIdentifier: 104,
+        activationPolicy: .prohibited,
+        bundleIdentifier: ghostty.bundleIdentifier,
+        bundleURL: ghostty.url
+    )
+    try expect(
+        !RunningApplicationSelector.matches(
+            item: ghostty,
+            snapshot: backgroundOnlyHelper,
+            selectionPolicy: .termination,
+            currentProcessIdentifier: 999
+        ),
+        "Docking quit should not target prohibited background helpers even when their bundle identity matches"
+    )
+
+    let currentDockingProcess = RunningApplicationSnapshot(
+        processIdentifier: 999,
+        activationPolicy: .regular,
+        bundleIdentifier: ghostty.bundleIdentifier,
+        bundleURL: ghostty.url
+    )
+    try expect(
+        !RunningApplicationSelector.matches(
+            item: ghostty,
+            snapshot: currentDockingProcess,
+            selectionPolicy: .termination,
+            currentProcessIdentifier: 999
+        ),
+        "running-app process selection must never target the current Docking process"
+    )
+
+    try expect(
+        RunningAppObserver.isDockVisibleRunningApplication(
+            activationPolicy: .regular,
+            processIdentifier: 101,
+            currentProcessIdentifier: 999
+        ),
+        "regular foreground apps should contribute to Docking's running indicators"
+    )
+    try expect(
+        !RunningAppObserver.isDockVisibleRunningApplication(
+            activationPolicy: .accessory,
+            processIdentifier: 103,
+            currentProcessIdentifier: 999
+        ),
+        "accessory resident apps should not keep Docking running indicators alive after a standard Quit"
+    )
+    try expect(
+        !RunningAppObserver.isDockVisibleRunningApplication(
+            activationPolicy: .regular,
+            processIdentifier: 999,
+            currentProcessIdentifier: 999
+        ),
+        "Docking's own process should never appear as a running app item"
+    )
+    try expect(
+        RunningAppObserver.usesSingleDockTile(infoDictionary: ["NSDockTilePlugIn": "DockTilePlugin.plugin"]),
+        "apps that declare a Dock tile plug-in should be grouped to match the standard Dock's single Ghostty tile"
+    )
+    try expect(
+        !RunningAppObserver.usesSingleDockTile(infoDictionary: ["CFBundleName": "Calculator"]),
+        "ordinary multi-process apps without a Dock tile plug-in should keep pid-level Dock tiles"
+    )
+    try expect(
+        RunningAppObserver.dockInstanceKey(
+            appKey: "com.mitchellh.ghostty",
+            processIdentifier: 101,
+            usesSingleDockTile: true
+        ) == "com.mitchellh.ghostty",
+        "Ghostty-style Dock tile plug-in apps should share one live Docking tile across regular processes"
+    )
+    try expect(
+        RunningAppObserver.runningProcessIdentifier(
+            processIdentifier: 101,
+            usesSingleDockTile: true
+        ) == nil,
+        "single Dock tile apps should not bind active/running state to one arbitrary pid"
+    )
+    try expect(
+        RunningAppObserver.runningTileScope(usesSingleDockTile: true) == .singleAppTile,
+        "single Dock tile apps should carry explicit grouped tile scope even though they have no pid"
+    )
+    try expect(
+        RunningAppObserver.dockInstanceKey(
+            appKey: "com.apple.calculator",
+            processIdentifier: 201,
+            usesSingleDockTile: false
+        ) == "com.apple.calculator#pid:201",
+        "Calculator/TextEdit-style apps should retain pid-level live tile identity"
+    )
+    try expect(
+        RunningAppObserver.runningProcessIdentifier(
+            processIdentifier: 201,
+            usesSingleDockTile: false
+        ) == 201,
+        "multi-tile apps should keep pid targeting so one Quit action does not hide a sibling tile"
+    )
+    try expect(
+        RunningAppObserver.runningTileScope(usesSingleDockTile: false) == .process,
+        "multi-tile apps should mark transient items as process-scoped"
+    )
+}
+
+func validateDockTerminationState() throws {
+    let notionCalendar = DockItem(
+        title: "Notion Calendar",
+        bundleIdentifier: "com.cron.electron",
+        url: URL(fileURLWithPath: "/Applications/Notion Calendar.app"),
+        iconCacheKey: "com.cron.electron"
+    )
+    let runningNotionCalendar = DockItem(
+        title: "Notion Calendar",
+        bundleIdentifier: "com.cron.electron",
+        url: URL(fileURLWithPath: "/Applications/Notion Calendar.app"),
+        iconCacheKey: "com.cron.electron",
+        runningProcessIdentifier: 201,
+        isPinned: false
+    )
+    let secondRunningNotionCalendar = DockItem(
+        title: "Notion Calendar",
+        bundleIdentifier: "com.cron.electron",
+        url: URL(fileURLWithPath: "/Applications/Notion Calendar.app"),
+        iconCacheKey: "com.cron.electron",
+        runningProcessIdentifier: 202,
+        isPinned: false
+    )
+    let ghosttyPathOnly = DockItem(
+        title: "Ghostty",
+        bundleIdentifier: nil,
+        url: URL(fileURLWithPath: "/Applications/Ghostty.app"),
+        iconCacheKey: "/Applications/Ghostty.app"
+    )
+    let runningGhosttyPathOnly = DockItem(
+        title: "Ghostty",
+        bundleIdentifier: nil,
+        url: URL(fileURLWithPath: "/Applications/Ghostty.app"),
+        iconCacheKey: "/Applications/Ghostty.app",
+        runningProcessIdentifier: 301,
+        isPinned: false
+    )
+    let groupedGhostty = DockItem(
+        title: "Ghostty",
+        bundleIdentifier: "com.mitchellh.ghostty",
+        url: URL(fileURLWithPath: "/Applications/Ghostty.app"),
+        iconCacheKey: "com.mitchellh.ghostty",
+        runningTileScope: .singleAppTile,
+        isPinned: false
+    )
+
+    let notionAppKey = try expectNotNil(
+        DockTerminationState.appIdentityKey(for: notionCalendar),
+        "bundle-identified apps should produce a fallback app termination identity"
+    )
+    let notionProcessKey = try expectNotNil(
+        DockTerminationState.identityKey(for: runningNotionCalendar),
+        "live bundle-identified apps should produce a process-specific termination identity"
+    )
+    let ghosttyAppKey = try expectNotNil(
+        DockTerminationState.appIdentityKey(for: ghosttyPathOnly),
+        "path-only apps should produce a fallback app termination identity"
+    )
+    let notionFallbackKey = try expectNotNil(
+        DockTerminationState.identityKey(for: notionCalendar),
+        "pinned bundle-identified apps should still produce a non-process fallback identity"
+    )
+    try expect(
+        notionFallbackKey == notionAppKey,
+        "pinned app termination identity should remain app-level for compatibility fallback"
+    )
+    let runningGhosttyProcessKey = try expectNotNil(
+        DockTerminationState.identityKey(for: runningGhosttyPathOnly),
+        "live path-only apps should produce a process-specific termination identity"
+    )
+    let groupedGhosttyKey = try expectNotNil(
+        DockTerminationState.appIdentityKey(for: groupedGhostty),
+        "grouped single-tile apps should still have an app-level termination identity"
+    )
+
+    try expect(
+        DockTerminationState.isPending(runningNotionCalendar, pendingKeys: [notionProcessKey]),
+        "quit-pending state should match the live process for the Dock icon that requested Quit"
+    )
+    try expect(
+        !DockTerminationState.isPending(secondRunningNotionCalendar, pendingKeys: [notionProcessKey]),
+        "quit-pending state should not hide sibling regular app instances"
+    )
+    try expect(
+        DockTerminationState.isPending(runningGhosttyPathOnly, pendingKeys: [runningGhosttyProcessKey]),
+        "quit-pending state should also be process-specific for path-only live apps"
+    )
+    let groupedGhosttyPendingKeys = DockTerminationState.pendingKeys(
+        for: groupedGhostty,
+        processIdentifiers: [401, 402]
+    )
+    try expect(
+        groupedGhosttyPendingKeys == [groupedGhosttyKey],
+        "grouped single-Dock-tile apps should use app-level pending state instead of pid keys that the grouped snapshot cannot retain"
+    )
+    try expect(
+        DockTerminationState.isPending(groupedGhostty, pendingKeys: groupedGhosttyPendingKeys),
+        "grouped single-Dock-tile apps should expose pending state on the visible nil-pid tile"
+    )
+    try expect(
+        DockTerminationState.completedPendingKeys(
+            pendingKeys: groupedGhosttyPendingKeys,
+            runningItems: [groupedGhostty]
+        ).isEmpty,
+        "grouped single-Dock-tile pending state should stay pending while the grouped running item is still present"
+    )
+    try expect(
+        DockTerminationState.completedPendingKeys(
+            pendingKeys: groupedGhosttyPendingKeys,
+            runningItems: []
+        ).contains(groupedGhosttyKey),
+        "grouped single-Dock-tile pending state should clear once the grouped running item disappears"
+    )
+    try expect(
+        DockTerminationState.completedPendingKeys(
+            pendingKeys: [notionProcessKey],
+            runningItems: [runningNotionCalendar]
+        ).isEmpty,
+        "pending quit should stay pending while NSWorkspace still reports that process as running"
+    )
+    try expect(
+        DockTerminationState.completedPendingKeys(
+            pendingKeys: [notionProcessKey],
+            runningItems: [secondRunningNotionCalendar]
+        ).contains(notionProcessKey),
+        "pending quit should clear when the requested process is gone even if a sibling instance remains"
+    )
+    try expect(
+        DockTerminationState.isPending(notionCalendar, pendingKeys: [notionAppKey]),
+        "app-level fallback pending should still cover pinned items when no pid is available"
+    )
+    try expect(
+        DockTerminationState.completedPendingKeys(
+            pendingKeys: [notionAppKey, ghosttyAppKey],
+            runningItems: [runningNotionCalendar, runningGhosttyPathOnly]
+        ).isEmpty,
+        "app-level fallback pending should stay pending while a matching running app identity exists"
+    )
+
+    let folder = DockItem(
+        kind: .folder,
+        title: "Downloads",
+        bundleIdentifier: nil,
+        url: URL(fileURLWithPath: "/tmp/docking-validation-downloads", isDirectory: true),
+        iconCacheKey: "folder:/tmp/docking-validation-downloads"
+    )
+    try expect(
+        DockTerminationState.identityKey(for: folder) == nil,
+        "folder stacks should never enter app termination reconciliation"
+    )
 }
 
 func validateSettingsStore() throws {
@@ -847,6 +1224,17 @@ func validateUnpinnedRunningAppResolver() throws {
         bundleIdentifier: "com.example.editor",
         url: URL(fileURLWithPath: "/Applications/Pinned Editor.app"),
         iconCacheKey: "com.example.editor",
+        runningProcessIdentifier: 11,
+        runningTileScope: .process,
+        isPinned: false
+    )
+    let secondRunningPinned = DockItem(
+        title: "Pinned Editor",
+        bundleIdentifier: "com.example.editor",
+        url: URL(fileURLWithPath: "/Applications/Pinned Editor.app"),
+        iconCacheKey: "com.example.editor",
+        runningProcessIdentifier: 12,
+        runningTileScope: .process,
         isPinned: false
     )
     let runningTransient = DockItem(
@@ -854,6 +1242,8 @@ func validateUnpinnedRunningAppResolver() throws {
         bundleIdentifier: "dev.zed.Zed",
         url: URL(fileURLWithPath: "/Applications/Zed.app"),
         iconCacheKey: "dev.zed.Zed",
+        runningProcessIdentifier: 21,
+        runningTileScope: .process,
         isPinned: false
     )
     let duplicateTransient = DockItem(
@@ -861,15 +1251,112 @@ func validateUnpinnedRunningAppResolver() throws {
         bundleIdentifier: "dev.zed.Zed",
         url: URL(fileURLWithPath: "/Applications/Zed.app"),
         iconCacheKey: "dev.zed.Zed",
+        runningProcessIdentifier: 22,
+        runningTileScope: .process,
         isPinned: false
+    )
+
+    let assignedPinned = DockRunningItemResolver.assignedPinnedItems(
+        pinnedItems: [pinned],
+        runningItems: [runningPinned, secondRunningPinned, runningTransient, duplicateTransient]
+    )
+    try expect(
+        assignedPinned.count == 1 &&
+        assignedPinned[0].id == pinned.id &&
+        assignedPinned[0].runningProcessIdentifier == 11 &&
+        assignedPinned[0].runningTileScope == .process,
+        "pinned app display items should inherit the exact running slot they consume"
+    )
+
+    let editorProcesses = [
+        RunningApplicationSnapshot(
+            processIdentifier: 11,
+            activationPolicy: .regular,
+            bundleIdentifier: "com.example.editor",
+            bundleURL: URL(fileURLWithPath: "/Applications/Pinned Editor.app")
+        ),
+        RunningApplicationSnapshot(
+            processIdentifier: 12,
+            activationPolicy: .regular,
+            bundleIdentifier: "com.example.editor",
+            bundleURL: URL(fileURLWithPath: "/Applications/Pinned Editor.app")
+        )
+    ]
+    try expect(
+        RunningApplicationTargetResolver.selectedProcessIdentifiers(
+            item: assignedPinned[0],
+            snapshots: editorProcesses,
+            selectionPolicy: .termination,
+            currentProcessIdentifier: 999
+        ) == [11],
+        "pinned app Quit should target the same pid that the pinned icon consumed from the running snapshot"
+    )
+    try expect(
+        RunningApplicationTargetResolver.selectedProcessIdentifiers(
+            item: secondRunningPinned,
+            snapshots: editorProcesses,
+            selectionPolicy: .termination,
+            currentProcessIdentifier: 999
+        ) == [12],
+        "transient sibling Quit should remain targeted at its own pid after the pinned icon consumes another slot"
+    )
+
+    let pinnedGhostty = DockItem(
+        title: "Ghostty",
+        bundleIdentifier: "com.mitchellh.ghostty",
+        url: URL(fileURLWithPath: "/Applications/Ghostty.app"),
+        iconCacheKey: "com.mitchellh.ghostty"
+    )
+    let groupedRunningGhostty = DockItem(
+        title: "Ghostty",
+        bundleIdentifier: "com.mitchellh.ghostty",
+        url: URL(fileURLWithPath: "/Applications/Ghostty.app"),
+        iconCacheKey: "com.mitchellh.ghostty",
+        runningTileScope: .singleAppTile,
+        isPinned: false
+    )
+    let assignedGhostty = DockRunningItemResolver.assignedPinnedItems(
+        pinnedItems: [pinnedGhostty],
+        runningItems: [groupedRunningGhostty]
+    )
+    try expect(
+        assignedGhostty.count == 1 &&
+        assignedGhostty[0].runningProcessIdentifier == nil &&
+        assignedGhostty[0].runningTileScope == .singleAppTile,
+        "pinned grouped apps should inherit single-tile scope even though the visible item has no pid"
+    )
+    try expect(
+        RunningApplicationTargetResolver.selectedProcessIdentifiers(
+            item: assignedGhostty[0],
+            snapshots: [
+                RunningApplicationSnapshot(
+                    processIdentifier: 31,
+                    activationPolicy: .regular,
+                    bundleIdentifier: "com.mitchellh.ghostty",
+                    bundleURL: URL(fileURLWithPath: "/Applications/Ghostty.app")
+                ),
+                RunningApplicationSnapshot(
+                    processIdentifier: 32,
+                    activationPolicy: .regular,
+                    bundleIdentifier: "com.mitchellh.ghostty",
+                    bundleURL: URL(fileURLWithPath: "/Applications/Ghostty.app")
+                )
+            ],
+            selectionPolicy: .termination,
+            currentProcessIdentifier: 999
+        ) == [31, 32],
+        "pinned grouped app Quit should use the grouped tile scope rather than the durable-shortcut prefix fallback"
     )
 
     let visible = DockRunningItemResolver.unpinnedRunningItems(
         pinnedItems: [pinned],
-        runningItems: [runningPinned, runningTransient, duplicateTransient],
+        runningItems: [runningPinned, secondRunningPinned, runningTransient, duplicateTransient],
         visibility: .separated
     )
-    try expect(visible == [runningTransient], "unpinned running apps should appear once in their own section")
+    try expect(
+        visible == [secondRunningPinned, runningTransient, duplicateTransient],
+        "unpinned running apps should preserve duplicate live instances while a pinned item consumes only one matching process"
+    )
 
     let hidden = DockRunningItemResolver.unpinnedRunningItems(
         pinnedItems: [pinned],
@@ -993,6 +1480,10 @@ func validateDockItemTerminationMenuPolicy() throws {
     try expect(
         DockTerminationMenuPolicy.title(optionKeyIsPressed: false) != DockTerminationMenuPolicy.title(optionKeyIsPressed: true),
         "Quit and Force Quit should be mutually exclusive menu titles"
+    )
+    try expect(
+        !DockContextMenuPolicy.includesAppProvidedDockMenuItems,
+        "Docking should not invent or mirror app-specific Dock extras such as Notion Calendar's complete-quit command"
     )
 }
 
@@ -2011,6 +2502,7 @@ let validations: [(String, () throws -> Void)] = [
     ("folder stack dismiss hit testing", validateFolderStackPanelDismissHitTesting),
     ("folder drop service", validateFolderDropService),
     ("running app matcher", validateRunningApplicationMatcher),
+    ("dock termination state", validateDockTerminationState),
     ("settings store", validateSettingsStore),
     ("settings refresh keys", validateSettingsRefreshKeys),
     ("unpinned running app resolver", validateUnpinnedRunningAppResolver),

@@ -13,8 +13,8 @@ macOS Dock. This file keeps that scope explicit while the app is still `0.0.0`.
 | Drop a document onto an app icon to open it in that app | Implemented | Ordinary files dropped on an app icon are opened through LaunchServices with that app. Dragged `.app` bundles and folders remain Docking item additions so app/folder placement stays predictable. |
 | Show All Windows | Implemented as activate all windows | Public AppKit does not expose Dock's Mission Control window picker. Docking activates the app with all windows instead of using private APIs. |
 | Hide | Implemented | Uses `NSRunningApplication.hide()` for running apps. |
-| Quit | Implemented | Uses `NSRunningApplication.terminate()` so apps can handle their own save prompts. |
-| Force Quit | Implemented with confirmation | Uses `NSRunningApplication.forceTerminate()` only after a destructive confirmation. |
+| Quit | Implemented | Uses `NSRunningApplication.terminate()` so apps can handle their own save prompts. Quit follows the visible Dock tile's process scope instead of always terminating every sibling process with the same bundle identifier. |
+| Force Quit | Implemented with confirmation | Uses `NSRunningApplication.forceTerminate()` only after a destructive confirmation, with the same per-tile targeting as Quit. |
 | Keep in Docking | Implemented for transient running apps | Converts a running unpinned app into a pinned Docking item. |
 | Remove from Docking | Implemented for pinned apps | Removes only Docking's pinned item, not the application bundle. |
 | Show in Finder | Implemented | Reveals the app bundle when Docking can resolve it. |
