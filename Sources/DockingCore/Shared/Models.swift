@@ -84,6 +84,7 @@ struct DockItem: Identifiable, Codable, Equatable {
     var bundleIdentifier: String?
     var url: URL?
     var iconCacheKey: String
+    var runningProcessIdentifier: pid_t?
     var isPinned: Bool
     var groupID: UUID?
     var folderDisplayMode: DockFolderDisplayMode
@@ -97,6 +98,7 @@ struct DockItem: Identifiable, Codable, Equatable {
         bundleIdentifier: String?,
         url: URL?,
         iconCacheKey: String,
+        runningProcessIdentifier: pid_t? = nil,
         isPinned: Bool = true,
         groupID: UUID? = nil,
         folderDisplayMode: DockFolderDisplayMode = .folder,
@@ -109,6 +111,7 @@ struct DockItem: Identifiable, Codable, Equatable {
         self.bundleIdentifier = bundleIdentifier
         self.url = url
         self.iconCacheKey = iconCacheKey
+        self.runningProcessIdentifier = runningProcessIdentifier
         self.isPinned = isPinned
         self.groupID = groupID
         self.folderDisplayMode = folderDisplayMode
@@ -153,6 +156,27 @@ struct DockItem: Identifiable, Codable, Equatable {
         // malformed development data from collapsing unrelated items together
         // while AppListStore falls back to defaults on decode failures.
         return "\(kind.rawValue):\(iconCacheKey)"
+    }
+
+    var runningInstanceKey: String? {
+        guard let runningProcessIdentifier, isApplication else {
+            return nil
+        }
+
+        // A bundle identifier alone is the durable identity for pinned apps,
+        // but it is too coarse for live Dock items that the system Dock exposes
+        // as separate tiles. Calculator and TextEdit launched twice with
+        // `open -n` were observed as two standard Dock icons, so combining the
+        // app identity with the pid lets Docking keep those per-tile runtime
+        // boundaries. Apps that the system Dock collapses to one tile, such as
+        // Ghostty with its Dock tile plug-in, do not receive a pid-bound live
+        // item from RunningAppObserver in the first place.
+        //
+        // The pid is intentionally not part of `identityKey`: persisted items
+        // must keep matching the app across launches, while this key is only
+        // valid inside the current NSWorkspace snapshot and the short
+        // quit-reconciliation window.
+        return "\(identityKey)#pid:\(runningProcessIdentifier)"
     }
 
     var subtitle: String {
@@ -313,20 +337,23 @@ enum DockRunningItemResolver {
             return []
         }
 
-        // Running apps are intentionally resolved from stable app identity,
-        // not from DockItem.id. Transient items are rebuilt from
-        // NSRunningApplication snapshots, so UUID comparison would treat the
-        // same app as new after every observer refresh. Bundle ID is preferred
-        // because it survives path changes; the path fallback covers unsigned
-        // or helper-like apps that still behave as regular user apps.
-        let pinnedKeys = Set(pinnedItems.map(stableKey))
-        var seenKeys: Set<String> = []
+        // Pinned Dock items consume one running instance of the same app
+        // identity, but they do not consume every sibling Dock tile. This
+        // mirrors the system Dock behavior observed with Calculator and
+        // TextEdit: two `open -n` regular processes produce two standard Dock
+        // icons, so a pinned icon accounts for one tile while a sibling remains
+        // separately addressable. Apps such as Ghostty that the standard Dock
+        // collapses to one tile are already grouped by RunningAppObserver
+        // before they reach this resolver.
+        var pinnedSlotsByKey = Dictionary(grouping: pinnedItems, by: stableKey)
+            .mapValues(\.count)
         return runningItems.filter { item in
             let key = stableKey(for: item)
-            guard !pinnedKeys.contains(key), !seenKeys.contains(key) else {
+            if let remainingPinnedSlots = pinnedSlotsByKey[key],
+               remainingPinnedSlots > 0 {
+                pinnedSlotsByKey[key] = remainingPinnedSlots - 1
                 return false
             }
-            seenKeys.insert(key)
             return true
         }
     }

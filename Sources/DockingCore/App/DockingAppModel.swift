@@ -32,7 +32,24 @@ public final class DockingAppModel: ObservableObject {
             applySettingsToWindows()
         }
     }
+    @Published private var terminationPendingItemKeys: Set<String> = [] {
+        didSet {
+            guard oldValue != terminationPendingItemKeys else {
+                return
+            }
+            applySettingsToWindows()
+        }
+    }
+    @Published private var terminationPendingItemIDs: Set<UUID> = [] {
+        didSet {
+            guard oldValue != terminationPendingItemIDs else {
+                return
+            }
+            applySettingsToWindows()
+        }
+    }
     @Published var activeBundleID: String?
+    @Published var activeProcessIdentifier: pid_t?
     @Published var restoreStatusMessage: String = "Docking is currently overlay-only and has not changed Apple Dock settings."
     @Published var dockRestoreStatus = DockRestoreStatus(snapshotCreatedAt: nil, snapshotAppVersion: nil, savedPreferenceCount: 0)
     @Published var launchAtLoginStatusMessage: String = "Launch at login uses macOS Login Items when enabled."
@@ -62,6 +79,8 @@ public final class DockingAppModel: ObservableObject {
     private var hasStarted = false
     private var environmentObserverTokens: [(NotificationCenter, NSObjectProtocol)] = []
     private var pendingSettingsSaveTask: Task<Void, Never>?
+    private var terminationReconciliationTasks: [String: Task<Void, Never>] = [:]
+    private var terminationPendingKeysByItemID: [UUID: Set<String>] = [:]
     private var widgetFrames: [DockWidgetKind: NSRect] = [:]
     private var dockItemFrames: [UUID: NSRect] = [:]
     // Pointer residency is an auto-hide controller invariant, not presentation
@@ -79,12 +98,23 @@ public final class DockingAppModel: ObservableObject {
     // dock region, returning control to the normal auto-hide lifecycle.
     private var holdsDockAfterExplicitShow = false
     private static let settingsSaveDelayNanoseconds: UInt64 = 350_000_000
+    private static let terminationObservationDelayNanoseconds: UInt64 = 750_000_000
+    private static let terminationReconciliationDelayNanoseconds: UInt64 = 2_500_000_000
 
     var enabledWidgetCount: Int {
         (settings.calendarEnabled ? 1 : 0) + (settings.weatherEnabled ? 1 : 0)
     }
 
     var unpinnedRunningItems: [DockItem] {
+        // Pending Quit state is not a display filter. The system Dock keeps an
+        // app icon tied to the real process/window lifecycle: Ghostty vanishes
+        // when the process terminates, while resident apps such as Notion
+        // Calendar may briefly change presentation policy or intentionally
+        // remain alive. Hiding a running item before NSWorkspace agrees makes
+        // Docking look faster, but it is a self-invented behavior and it caused
+        // the next click to be interpreted as Open during shutdown. Keep the
+        // item visible, block accidental launch while pending, and let the
+        // observer's refreshed process snapshot decide whether the icon stays.
         DockRunningItemResolver.unpinnedRunningItems(
             pinnedItems: dockItems,
             runningItems: runningAppItems,
@@ -174,9 +204,14 @@ public final class DockingAppModel: ObservableObject {
         hasStarted = true
 
         runningObserver.onChange = { [weak self] snapshot in
-            self?.runningBundleIDs = snapshot.runningBundleIDs
-            self?.runningAppItems = snapshot.runningItems
-            self?.activeBundleID = snapshot.activeBundleID
+            guard let self else {
+                return
+            }
+            self.clearCompletedTerminationRequests(runningItems: snapshot.runningItems)
+            self.runningBundleIDs = snapshot.runningBundleIDs
+            self.runningAppItems = snapshot.runningItems
+            self.activeBundleID = snapshot.activeBundleID
+            self.activeProcessIdentifier = snapshot.activeProcessIdentifier
         }
         runningObserver.start()
         installEnvironmentObservers()
@@ -244,12 +279,31 @@ public final class DockingAppModel: ObservableObject {
     }
 
     func launch(_ item: DockItem) {
+        guard !isTerminationPending(item) else {
+            // Quit is asynchronous and some resident apps briefly relaunch or
+            // keep helper-driven state alive after accepting the request. A
+            // second click during that handoff should not be interpreted as a
+            // fresh Open command, because that is exactly how the user ends up
+            // with "it closed, then immediately opened again." We ignore only
+            // the short reconciliation window; if the app is still running
+            // afterwards, Docking shows the real state again and the user can
+            // choose Open/Force Quit intentionally.
+            DockingLog.dock.notice("Open ignored because \(item.title) is reconciling a Quit request.")
+            return
+        }
+
         appLauncherService.open(item)
     }
 
     func isRunning(_ item: DockItem) -> Bool {
         guard item.isApplication else {
             return false
+        }
+
+        if let runningProcessIdentifier = item.runningProcessIdentifier {
+            return runningAppItems.contains { runningItem in
+                runningItem.runningProcessIdentifier == runningProcessIdentifier
+            }
         }
 
         if let bundleIdentifier = item.bundleIdentifier {
@@ -269,6 +323,29 @@ public final class DockingAppModel: ObservableObject {
         }
     }
 
+    func isActive(_ item: DockItem) -> Bool {
+        guard item.isApplication,
+              !isTerminationPending(item) else {
+            return false
+        }
+        if let runningProcessIdentifier = item.runningProcessIdentifier {
+            return runningProcessIdentifier == activeProcessIdentifier
+        }
+        return item.bundleIdentifier == activeBundleID
+    }
+
+    func isTerminationPending(_ item: DockItem) -> Bool {
+        // Process keys let a rebuilt transient running item continue to show
+        // pending state after an NSWorkspace refresh; item IDs let a durable
+        // pinned icon remember that it initiated the request even though it has
+        // no pid of its own. Using both avoids two tempting but wrong shortcuts:
+        // bundle-wide pending would block a sibling Ghostty instance, while
+        // pid-only pending would leave the pinned icon clickable during the
+        // exact shutdown window that triggered this bug.
+        terminationPendingItemIDs.contains(item.id) ||
+        DockTerminationState.isPending(item, pendingKeys: terminationPendingItemKeys)
+    }
+
     func showAllWindows(_ item: DockItem) {
         appLauncherService.showAllWindows(item)
     }
@@ -278,11 +355,144 @@ public final class DockingAppModel: ObservableObject {
     }
 
     func quit(_ item: DockItem) {
-        appLauncherService.quit(item)
+        let requestedProcessIdentifiers = appLauncherService.quit(item)
+        if !requestedProcessIdentifiers.isEmpty {
+            markTerminationPending(item, processIdentifiers: requestedProcessIdentifiers)
+        }
     }
 
     func forceQuit(_ item: DockItem) {
-        appLauncherService.forceQuit(item)
+        let requestedProcessIdentifiers = appLauncherService.forceQuit(item)
+        if !requestedProcessIdentifiers.isEmpty {
+            markTerminationPending(item, processIdentifiers: requestedProcessIdentifiers)
+        }
+    }
+
+    private func markTerminationPending(_ item: DockItem, processIdentifiers: [pid_t]) {
+        let keys = processIdentifiers.compactMap { processIdentifier in
+            DockTerminationState.identityKey(for: item, processIdentifier: processIdentifier)
+        }
+        let pendingKeys = Set(keys)
+
+        guard !pendingKeys.isEmpty else {
+            markTerminationPending(item)
+            return
+        }
+
+        // The standard Dock treats duplicate regular app instances as separate
+        // icons. Pending state therefore follows the process(es) AppKit actually
+        // accepted a Quit/Force Quit request for, instead of the durable app
+        // identity used by pinned items. The fallback below exists for unusual
+        // LaunchServices cases where AppKit cannot report a pid, but the normal
+        // path is per-process so a sibling Ghostty/Calculator icon remains
+        // visible and independently actionable.
+        rememberTerminationRequest(from: item, keys: pendingKeys)
+        for key in pendingKeys {
+            scheduleTerminationReconciliation(for: key)
+        }
+        terminationPendingItemKeys.formUnion(pendingKeys)
+    }
+
+    private func markTerminationPending(_ item: DockItem) {
+        guard let key = DockTerminationState.identityKey(for: item) else {
+            runningObserver.refresh()
+            return
+        }
+
+        scheduleTerminationReconciliation(for: key)
+        rememberTerminationRequest(from: item, keys: [key])
+        terminationPendingItemKeys.insert(key)
+    }
+
+    private func rememberTerminationRequest(from item: DockItem, keys: Set<String>) {
+        guard !keys.isEmpty else {
+            return
+        }
+
+        terminationPendingItemIDs.insert(item.id)
+        terminationPendingKeysByItemID[item.id, default: []].formUnion(keys)
+    }
+
+    private func scheduleTerminationReconciliation(for key: String) {
+        terminationReconciliationTasks[key]?.cancel()
+        terminationReconciliationTasks[key] = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: Self.terminationObservationDelayNanoseconds)
+            } catch {
+                return
+            }
+
+            guard let self else {
+                return
+            }
+
+            // Notion Calendar demonstrates why termination needs an explicit
+            // post-request refresh: its normal AppKit termination request can
+            // change the same pid from a regular Dock-visible app to an
+            // accessory resident process, which does not necessarily produce a
+            // didTerminate notification. A short one-shot refresh catches that
+            // policy change without polling indefinitely or force-killing the
+            // resident app. If the refresh proves the process disappeared, the
+            // onChange path below cancels this task before the final timeout.
+            self.runningObserver.refresh()
+
+            do {
+                try await Task.sleep(
+                    nanoseconds: Self.terminationReconciliationDelayNanoseconds -
+                    Self.terminationObservationDelayNanoseconds
+                )
+            } catch {
+                return
+            }
+
+            // A clean Quit is a request, not a kill. Electron-style resident
+            // apps can acknowledge it and then rebuild their foreground
+            // process, while terminal apps can take a moment to close sessions.
+            // Holding the pending state forever would make Docking lie about an
+            // app that intentionally stayed alive; clearing it immediately
+            // would let the next click relaunch during the shutdown handoff.
+            // This short reconciliation window blocks accidental re-open, then
+            // refreshes from NSWorkspace so the dock settles on the actual
+            // process state instead of our optimistic request state.
+            self.clearTerminationPendingKey(key)
+            self.runningObserver.refresh()
+        }
+    }
+
+    private func clearCompletedTerminationRequests(runningItems: [DockItem]) {
+        let completedKeys = DockTerminationState.completedPendingKeys(
+            pendingKeys: terminationPendingItemKeys,
+            runningItems: runningItems
+        )
+        guard !completedKeys.isEmpty else {
+            return
+        }
+
+        for key in completedKeys {
+            terminationReconciliationTasks[key]?.cancel()
+        }
+        for key in completedKeys {
+            clearTerminationPendingKey(key)
+        }
+    }
+
+    private func clearTerminationPendingKey(_ key: String) {
+        terminationReconciliationTasks[key] = nil
+        terminationPendingItemKeys.remove(key)
+
+        let trackedItemIDs = Array(terminationPendingKeysByItemID.keys)
+        for itemID in trackedItemIDs {
+            guard let keys = terminationPendingKeysByItemID[itemID] else {
+                continue
+            }
+            let remainingKeys = keys.subtracting([key])
+            if remainingKeys.isEmpty {
+                terminationPendingKeysByItemID[itemID] = nil
+                terminationPendingItemIDs.remove(itemID)
+            } else {
+                terminationPendingKeysByItemID[itemID] = remainingKeys
+            }
+        }
     }
 
     func showInFinder(_ item: DockItem) {

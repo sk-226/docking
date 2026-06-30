@@ -14,10 +14,11 @@ struct DockItemView: View {
     }
 
     private var isActive: Bool {
-        guard item.isApplication else {
-            return false
-        }
-        return item.bundleIdentifier == model.activeBundleID
+        model.isActive(item)
+    }
+
+    private var isTerminationPending: Bool {
+        model.isTerminationPending(item)
     }
 
     var body: some View {
@@ -92,6 +93,9 @@ struct DockItemView: View {
         if isTransientRunningItem {
             return "Running, not kept in Docking"
         }
+        if isTerminationPending {
+            return "Quit requested"
+        }
         return isRunning ? "Running" : "Not running"
     }
 
@@ -106,10 +110,28 @@ struct DockItemView: View {
 
     @ViewBuilder
     private var applicationContextMenu: some View {
+        // The system Dock menu is not a pure operating-system template. Apps
+        // can prepend their own entries through AppKit's dock-menu hooks, which
+        // is why Notion Calendar can expose a stronger "Quit Completely" style
+        // command while many ordinary apps cannot. Docking intentionally does
+        // not try to copy those app-provided entries: there is no public,
+        // cross-process API for asking another app for its Dock menu or for
+        // invoking one of those commands with the target app's own semantics.
+        // Mirroring only the generic actions below keeps the menu honest about
+        // what Docking can implement itself, and avoids turning normal Quit
+        // into an app-specific resident-process teardown command.
         Button("Open") {
             model.launch(item)
         }
-        if isRunning {
+        .disabled(isTerminationPending)
+        if isTerminationPending {
+            // A pending Quit is deliberately not treated as "not running yet".
+            // Showing a disabled status row keeps the menu honest while
+            // preventing the tempting Open action from becoming an accidental
+            // relaunch during an app's asynchronous shutdown.
+            Button("Quitting...") {}
+                .disabled(true)
+        } else if isRunning {
             Button("Show All Windows") {
                 model.showAllWindows(item)
             }
@@ -226,4 +248,16 @@ enum DockTerminationMenuPolicy {
     static func title(optionKeyIsPressed: Bool) -> String {
         optionKeyIsPressed ? "Force Quit..." : "Quit"
     }
+}
+
+enum DockContextMenuPolicy {
+    // App-provided Dock menu entries are owned by the target process, not by
+    // LaunchServices or NSWorkspace. A seemingly simple alternative would be to
+    // special-case known apps such as Notion Calendar and add "Quit Completely"
+    // ourselves, but that would guess at private app behavior and would age
+    // badly when vendors rename, remove, or redefine their custom commands.
+    // Keeping this false is a product contract: Docking shows the stable Dock
+    // shape it can execute with public APIs, while app-specific extras remain
+    // available from the real app/system surfaces that own them.
+    static let includesAppProvidedDockMenuItems = false
 }

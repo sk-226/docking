@@ -90,34 +90,74 @@ final class AppLauncherService {
         }
     }
 
-    func quit(_ item: DockItem) {
-        guard let application = runningApplication(for: item) else {
+    @discardableResult
+    func quit(_ item: DockItem) -> [pid_t] {
+        let applications = runningApplications(for: item, selectionPolicy: .termination)
+        guard !applications.isEmpty else {
             DockingLog.dock.notice("Quit ignored because \(item.title) is not running.")
-            return
+            return []
         }
 
-        // This mirrors the normal Dock's Quit action: ask the app to terminate
-        // cleanly first so document-based apps can save state or present their
-        // own confirmation. We do not synthesize menu commands or AppleEvents
-        // because `NSRunningApplication.terminate()` is the public API designed
-        // for this process-level request.
-        if !application.terminate() {
-            DockingLog.dock.error("Could not request quit for \(item.title).")
+        var requestedProcessIdentifiers: [pid_t] = []
+        for application in applications {
+            // This mirrors the normal Dock's Quit action for a single visible
+            // Dock icon: ask that app process to terminate cleanly first so
+            // document-based apps can save state or present their own
+            // confirmation. We intentionally do not fan pid-bound live tiles
+            // out to every process with the same bundle identifier. The
+            // standard Dock was observed with Calculator and TextEdit launched
+            // twice via `open -n`: it displayed two icons, so each icon needs
+            // its own process boundary. A bundle-wide Quit would be simpler,
+            // and it briefly looked like a fix for "the app stayed visible",
+            // but it is not the OS model the user asked us to match.
+            //
+            // We deliberately do not chase accessory/menu-bar resident
+            // processes here. Notion Calendar is the concrete edge case: its
+            // ordinary Quit can leave a menu-bar app alive, while "Quit
+            // Completely" is a separate app-specific command. Docking's normal
+            // Quit should match the system Dock/App-menu contract, not invent a
+            // stronger app-specific full-exit action.
+            //
+            // We still use NSRunningApplication rather than synthesized menu
+            // commands or AppleEvents because it is the public process-level
+            // API AppKit provides. The trade-off is that apps that reject a
+            // clean quit can remain running; Docking reconciles that state
+            // shortly after the request instead of pretending the quit was a
+            // force kill.
+            if application.terminate() {
+                requestedProcessIdentifiers.append(application.processIdentifier)
+            } else {
+                DockingLog.dock.error("Could not request quit for \(item.title) process \(application.processIdentifier).")
+            }
         }
+
+        return requestedProcessIdentifiers
     }
 
-    func forceQuit(_ item: DockItem) {
-        guard let application = runningApplication(for: item) else {
+    @discardableResult
+    func forceQuit(_ item: DockItem) -> [pid_t] {
+        let applications = runningApplications(for: item, selectionPolicy: .termination)
+        guard !applications.isEmpty else {
             DockingLog.dock.notice("Force Quit ignored because \(item.title) is not running.")
-            return
+            return []
         }
 
-        // Force Quit can lose unsaved work. The UI owns the confirmation; this
-        // service stays small and does only the public AppKit process action
-        // once the user has explicitly chosen it.
-        if !application.forceTerminate() {
-            DockingLog.dock.error("Could not force quit \(item.title).")
+        var requestedProcessIdentifiers: [pid_t] = []
+        for application in applications {
+            // Force Quit can lose unsaved work. The UI owns the confirmation;
+            // this service stays small and does only the public AppKit process
+            // action once the user has explicitly chosen it. It follows the
+            // same per-icon targeting as Quit; Force Quit is stronger about
+            // how the selected process exits, not broader about which sibling
+            // instances it selects.
+            if application.forceTerminate() {
+                requestedProcessIdentifiers.append(application.processIdentifier)
+            } else {
+                DockingLog.dock.error("Could not force quit \(item.title) process \(application.processIdentifier).")
+            }
         }
+
+        return requestedProcessIdentifiers
     }
 
     private func resolvedURL(for item: DockItem) -> URL? {
@@ -131,29 +171,149 @@ final class AppLauncherService {
     }
 
     private func runningApplication(for item: DockItem) -> NSRunningApplication? {
+        runningApplications(for: item, selectionPolicy: .foregroundPresentation).first
+    }
+
+    private func runningApplications(
+        for item: DockItem,
+        selectionPolicy: RunningApplicationSelectionPolicy
+    ) -> [NSRunningApplication] {
         guard item.isApplication else {
-            return nil
+            return []
         }
 
+        let matches: [NSRunningApplication]
         if let bundleIdentifier = item.bundleIdentifier {
-            return NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
-                .first { application in
-                    application.activationPolicy == .regular &&
-                    application.processIdentifier != ProcessInfo.processInfo.processIdentifier
+            matches = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
+                .filter { application in
+                    RunningApplicationSelector.matches(
+                        item: item,
+                        application: application,
+                        selectionPolicy: selectionPolicy
+                    )
                 }
+        } else {
+            matches = NSWorkspace.shared.runningApplications.filter { application in
+                RunningApplicationSelector.matches(
+                    item: item,
+                    application: application,
+                    selectionPolicy: selectionPolicy
+                )
+            }
         }
 
-        return NSWorkspace.shared.runningApplications.first { application in
-            guard application.activationPolicy == .regular,
-                  application.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
-                return false
-            }
-            return RunningApplicationMatcher.matches(
-                item: item,
-                applicationBundleIdentifier: application.bundleIdentifier,
-                applicationBundleURL: application.bundleURL
-            )
+        if item.runningProcessIdentifier != nil {
+            return matches
         }
+
+        // A persisted/pinned DockItem is an app identity, not a live process.
+        // When multiple regular instances exist, the standard Dock accounts
+        // for one instance with the pinned icon and exposes siblings as extra
+        // icons. Choosing only the first match keeps this identity item to one
+        // icon's worth of behavior. The additional live items carry pids and
+        // can be acted on independently.
+        return Array(matches.prefix(1))
+    }
+}
+
+struct RunningApplicationSnapshot: Equatable {
+    var processIdentifier: pid_t
+    var activationPolicy: NSApplication.ActivationPolicy
+    var bundleIdentifier: String?
+    var bundleURL: URL?
+
+    init(
+        processIdentifier: pid_t,
+        activationPolicy: NSApplication.ActivationPolicy,
+        bundleIdentifier: String?,
+        bundleURL: URL?
+    ) {
+        self.processIdentifier = processIdentifier
+        self.activationPolicy = activationPolicy
+        self.bundleIdentifier = bundleIdentifier
+        self.bundleURL = bundleURL
+    }
+
+    init(application: NSRunningApplication) {
+        self.init(
+            processIdentifier: application.processIdentifier,
+            activationPolicy: application.activationPolicy,
+            bundleIdentifier: application.bundleIdentifier,
+            bundleURL: application.bundleURL
+        )
+    }
+}
+
+enum RunningApplicationSelectionPolicy {
+    case foregroundPresentation
+    case termination
+
+    func accepts(_ activationPolicy: NSApplication.ActivationPolicy) -> Bool {
+        switch self {
+        case .foregroundPresentation:
+            // Show/Hide are window-presentation actions. Accessory apps can be
+            // real user apps, but AppKit does not guarantee they have ordinary
+            // windows to activate or hide. Keeping this path regular-only
+            // preserves the old behavior for presentation commands and avoids
+            // turning a Dock click into a surprising relaunch request.
+            return activationPolicy == .regular
+        case .termination:
+            // The system Dock's ordinary Quit acts on the visible app identity;
+            // it is not the same as every app's optional "quit completely"
+            // command. Keeping termination regular-only preserves that line for
+            // resident apps such as Notion Calendar, where accessory/menu-bar
+            // state can intentionally survive a normal Quit.
+            return activationPolicy == .regular
+        }
+    }
+}
+
+enum RunningApplicationSelector {
+    static func matches(
+        item: DockItem,
+        application: NSRunningApplication,
+        selectionPolicy: RunningApplicationSelectionPolicy = .foregroundPresentation,
+        currentProcessIdentifier: pid_t = ProcessInfo.processInfo.processIdentifier
+    ) -> Bool {
+        matches(
+            item: item,
+            snapshot: RunningApplicationSnapshot(application: application),
+            selectionPolicy: selectionPolicy,
+            currentProcessIdentifier: currentProcessIdentifier
+        )
+    }
+
+    static func matches(
+        item: DockItem,
+        snapshot: RunningApplicationSnapshot,
+        selectionPolicy: RunningApplicationSelectionPolicy = .foregroundPresentation,
+        currentProcessIdentifier: pid_t
+    ) -> Bool {
+        guard selectionPolicy.accepts(snapshot.activationPolicy),
+              snapshot.processIdentifier != currentProcessIdentifier else {
+            return false
+        }
+
+        if let itemProcessIdentifier = item.runningProcessIdentifier,
+           itemProcessIdentifier != snapshot.processIdentifier {
+            return false
+        }
+
+        // Selection is identity-based with an optional pid boundary. Live
+        // running items carry a pid because the standard Dock exposes duplicate
+        // regular app instances as duplicate icons; pinned items do not carry a
+        // pid because they are durable app shortcuts. The caller supplies the
+        // activation-policy boundary because the policy is part of the user
+        // contract, not just process metadata. In particular, normal Quit stays
+        // regular-only so it does not become an app-specific "quit completely"
+        // command for resident menu-bar apps. In every mode we still exclude
+        // Docking itself and require a bundle/path identity match so helpers
+        // with unrelated identities do not get swept up accidentally.
+        return RunningApplicationMatcher.matches(
+            item: item,
+            applicationBundleIdentifier: snapshot.bundleIdentifier,
+            applicationBundleURL: snapshot.bundleURL
+        )
     }
 }
 
