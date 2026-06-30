@@ -63,8 +63,20 @@ final class RunningAppObserver {
         let items = uniqueKeyedItems.map(\.item)
         let running = Set(items.compactMap(\.bundleIdentifier))
         let frontmostApplication = NSWorkspace.shared.frontmostApplication
-        let active = frontmostApplication?.bundleIdentifier
-        let activeProcessIdentifier = frontmostApplication?.processIdentifier
+        let activeApplicationIsDockVisible = frontmostApplication.map { application in
+            Self.isDockVisibleRunningApplication(
+                activationPolicy: application.activationPolicy,
+                processIdentifier: application.processIdentifier
+            )
+        } ?? false
+        // Active state must be derived from the same visible-Dock boundary as
+        // running state. Accessory/menu-bar residents can be frontmost enough
+        // for NSWorkspace, but showing an active dot for a process that Docking
+        // intentionally excludes from running indicators would contradict the
+        // normal-Quit model and make Notion Calendar-style residents look like
+        // foreground Dock apps after they have left the Dock-visible set.
+        let active = activeApplicationIsDockVisible ? frontmostApplication?.bundleIdentifier : nil
+        let activeProcessIdentifier = activeApplicationIsDockVisible ? frontmostApplication?.processIdentifier : nil
         onChange?(
             Snapshot(
                 runningBundleIDs: running,
@@ -127,6 +139,7 @@ final class RunningAppObserver {
                     processIdentifier: application.processIdentifier,
                     usesSingleDockTile: usesSingleDockTile
                 ),
+                runningTileScope: Self.runningTileScope(usesSingleDockTile: usesSingleDockTile),
                 isPinned: false
             )
         )
@@ -175,6 +188,15 @@ final class RunningAppObserver {
         usesSingleDockTile: Bool
     ) -> pid_t? {
         usesSingleDockTile ? nil : processIdentifier
+    }
+
+    nonisolated static func runningTileScope(usesSingleDockTile: Bool) -> DockRunningTileScope {
+        // The scope travels with transient running items and with pinned items
+        // that consume a running slot. Without it, a nil pid means two
+        // incompatible things: "this is a durable shortcut" and "this is a
+        // live grouped Dock tile." Quit targeting and reconciliation need that
+        // semantic boundary even though the visual icon looks the same.
+        usesSingleDockTile ? .singleAppTile : .process
     }
 
     nonisolated static func isDockVisibleRunningApplication(

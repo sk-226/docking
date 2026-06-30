@@ -839,12 +839,40 @@ func validateRunningApplicationMatcher() throws {
         "unbound pinned app actions should discover regular process candidates without including accessory resident processes"
     )
 
+    let groupedGhosttyTile = DockItem(
+        title: "Ghostty",
+        bundleIdentifier: "com.mitchellh.ghostty",
+        url: URL(fileURLWithPath: "/Applications/Ghostty.app"),
+        iconCacheKey: "com.mitchellh.ghostty",
+        runningTileScope: .singleAppTile,
+        isPinned: false
+    )
+    try expect(
+        RunningApplicationTargetResolver.selectedProcessIdentifiers(
+            item: groupedGhosttyTile,
+            snapshots: ghosttyProcesses,
+            selectionPolicy: .termination,
+            currentProcessIdentifier: 999
+        ) == [101, 102],
+        "a grouped single-Dock-tile app should quit all regular processes represented by that one visible tile"
+    )
+    try expect(
+        RunningApplicationTargetResolver.selectedProcessIdentifiers(
+            item: ghostty,
+            snapshots: ghosttyProcesses,
+            selectionPolicy: .termination,
+            currentProcessIdentifier: 999
+        ) == [101],
+        "an unassigned durable app shortcut should still target only one slot instead of every matching process"
+    )
+
     let liveCalculatorIcon = DockItem(
         title: "Calculator",
         bundleIdentifier: "com.apple.calculator",
         url: URL(fileURLWithPath: "/System/Applications/Calculator.app"),
         iconCacheKey: "com.apple.calculator",
         runningProcessIdentifier: 102,
+        runningTileScope: .process,
         isPinned: false
     )
     let calculatorProcesses = [
@@ -954,6 +982,10 @@ func validateRunningApplicationMatcher() throws {
         "single Dock tile apps should not bind active/running state to one arbitrary pid"
     )
     try expect(
+        RunningAppObserver.runningTileScope(usesSingleDockTile: true) == .singleAppTile,
+        "single Dock tile apps should carry explicit grouped tile scope even though they have no pid"
+    )
+    try expect(
         RunningAppObserver.dockInstanceKey(
             appKey: "com.apple.calculator",
             processIdentifier: 201,
@@ -967,6 +999,10 @@ func validateRunningApplicationMatcher() throws {
             usesSingleDockTile: false
         ) == 201,
         "multi-tile apps should keep pid targeting so one Quit action does not hide a sibling tile"
+    )
+    try expect(
+        RunningAppObserver.runningTileScope(usesSingleDockTile: false) == .process,
+        "multi-tile apps should mark transient items as process-scoped"
     )
 }
 
@@ -1007,6 +1043,14 @@ func validateDockTerminationState() throws {
         runningProcessIdentifier: 301,
         isPinned: false
     )
+    let groupedGhostty = DockItem(
+        title: "Ghostty",
+        bundleIdentifier: "com.mitchellh.ghostty",
+        url: URL(fileURLWithPath: "/Applications/Ghostty.app"),
+        iconCacheKey: "com.mitchellh.ghostty",
+        runningTileScope: .singleAppTile,
+        isPinned: false
+    )
 
     let notionAppKey = try expectNotNil(
         DockTerminationState.appIdentityKey(for: notionCalendar),
@@ -1032,6 +1076,10 @@ func validateDockTerminationState() throws {
         DockTerminationState.identityKey(for: runningGhosttyPathOnly),
         "live path-only apps should produce a process-specific termination identity"
     )
+    let groupedGhosttyKey = try expectNotNil(
+        DockTerminationState.appIdentityKey(for: groupedGhostty),
+        "grouped single-tile apps should still have an app-level termination identity"
+    )
 
     try expect(
         DockTerminationState.isPending(runningNotionCalendar, pendingKeys: [notionProcessKey]),
@@ -1044,6 +1092,32 @@ func validateDockTerminationState() throws {
     try expect(
         DockTerminationState.isPending(runningGhosttyPathOnly, pendingKeys: [runningGhosttyProcessKey]),
         "quit-pending state should also be process-specific for path-only live apps"
+    )
+    let groupedGhosttyPendingKeys = DockTerminationState.pendingKeys(
+        for: groupedGhostty,
+        processIdentifiers: [401, 402]
+    )
+    try expect(
+        groupedGhosttyPendingKeys == [groupedGhosttyKey],
+        "grouped single-Dock-tile apps should use app-level pending state instead of pid keys that the grouped snapshot cannot retain"
+    )
+    try expect(
+        DockTerminationState.isPending(groupedGhostty, pendingKeys: groupedGhosttyPendingKeys),
+        "grouped single-Dock-tile apps should expose pending state on the visible nil-pid tile"
+    )
+    try expect(
+        DockTerminationState.completedPendingKeys(
+            pendingKeys: groupedGhosttyPendingKeys,
+            runningItems: [groupedGhostty]
+        ).isEmpty,
+        "grouped single-Dock-tile pending state should stay pending while the grouped running item is still present"
+    )
+    try expect(
+        DockTerminationState.completedPendingKeys(
+            pendingKeys: groupedGhosttyPendingKeys,
+            runningItems: []
+        ).contains(groupedGhosttyKey),
+        "grouped single-Dock-tile pending state should clear once the grouped running item disappears"
     )
     try expect(
         DockTerminationState.completedPendingKeys(
@@ -1151,6 +1225,7 @@ func validateUnpinnedRunningAppResolver() throws {
         url: URL(fileURLWithPath: "/Applications/Pinned Editor.app"),
         iconCacheKey: "com.example.editor",
         runningProcessIdentifier: 11,
+        runningTileScope: .process,
         isPinned: false
     )
     let secondRunningPinned = DockItem(
@@ -1159,6 +1234,7 @@ func validateUnpinnedRunningAppResolver() throws {
         url: URL(fileURLWithPath: "/Applications/Pinned Editor.app"),
         iconCacheKey: "com.example.editor",
         runningProcessIdentifier: 12,
+        runningTileScope: .process,
         isPinned: false
     )
     let runningTransient = DockItem(
@@ -1167,6 +1243,7 @@ func validateUnpinnedRunningAppResolver() throws {
         url: URL(fileURLWithPath: "/Applications/Zed.app"),
         iconCacheKey: "dev.zed.Zed",
         runningProcessIdentifier: 21,
+        runningTileScope: .process,
         isPinned: false
     )
     let duplicateTransient = DockItem(
@@ -1175,7 +1252,100 @@ func validateUnpinnedRunningAppResolver() throws {
         url: URL(fileURLWithPath: "/Applications/Zed.app"),
         iconCacheKey: "dev.zed.Zed",
         runningProcessIdentifier: 22,
+        runningTileScope: .process,
         isPinned: false
+    )
+
+    let assignedPinned = DockRunningItemResolver.assignedPinnedItems(
+        pinnedItems: [pinned],
+        runningItems: [runningPinned, secondRunningPinned, runningTransient, duplicateTransient]
+    )
+    try expect(
+        assignedPinned.count == 1 &&
+        assignedPinned[0].id == pinned.id &&
+        assignedPinned[0].runningProcessIdentifier == 11 &&
+        assignedPinned[0].runningTileScope == .process,
+        "pinned app display items should inherit the exact running slot they consume"
+    )
+
+    let editorProcesses = [
+        RunningApplicationSnapshot(
+            processIdentifier: 11,
+            activationPolicy: .regular,
+            bundleIdentifier: "com.example.editor",
+            bundleURL: URL(fileURLWithPath: "/Applications/Pinned Editor.app")
+        ),
+        RunningApplicationSnapshot(
+            processIdentifier: 12,
+            activationPolicy: .regular,
+            bundleIdentifier: "com.example.editor",
+            bundleURL: URL(fileURLWithPath: "/Applications/Pinned Editor.app")
+        )
+    ]
+    try expect(
+        RunningApplicationTargetResolver.selectedProcessIdentifiers(
+            item: assignedPinned[0],
+            snapshots: editorProcesses,
+            selectionPolicy: .termination,
+            currentProcessIdentifier: 999
+        ) == [11],
+        "pinned app Quit should target the same pid that the pinned icon consumed from the running snapshot"
+    )
+    try expect(
+        RunningApplicationTargetResolver.selectedProcessIdentifiers(
+            item: secondRunningPinned,
+            snapshots: editorProcesses,
+            selectionPolicy: .termination,
+            currentProcessIdentifier: 999
+        ) == [12],
+        "transient sibling Quit should remain targeted at its own pid after the pinned icon consumes another slot"
+    )
+
+    let pinnedGhostty = DockItem(
+        title: "Ghostty",
+        bundleIdentifier: "com.mitchellh.ghostty",
+        url: URL(fileURLWithPath: "/Applications/Ghostty.app"),
+        iconCacheKey: "com.mitchellh.ghostty"
+    )
+    let groupedRunningGhostty = DockItem(
+        title: "Ghostty",
+        bundleIdentifier: "com.mitchellh.ghostty",
+        url: URL(fileURLWithPath: "/Applications/Ghostty.app"),
+        iconCacheKey: "com.mitchellh.ghostty",
+        runningTileScope: .singleAppTile,
+        isPinned: false
+    )
+    let assignedGhostty = DockRunningItemResolver.assignedPinnedItems(
+        pinnedItems: [pinnedGhostty],
+        runningItems: [groupedRunningGhostty]
+    )
+    try expect(
+        assignedGhostty.count == 1 &&
+        assignedGhostty[0].runningProcessIdentifier == nil &&
+        assignedGhostty[0].runningTileScope == .singleAppTile,
+        "pinned grouped apps should inherit single-tile scope even though the visible item has no pid"
+    )
+    try expect(
+        RunningApplicationTargetResolver.selectedProcessIdentifiers(
+            item: assignedGhostty[0],
+            snapshots: [
+                RunningApplicationSnapshot(
+                    processIdentifier: 31,
+                    activationPolicy: .regular,
+                    bundleIdentifier: "com.mitchellh.ghostty",
+                    bundleURL: URL(fileURLWithPath: "/Applications/Ghostty.app")
+                ),
+                RunningApplicationSnapshot(
+                    processIdentifier: 32,
+                    activationPolicy: .regular,
+                    bundleIdentifier: "com.mitchellh.ghostty",
+                    bundleURL: URL(fileURLWithPath: "/Applications/Ghostty.app")
+                )
+            ],
+            selectionPolicy: .termination,
+            currentProcessIdentifier: 999
+        ) == [31, 32],
+        "pinned grouped app Quit should use the grouped tile scope rather than the durable-shortcut prefix fallback"
     )
 
     let visible = DockRunningItemResolver.unpinnedRunningItems(

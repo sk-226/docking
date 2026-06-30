@@ -202,17 +202,11 @@ final class AppLauncherService {
             }
         }
 
-        if item.runningProcessIdentifier != nil {
-            return matches
-        }
-
-        // A persisted/pinned DockItem is an app identity, not a live process.
-        // When multiple regular instances exist, the standard Dock accounts
-        // for one instance with the pinned icon and exposes siblings as extra
-        // icons. Choosing only the first match keeps this identity item to one
-        // icon's worth of behavior. The additional live items carry pids and
-        // can be acted on independently.
-        return Array(matches.prefix(1))
+        return RunningApplicationTargetResolver.selectedApplications(
+            matches,
+            for: item,
+            selectionPolicy: selectionPolicy
+        )
     }
 }
 
@@ -314,6 +308,72 @@ enum RunningApplicationSelector {
             applicationBundleIdentifier: snapshot.bundleIdentifier,
             applicationBundleURL: snapshot.bundleURL
         )
+    }
+}
+
+enum RunningApplicationTargetResolver {
+    static func selectedApplications(
+        _ matches: [NSRunningApplication],
+        for item: DockItem,
+        selectionPolicy: RunningApplicationSelectionPolicy
+    ) -> [NSRunningApplication] {
+        guard shouldSelectAllMatches(for: item, selectionPolicy: selectionPolicy) else {
+            // A durable pinned DockItem with no runtime assignment is an app
+            // shortcut, not proof that Docking is rendering one shared live
+            // tile. In that fallback case the pinned icon should account for
+            // one standard-Dock slot, leaving sibling pid-bound tiles to the
+            // running-items section. The normal rendered path annotates pinned
+            // items with the consumed pid/scope before they reach this service;
+            // this prefix path exists for non-rendered call sites and stale
+            // snapshots, where selecting every process would be broader than
+            // the visible affordance promises.
+            return Array(matches.prefix(1))
+        }
+        return matches
+    }
+
+    static func selectedProcessIdentifiers(
+        item: DockItem,
+        snapshots: [RunningApplicationSnapshot],
+        selectionPolicy: RunningApplicationSelectionPolicy,
+        currentProcessIdentifier: pid_t
+    ) -> [pid_t] {
+        let matches = snapshots.filter { snapshot in
+            RunningApplicationSelector.matches(
+                item: item,
+                snapshot: snapshot,
+                selectionPolicy: selectionPolicy,
+                currentProcessIdentifier: currentProcessIdentifier
+            )
+        }
+        guard shouldSelectAllMatches(for: item, selectionPolicy: selectionPolicy) else {
+            return Array(matches.prefix(1)).map(\.processIdentifier)
+        }
+        return matches.map(\.processIdentifier)
+    }
+
+    private static func shouldSelectAllMatches(
+        for item: DockItem,
+        selectionPolicy: RunningApplicationSelectionPolicy
+    ) -> Bool {
+        if item.runningProcessIdentifier != nil {
+            // `RunningApplicationSelector` has already reduced the candidate
+            // set to the exact pid. Returning all matches here therefore means
+            // "all matches for this one visible pid-bound tile", not "every
+            // process with the same bundle identifier."
+            return true
+        }
+
+        if selectionPolicy == .termination, item.representsSingleAppRunningTile {
+            // A Ghostty-style item intentionally has no pid because the system
+            // Dock exposes several regular processes as one icon. Treating nil
+            // as a pinned fallback here would make the one visible tile Quit
+            // only an arbitrary process. For termination, the tile should act
+            // at the same grouped app-identity scope that the user can see.
+            return true
+        }
+
+        return false
     }
 }
 

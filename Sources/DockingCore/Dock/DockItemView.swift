@@ -90,11 +90,11 @@ struct DockItemView: View {
         if item.isFolder {
             return "Folder"
         }
-        if isTransientRunningItem {
-            return "Running, not kept in Docking"
-        }
         if isTerminationPending {
             return "Quit requested"
+        }
+        if isTransientRunningItem {
+            return "Running, not kept in Docking"
         }
         return isRunning ? "Running" : "Not running"
     }

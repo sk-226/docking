@@ -12,7 +12,7 @@ struct DockView: View {
             : AnyLayout(HStackLayout(spacing: model.settings.spacing))
 
         layout {
-            ForEach(model.dockItems) { item in
+            ForEach(model.displayDockItems) { item in
                 DockItemView(item: item)
                     .onDrag {
                         NSItemProvider(object: item.id.uuidString as NSString)

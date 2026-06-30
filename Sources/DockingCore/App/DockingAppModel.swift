@@ -105,6 +105,18 @@ public final class DockingAppModel: ObservableObject {
         (settings.calendarEnabled ? 1 : 0) + (settings.weatherEnabled ? 1 : 0)
     }
 
+    var displayDockItems: [DockItem] {
+        // `dockItems` is the persisted user list and must not carry transient
+        // pids. The rendered dock, however, needs to know which live Dock slot
+        // a pinned icon is currently standing in for. Returning display-only
+        // copies lets context-menu actions target the same pid/scope that the
+        // resolver consumed, while preserving clean durable storage.
+        DockRunningItemResolver.assignedPinnedItems(
+            pinnedItems: dockItems,
+            runningItems: runningAppItems
+        )
+    }
+
     var unpinnedRunningItems: [DockItem] {
         // Pending Quit state is not a display filter. The system Dock keeps an
         // app icon tied to the real process/window lifecycle: Ghostty vanishes
@@ -325,9 +337,16 @@ public final class DockingAppModel: ObservableObject {
 
     func isActive(_ item: DockItem) -> Bool {
         guard item.isApplication,
-              !isTerminationPending(item) else {
+              !isTerminationPending(item),
+              isRunning(item) else {
             return false
         }
+        // Active is a stronger visual state than running, so it must not be
+        // allowed to bypass the Dock-visible running filter. NSWorkspace can
+        // report accessory/menu-bar residents as frontmost, but those processes
+        // are intentionally outside Docking's normal Dock model after a standard
+        // Quit. Requiring `isRunning` keeps the active dot from leaking through
+        // for resident leftovers.
         if let runningProcessIdentifier = item.runningProcessIdentifier {
             return runningProcessIdentifier == activeProcessIdentifier
         }
@@ -369,23 +388,22 @@ public final class DockingAppModel: ObservableObject {
     }
 
     private func markTerminationPending(_ item: DockItem, processIdentifiers: [pid_t]) {
-        let keys = processIdentifiers.compactMap { processIdentifier in
-            DockTerminationState.identityKey(for: item, processIdentifier: processIdentifier)
-        }
-        let pendingKeys = Set(keys)
+        let pendingKeys = DockTerminationState.pendingKeys(
+            for: item,
+            processIdentifiers: processIdentifiers
+        )
 
         guard !pendingKeys.isEmpty else {
             markTerminationPending(item)
             return
         }
 
-        // The standard Dock treats duplicate regular app instances as separate
-        // icons. Pending state therefore follows the process(es) AppKit actually
-        // accepted a Quit/Force Quit request for, instead of the durable app
-        // identity used by pinned items. The fallback below exists for unusual
-        // LaunchServices cases where AppKit cannot report a pid, but the normal
-        // path is per-process so a sibling Ghostty/Calculator icon remains
-        // visible and independently actionable.
+        // Pending state follows the visible tile's runtime scope, not one fixed
+        // process rule. Calculator/TextEdit-style tiles use pid keys so sibling
+        // icons remain actionable; Ghostty-style grouped tiles use app-level
+        // keys because the displayed tile itself has no pid. That split is why
+        // `DockTerminationState` owns the key selection instead of this model
+        // deriving pid strings directly from the service result.
         rememberTerminationRequest(from: item, keys: pendingKeys)
         for key in pendingKeys {
             scheduleTerminationReconciliation(for: key)

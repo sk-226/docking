@@ -63,6 +63,27 @@ enum DockTerminationState {
         return nil
     }
 
+    static func pendingKeys(for item: DockItem, processIdentifiers: [pid_t]) -> Set<String> {
+        if item.representsSingleAppRunningTile {
+            // A grouped live tile intentionally hides individual pids because
+            // the standard Dock presents the app as one icon. If we stored
+            // pid-specific pending keys here, the next observer snapshot would
+            // contain only the grouped app-level running item, and the
+            // reconciliation pass would falsely conclude that the pid key had
+            // completed. App-level pending keeps the second-click guard tied to
+            // the same grouped tile the user acted on.
+            return Set([appIdentityKey(for: item)].compactMap { $0 })
+        }
+
+        let processKeys = Set(processIdentifiers.compactMap { processIdentifier in
+            identityKey(for: item, processIdentifier: processIdentifier)
+        })
+        guard !processKeys.isEmpty else {
+            return Set([identityKey(for: item)].compactMap { $0 })
+        }
+        return processKeys
+    }
+
     static func isPending(_ item: DockItem, pendingKeys: Set<String>) -> Bool {
         guard let key = identityKey(for: item) else {
             return false
