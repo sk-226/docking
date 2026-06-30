@@ -2,7 +2,7 @@
 
 Docking is not trying to clone private Dock internals, but the right-click menu
 should cover the public, everyday app-control actions users expect from the
-macOS Dock. This file keeps that scope explicit while the app is still `0.0.0`.
+macOS Dock. This file keeps that scope explicit while the app is still pre-1.0.
 
 ## App icon context menu
 
@@ -43,7 +43,7 @@ Apple Dock mirroring from `persistent-others`.
 | Remove from Docking | Implemented | Removes the Docking item only; it never deletes the folder. |
 | Show in Finder | Implemented | Reveals the folder location in Finder. |
 | Drop files onto a Dock folder to copy/move into that folder | Implemented | Option copies; otherwise same-volume drops move and cross-volume drops copy. Existing-name collisions and recursive folder drops fail with a visible alert instead of overwriting or producing low-level errors. |
-| Documents or arbitrary files as Dock items | Not implemented | The Apple Dock can hold some non-folder items in persistent-others, but Docking keeps this 0.0.0 item model to apps and folders until the UI intentionally supports document launching. |
+| Documents or arbitrary files as Dock items | Not implemented | The Apple Dock can hold some non-folder items in persistent-others, but Docking keeps this pre-1.0 item model to apps and folders until the UI intentionally supports document launching. |
 
 ## Quality bar
 

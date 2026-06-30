@@ -21,15 +21,15 @@ Expected results:
 
 - `DockingValidation` prints `All Docking validation checks passed.`
 - A release app bundle is staged at `dist/Docking.app`.
-- A local release-candidate zip is written to `dist/Docking-0.0.0-macos26.zip`.
-- A tester-facing DMG is written to `dist/Docking-0.0.0-macos26.dmg`.
+- A local release-candidate zip is written to `dist/Docking-0.0.1-macos26.zip`.
+- A tester-facing DMG is written to `dist/Docking-0.0.1-macos26.dmg`.
 - Matching checksum files are written for the zip and DMG.
 - The zip contains the expected `Docking.app` bundle root, executable,
   `Info.plist`, app icon, and menu bar template icon.
 - The DMG contains `Docking.app`, the same required bundle files, and an
   Applications symlink for drag-install testing.
 - Both checksum files validate with `shasum -c`.
-- Both bundle version values are `0.0.0`.
+- Both bundle version values are `0.0.1`.
 - The bundle identifier is `app.docking.docking`.
 - The bundle minimum system version is `26.0`.
 - Calendar and Location usage descriptions match the reviewed Docking-specific
@@ -52,9 +52,10 @@ Expected results:
   artifacts, attaches the same files to a draft GitHub Release when no published
   release exists, and refuses to mutate assets that were already published from
   a reviewed local candidate.
-- The Homebrew cask at `Casks/docking.rb` points at the published DMG, uses the
-  release DMG checksum, requires macOS 26 or newer, and passes the workflow's
-  `brew audit --cask --strict --online` check.
+- The Homebrew cask at `Casks/docking.rb` points at the release DMG, uses the
+  release DMG checksum, requires macOS 26 or newer, passes strict local cask
+  audit during release-candidate review, and passes `brew audit --cask --strict
+  --online` after the GitHub Release asset is public.
 
 `./script/build_and_run.sh --verify` remains the quick launch smoke test. The
 release gate packages without launching so an artifact inspection does not also
@@ -74,8 +75,18 @@ Expected results:
 - The unified log contains no SwiftUI `Publishing changes from within view
   updates` warning for Docking during launch.
 
-Latest automated evidence: passed 2026-06-29 on the current release-candidate
-path. The run created `dist/Docking-0.0.0-macos26.zip` and
+Latest automated evidence: passed 2026-06-30 on the `0.0.1`
+release-candidate path. The run created `dist/Docking-0.0.1-macos26.zip` and
+`dist/Docking-0.0.1-macos26.dmg`, verified the staged app signature, verified
+the archive contents and checksum files, and confirmed that unprovisioned builds
+omit the WeatherKit entitlement so Weather uses the Open-Meteo real-data
+fallback instead of failing at launch. The generated zip SHA-256 was
+`e364bcad70418c634c4afb0adf45702a55c120fbc553eb661fa5569585dcb759`; the
+generated DMG SHA-256 was
+`c673f3d2cb485b0bbd0f78de3a4546e690720798eec9cd381c55272ce4fe0be8`.
+
+Previous automated evidence: passed 2026-06-29 on the `0.0.0`
+release-candidate path. The run created `dist/Docking-0.0.0-macos26.zip` and
 `dist/Docking-0.0.0-macos26.dmg`, verified the staged app signature, verified
 the archive contents and checksum files, and confirmed that unprovisioned builds
 omit the WeatherKit entitlement so Weather uses the Open-Meteo real-data
@@ -84,7 +95,7 @@ Docking resident after the settle window, sampled it at 0.0% CPU with roughly
 160 MB RSS, and showed no SwiftUI publish-within-update warning in the launch
 log.
 
-Release evidence: `Release/0.0.0 candidate` was merged on 2026-06-29 as
+Previous release evidence: `Release/0.0.0 candidate` was merged on 2026-06-29 as
 `bfb50cc`, with the `v0.0.0` tag on `c30222c`. The published GitHub Release
 contains the DMG, zip, and matching checksum files. The Homebrew cask points at
 the published DMG checksum
@@ -148,6 +159,6 @@ For future release handoffs, start only after:
   release notes, or a milestone issue. Keep `README.md` limited to user-facing
   installation and usage facts.
 - The worktree has no unrelated local changes mixed into the app milestone.
-- The branch/commit message states that this is a `0.0.0` pre-release native
+- The branch/commit message states that this is a pre-release native
   macOS app and that Apple Dock preferences remain overlay-only until the user
   explicitly enables primary dock mode.

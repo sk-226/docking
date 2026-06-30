@@ -4,7 +4,7 @@ set -euo pipefail
 MODE="${1:-run}"
 APP_NAME="Docking"
 BUNDLE_ID="app.docking.docking"
-APP_VERSION="0.0.0"
+APP_VERSION="0.0.1"
 MIN_SYSTEM_VERSION="26.0"
 CONFIGURATION="${CONFIGURATION:-debug}"
 
@@ -92,7 +92,7 @@ detect_weatherkit_profile() {
   # and build it locally will also get Open-Meteo unless they provision their
   # own bundle ID, or unless they run a distribution build signed by someone who
   # has enabled WeatherKit for this app. Auto-detecting a matching local profile
-  # keeps ordinary 0.0.0 development builds launchable while letting a properly
+  # keeps ordinary pre-release development builds launchable while letting a properly
   # provisioned machine use WeatherKit without a second signing script.
   while IFS= read -r profile_path; do
     if profile_supports_weatherkit "$profile_path"; then

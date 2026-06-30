@@ -868,7 +868,7 @@ struct WeatherSnapshot: Codable, Equatable {
     // in the place the weather describes, not wherever the user happens to be.
     var timeZoneIdentifier: String?
     // Every persisted weather snapshot should identify its provider. Docking is
-    // still a 0.0.0 app, so a cache without this field is simply stale data to
+    // still pre-1.0, so a cache without this field is simply stale data to
     // discard, not a format we need to preserve.
     var dataSource: WeatherDataSource
 }

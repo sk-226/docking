@@ -25,7 +25,7 @@ final class SettingsStore {
             return try decoder.decode(DockingSettings.self, from: data)
         } catch {
             // A corrupted settings blob should not prevent a dock from appearing.
-            // Because this is still a 0.0.0 app, obsolete settings shapes are
+            // Because this is still a pre-1.0 app, obsolete settings shapes are
             // discarded instead of translated. Re-seeding from Apple Dock keeps
             // the app usable without touching system settings.
             DockingLog.app.error("Failed to decode settings: \(error.localizedDescription)")

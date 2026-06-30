@@ -1,6 +1,6 @@
 # Performance Notes
 
-`Docking` is a resident UI, so the 0.0.0 app treats idle cost as a product
+`Docking` is a resident UI, so the pre-1.0 app treats idle cost as a product
 requirement. Prefer event-driven updates, cached data, and bounded refresh work
 over constant polling or visual effects that keep redrawing while the user is
 not interacting with the dock.
@@ -146,7 +146,7 @@ window it needs and should not store more calendar data than the panel displays.
 
 ## Trade-Offs
 
-- The 0.0.0 app uses a translucent material panel with a small footprint. A
+- The pre-1.0 app uses a translucent material panel with a small footprint. A
   larger always-on blur window was avoided because transparent material over a
   large area can become an idle rendering cost.
 - Current-location weather is not simulated. Fake data would make the UI look

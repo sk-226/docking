@@ -116,7 +116,7 @@ final class DockSettingsRestoreService {
     func restoreIfSnapshotExists() throws -> DockRestoreResult {
         guard let snapshot = try snapshotService.loadSnapshot() else {
             return DockRestoreResult(
-                userMessage: "No Dock restore snapshot exists. Docking 0.0.0 has not changed Apple Dock settings."
+                userMessage: "No Dock restore snapshot exists. Docking \(AppMetadata.version) has not changed Apple Dock settings."
             )
         }
         guard let dockDefaults else {

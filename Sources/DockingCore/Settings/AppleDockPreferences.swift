@@ -5,7 +5,7 @@ enum AppleDockPreferences {
     static func visibilityMode(from dockDefaults: UserDefaults? = UserDefaults(suiteName: "com.apple.dock")) -> DockVisibilityMode {
         guard let autohide = dockAutohideValue(from: dockDefaults) else {
             // If the Dock domain cannot be read, prefer the mode the user asked
-            // for in this 0.0.0 build: Docking should behave like an auto-hide
+            // for in this pre-release build: Docking should behave like an auto-hide
             // dock instead of permanently covering the workspace. This is a
             // product default, not an old-version migration path.
             return .autoHide
@@ -143,7 +143,7 @@ enum AppleDockPreferences {
         }
 
         // Keep application packages in persistent-apps. The Apple Dock can put
-        // unusual file tiles in persistent-others, but this 0.0.0 build should
+        // unusual file tiles in persistent-others, but this pre-1.0 build should
         // not grow a document-launcher abstraction until the UI intentionally
         // supports it.
         return values?.contentType?.conforms(to: .applicationBundle) != true
@@ -203,7 +203,7 @@ enum AppleDockPreferences {
         // The Dock preference domain is maintained by macOS and has historically
         // represented booleans as property-list numbers in some paths. Treating
         // NSNumber explicitly keeps this read-only seed robust without adding a
-        // broader migration layer for Docking's own 0.0.0 settings format.
+        // broader migration layer for Docking's own pre-1.0 settings format.
         if let value = rawValue as? NSNumber {
             return value.boolValue
         }
