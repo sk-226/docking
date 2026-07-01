@@ -127,6 +127,13 @@ jobs:
         id: publish
         env:
           GH_TOKEN: ${{ github.token }}
+          # This job intentionally does not checkout the repository before
+          # publishing. The release command only needs the downloaded artifacts,
+          # and adding checkout just to recreate a git remote would reintroduce
+          # credential-bearing repository state into the write-scoped job.
+          # `gh release` cannot infer a repository from a remote that does not
+          # exist in this fresh job, so provide the repository context directly.
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
