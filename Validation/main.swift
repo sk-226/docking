@@ -262,21 +262,71 @@ func validateDockPositionFrames() throws {
 
         switch position {
         case .bottomCenter, .bottomLeft, .bottomRight:
-            // The trigger must touch the physical screen edge, not merely fit
-            // inside visibleFrame. visibleFrame can be shifted by Apple's Dock,
-            // which is exactly what made Docking's auto-hide reveal feel dead
-            // when the standard Dock was still visible.
             try expect(abs(trigger.minY - screen.frame.minY) < 0.5, "\(position.label) auto-hide trigger should touch the bottom screen edge")
-            try expect(trigger.height >= 4, "\(position.label) auto-hide trigger should have enough thickness to catch pointer entry")
+            try expect(abs(trigger.height - AutoHideTriggerGeometry.panelThickness) < 0.5, "\(position.label) auto-hide trigger strip should keep the AppKit tracking thickness")
+            try expect(
+                AutoHideTriggerGeometry.containsEdgeContact(
+                    NSPoint(x: trigger.midX, y: screen.frame.minY + AutoHideTriggerGeometry.edgeActivationDistance),
+                    triggerFrame: trigger,
+                    screenFrame: screen.frame,
+                    position: position
+                ),
+                "\(position.label) auto-hide trigger should accept physical bottom-edge contact"
+            )
+            try expect(
+                !AutoHideTriggerGeometry.containsEdgeContact(
+                    NSPoint(x: trigger.midX, y: screen.frame.minY + 4),
+                    triggerFrame: trigger,
+                    screenFrame: screen.frame,
+                    position: position
+                ),
+                "\(position.label) auto-hide trigger should ignore pointer movement four points above the edge"
+            )
             let fullBottomTrigger = ScreenPlacementService.edgeTriggerFrame(dockFrame: frame, position: position, on: screen, spansFullBottomEdge: true)
             try expect(abs(fullBottomTrigger.minX - screen.frame.minX) < 0.5, "\(position.label) full-width trigger should start at the screen edge")
             try expect(abs(fullBottomTrigger.width - screen.frame.width) < 0.5, "\(position.label) full-width trigger should cover the whole display bottom")
         case .left:
             try expect(abs(trigger.minX - screen.frame.minX) < 0.5, "left auto-hide trigger should touch the left screen edge")
-            try expect(trigger.width >= 4, "left auto-hide trigger should have enough thickness to catch pointer entry")
+            try expect(abs(trigger.width - AutoHideTriggerGeometry.panelThickness) < 0.5, "left auto-hide trigger strip should keep the AppKit tracking thickness")
+            try expect(
+                AutoHideTriggerGeometry.containsEdgeContact(
+                    NSPoint(x: screen.frame.minX + AutoHideTriggerGeometry.edgeActivationDistance, y: trigger.midY),
+                    triggerFrame: trigger,
+                    screenFrame: screen.frame,
+                    position: position
+                ),
+                "left auto-hide trigger should accept physical left-edge contact"
+            )
+            try expect(
+                !AutoHideTriggerGeometry.containsEdgeContact(
+                    NSPoint(x: screen.frame.minX + 4, y: trigger.midY),
+                    triggerFrame: trigger,
+                    screenFrame: screen.frame,
+                    position: position
+                ),
+                "left auto-hide trigger should ignore pointer movement four points inside the edge"
+            )
         case .right:
             try expect(abs(trigger.maxX - screen.frame.maxX) < 0.5, "right auto-hide trigger should touch the right screen edge")
-            try expect(trigger.width >= 4, "right auto-hide trigger should have enough thickness to catch pointer entry")
+            try expect(abs(trigger.width - AutoHideTriggerGeometry.panelThickness) < 0.5, "right auto-hide trigger strip should keep the AppKit tracking thickness")
+            try expect(
+                AutoHideTriggerGeometry.containsEdgeContact(
+                    NSPoint(x: screen.frame.maxX - AutoHideTriggerGeometry.edgeActivationDistance, y: trigger.midY),
+                    triggerFrame: trigger,
+                    screenFrame: screen.frame,
+                    position: position
+                ),
+                "right auto-hide trigger should accept physical right-edge contact"
+            )
+            try expect(
+                !AutoHideTriggerGeometry.containsEdgeContact(
+                    NSPoint(x: screen.frame.maxX - 4, y: trigger.midY),
+                    triggerFrame: trigger,
+                    screenFrame: screen.frame,
+                    position: position
+                ),
+                "right auto-hide trigger should ignore pointer movement four points inside the edge"
+            )
         }
     }
 }
@@ -1180,10 +1230,23 @@ func validateSettingsStore() throws {
     settings.dockVisibility = .alwaysVisible
     settings.unpinnedRunningAppVisibility = .hidden
     settings.keepAboveOtherWindows = false
+    settings.dockAutoHideResponsePreset = .fast
     settings.calendarWidgetSizePreset = .compact
     settings.weatherWidgetSizePreset = .detailed
     store.save(settings)
     try expect(store.load() == settings, "settings should round-trip through UserDefaults")
+
+    let encodedSettings = try JSONEncoder().encode(settings)
+    let encodedSettingsObject = try JSONSerialization.jsonObject(with: encodedSettings)
+    var legacySettingsObject = try expectNotNil(
+        encodedSettingsObject as? [String: Any],
+        "encoded settings should be representable as a JSON object"
+    )
+    legacySettingsObject.removeValue(forKey: "dockAutoHideResponsePreset")
+    defaults.set(try JSONSerialization.data(withJSONObject: legacySettingsObject), forKey: "DockingSettings.v2")
+    let legacyLoadedSettings = store.load()
+    try expect(legacyLoadedSettings.dockAutoHideResponsePreset == .standard, "legacy settings should default Docking Dock response without resetting other preferences")
+    try expect(legacyLoadedSettings.dockVisibility == settings.dockVisibility, "legacy settings should preserve existing Docking visibility")
 }
 
 func validateSettingsRefreshKeys() throws {
@@ -1416,9 +1479,21 @@ func validateDockWindowLevelToggle() throws {
     try expect(DockPanelController.windowLevel(for: settings) == .normal, "always-on-top toggle should allow ordinary window level")
 }
 
+func validateDockAutoHideResponsePreset() throws {
+    try expect(DockAutoHideResponsePreset.allCases.map(\.label) == ["Default", "Fast", "Instant"], "Dock response presets should expose simple speed labels")
+    try expect(abs(DockAutoHideResponsePreset.standard.revealDelay - 0.5) < 0.000_001, "default Dock response should keep the existing reveal delay")
+    try expect(abs(DockAutoHideResponsePreset.fast.revealDelay - 0.15) < 0.000_001, "fast Dock response should reduce the reveal delay")
+    try expect(DockAutoHideResponsePreset.instant.revealDelay == 0.0, "instant Dock response should reveal without an intentional delay")
+
+    var settings = DockingSettings.default
+    settings.dockAutoHideResponsePreset = .instant
+    try expect(AutoHideController.revealDelay(for: settings) == 0.0, "auto-hide controller should use the Docking Dock response setting")
+}
+
 func validateDefaultSettingsFitEditableRanges() throws {
     let settings = DockingSettings.default
 
+    try expect(settings.dockAutoHideResponsePreset == .standard, "default Docking Dock response should preserve existing reveal timing")
     try expect(DockingSettingLimits.autoHideDelay.contains(settings.autoHideDelay), "default auto-hide delay should be editable in Control Center")
     try expect(abs(DockingSettingLimits.autoHideDelay.lowerBound - 0.05) < 0.000_001, "auto-hide delay should allow near-instant hiding for users who prefer a faster dock")
     try expect(abs(DockingSettingLimits.autoHideDelayStep - 0.05) < 0.000_001, "auto-hide delay should expose fine-grained subsecond adjustment")
@@ -2412,6 +2487,7 @@ func validateRestoreSnapshot() throws {
     let decoded = try JSONDecoder().decode(DockRestoreSnapshot.self, from: data)
     try expect(decoded == snapshot, "restore snapshot should preserve value types")
     try expect(decoded.appVersion == AppMetadata.version, "restore snapshot should carry the current app version")
+    try expect(decoded.capturedKeys == nil, "legacy restore snapshots should decode without captured key metadata")
 
     let snapshotURL = FileManager.default.temporaryDirectory.appendingPathComponent("DockRestoreValidation-\(UUID().uuidString).json")
     defer { try? FileManager.default.removeItem(at: snapshotURL) }
@@ -2451,10 +2527,44 @@ func validateRestoreSnapshot() throws {
     try expect(defaults.object(forKey: "autohide") as? Bool == false, "primary mode restore should put original autohide back")
     try expect(defaults.object(forKey: "autohide-delay") as? Double == 0.4, "primary mode restore should put original autohide delay back")
 
+    let absentSuiteName = "docking.validation.restore-absent.\(UUID().uuidString)"
+    let absentDefaults = UserDefaults(suiteName: absentSuiteName)!
+    defer { absentDefaults.removePersistentDomain(forName: absentSuiteName) }
+    let absentSnapshotURL = FileManager.default.temporaryDirectory.appendingPathComponent("DockRestoreAbsentValidation-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: absentSnapshotURL) }
+    let absentSnapshotService = DockSettingsSnapshotService(fileURL: absentSnapshotURL, dockDefaults: absentDefaults)
+    let absentRestoreService = DockSettingsRestoreService(snapshotService: absentSnapshotService, dockDefaults: absentDefaults)
+    absentDefaults.set(false, forKey: "autohide")
+    try absentRestoreService.ensureSnapshotExists()
+    let absentSnapshot = try expectNotNil(absentSnapshotService.loadSnapshot(), "restore snapshot should be created before Dock defaults writes")
+    try expect(absentSnapshot.values["autohide-delay"] == nil, "snapshot should not invent absent Dock preference values")
+    try expect(absentSnapshot.capturedKeys?.contains("autohide-delay") == true, "snapshot should remember inspected keys even when values were absent")
+    absentDefaults.set(1000.0, forKey: "autohide-delay")
+    absentDefaults.set(0.0, forKey: "autohide-time-modifier")
+    _ = try absentRestoreService.restoreIfSnapshotExists()
+    try expect(absentDefaults.object(forKey: "autohide-delay") == nil, "restore should delete a captured Dock preference that was originally absent")
+    try expect(absentDefaults.object(forKey: "autohide-time-modifier") == nil, "restore should delete every absent captured Dock response key")
+    let absentManualInstructions = absentRestoreService.manualRestoreInstructions().text
+    try expect(absentManualInstructions.contains("defaults delete com.apple.dock autohide-delay"), "manual restore should include delete commands for absent captured keys")
+    try expect(absentManualInstructions.contains("defaults delete com.apple.dock autohide-time-modifier"), "manual restore should include delete commands for absent captured response keys")
+
+    let legacySuiteName = "docking.validation.restore-legacy.\(UUID().uuidString)"
+    let legacyDefaults = UserDefaults(suiteName: legacySuiteName)!
+    defer { legacyDefaults.removePersistentDomain(forName: legacySuiteName) }
+    let legacySnapshotURL = FileManager.default.temporaryDirectory.appendingPathComponent("DockRestoreLegacyValidation-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: legacySnapshotURL) }
+    let legacySnapshotService = DockSettingsSnapshotService(fileURL: legacySnapshotURL, dockDefaults: legacyDefaults)
+    let legacyRestoreService = DockSettingsRestoreService(snapshotService: legacySnapshotService, dockDefaults: legacyDefaults)
+    try legacySnapshotService.saveSnapshot(snapshot)
+    legacyDefaults.set(1000.0, forKey: "autohide-delay")
+    _ = try legacyRestoreService.restoreIfSnapshotExists()
+    try expect(legacyDefaults.object(forKey: "autohide-delay") as? Double == 1000.0, "legacy snapshots without capturedKeys should keep current write-only restore semantics")
+
     let current = snapshotService.currentDockSnapshot()
     try expect(current.values["autohide"] == .bool(false), "current Dock snapshot should read bool preferences")
     try expect(current.values["tilesize"] == .double(36.0), "current Dock snapshot should read numeric preferences")
     try expect(current.values["orientation"] == .string("left"), "current Dock snapshot should read string preferences")
+    try expect(current.capturedKeys == DockSettingsSnapshotService.capturedPreferenceKeys, "current Dock snapshot should record every inspected preference key")
 
     try snapshotService.saveSnapshot(snapshot)
     let manualInstructions = DockSettingsRestoreService(snapshotService: snapshotService, dockDefaults: defaults).manualRestoreInstructions().text
@@ -2494,6 +2604,7 @@ let validations: [(String, () throws -> Void)] = [
     ("specific display selection", validateSpecificDisplaySelection),
     ("dock position frames", validateDockPositionFrames),
     ("auto-hide trigger screens", validateAutoHideTriggerScreens),
+    ("dock auto-hide response preset", validateDockAutoHideResponsePreset),
     ("dock window collection behavior", validateDockingWindowCollectionBehavior),
     ("dock window level toggle", validateDockWindowLevelToggle),
     ("apple dock mirroring", validateAppleDockMirroring),

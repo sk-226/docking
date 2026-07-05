@@ -4,6 +4,20 @@ Docking is not trying to clone private Dock internals, but the right-click menu
 should cover the public, everyday app-control actions users expect from the
 macOS Dock. This file keeps that scope explicit while the app is still pre-1.0.
 
+## Auto-hide behavior
+
+Native Dock timing still needs a live measurement pass after Docking replacement
+mode is disabled. Until those values are recorded, Docking uses conservative
+public-API behavior that avoids the known overlay-scrollbar regression:
+
+| Behavior | Docking implementation | Native measurement status |
+| --- | --- | --- |
+| Reveal trigger geometry | Edge trigger panels remain 8 pt thick for AppKit event delivery, but reveal is gated to pointer contact within 2 pt of the physical screen edge. Pointer movement 4 pt or more inside the display must not reveal the dock. | Pending |
+| Reveal dwell | Edge contact must persist for 0.5 seconds before reveal; leaving the edge cancels the pending reveal. | Pending |
+| Drag-to-edge reveal | File drags use the same edge-contact gate and 0.5 second dwell so the dock can become a drop target without polling. | Pending |
+| Re-hide after passive reveal | After an edge reveal, moving outside both the edge-contact zone and the dock panel schedules hide using the user's auto-hide delay. Widget/folder panels and explicit Show Dock keep the dock visible. | Pending |
+| Full-screen Spaces | Docking applies the same edge-contact gate and dwell in full-screen Spaces and avoids private Space or Accessibility inspection. Native full-screen timing or second-push behavior is not yet encoded. | Pending |
+
 ## App icon context menu
 
 | Capability | Docking status | Notes |

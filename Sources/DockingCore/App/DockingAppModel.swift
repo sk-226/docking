@@ -280,10 +280,33 @@ public final class DockingAppModel: ObservableObject {
     func pointerExitedDock() {
         isPointerInsideDock = false
         holdsDockAfterExplicitShow = false
-        guard !isDockAnchoredPanelVisible else {
+        scheduleAutoHideIfNeeded(pointerLocation: NSEvent.mouseLocation)
+    }
+
+    func scheduleAutoHideIfNeeded(pointerLocation: NSPoint? = nil) {
+        guard shouldScheduleAutoHide(pointerLocation: pointerLocation) else {
             return
         }
         dockPanelController.scheduleAutoHide(model: self)
+    }
+
+    func shouldScheduleAutoHide(pointerLocation: NSPoint? = nil) -> Bool {
+        guard settings.dockVisibility == .autoHide,
+              dockPanelController.isVisible,
+              !holdsDockAfterExplicitShow,
+              !isDockAnchoredPanelVisible else {
+            return false
+        }
+        return !pointerIsInsideDock(pointerLocation: pointerLocation)
+    }
+
+    private func pointerIsInsideDock(pointerLocation: NSPoint?) -> Bool {
+        guard let pointerLocation else {
+            return isPointerInsideDock
+        }
+        let isInside = dockPanelController.containsPointer(at: pointerLocation)
+        isPointerInsideDock = isInside
+        return isInside
     }
 
     func icon(for item: DockItem) -> NSImage {
@@ -691,12 +714,7 @@ public final class DockingAppModel: ObservableObject {
                 guard let self else {
                     return
                 }
-                if self.settings.dockVisibility == .autoHide,
-                   !self.isPointerInsideDock,
-                   !self.holdsDockAfterExplicitShow,
-                   !self.isDockAnchoredPanelVisible {
-                    self.dockPanelController.scheduleAutoHide(model: self)
-                }
+                self.scheduleAutoHideIfNeeded(pointerLocation: NSEvent.mouseLocation)
             }
         )
         if widgetDetailPanelController.isVisible {
@@ -724,12 +742,7 @@ public final class DockingAppModel: ObservableObject {
                 guard let self else {
                     return
                 }
-                if self.settings.dockVisibility == .autoHide,
-                   !self.isPointerInsideDock,
-                   !self.holdsDockAfterExplicitShow,
-                   !self.isDockAnchoredPanelVisible {
-                    self.dockPanelController.scheduleAutoHide(model: self)
-                }
+                self.scheduleAutoHideIfNeeded(pointerLocation: NSEvent.mouseLocation)
             }
         )
 
@@ -1036,11 +1049,7 @@ public final class DockingAppModel: ObservableObject {
     }
 
     private func applySettingsToWindows() {
-        dockPanelController.applySettings(
-            settings,
-            itemCount: visibleAppItemCount,
-            hasSeparatedRunningItems: hasSeparatedRunningItems
-        )
+        dockPanelController.applySettings(model: self)
         switch settings.dockVisibility {
         case .autoHide:
             // Auto-hide is a real visibility mode, not a second checkbox layered
@@ -1048,7 +1057,9 @@ public final class DockingAppModel: ObservableObject {
             // hidden and be revived by the edge trigger, matching standard Dock
             // behavior and avoiding a resident overlay that covers workspace
             // content immediately after launch.
-            if !isPointerInsideDock && !holdsDockAfterExplicitShow && !isDockAnchoredPanelVisible {
+            let pointerInsideVisibleDock = dockPanelController.containsPointer(at: NSEvent.mouseLocation)
+            isPointerInsideDock = pointerInsideVisibleDock
+            if !pointerInsideVisibleDock && !holdsDockAfterExplicitShow && !isDockAnchoredPanelVisible {
                 dockPanelController.hide()
             }
         case .alwaysVisible:
