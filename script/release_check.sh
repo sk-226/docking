@@ -3,7 +3,7 @@ set -euo pipefail
 
 APP_NAME="Docking"
 BUNDLE_ID="app.docking.docking"
-APP_VERSION="0.0.2"
+APP_VERSION="0.0.3"
 MIN_SYSTEM_VERSION="26.0"
 CALENDAR_USAGE_DESCRIPTION="Docking shows your upcoming events in the calendar widget."
 CALENDAR_FULL_ACCESS_DESCRIPTION="Docking needs full calendar access to read upcoming events for the calendar widget."

@@ -96,11 +96,8 @@ final class DockPanelController {
                     hasSeparatedRunningItems: model.hasSeparatedRunningItems
                 )
             },
-            onTriggerContact: { [weak self] _ in
-                guard self?.isVisible == true else {
-                    return
-                }
-                self?.cancelScheduledAutoHide()
+            onTriggerContact: { [weak model] _ in
+                model?.pointerContactedAutoHideTrigger()
             },
             onPointerOutsideTrigger: { [weak model] location in
                 model?.scheduleAutoHideIfNeeded(pointerLocation: location)

@@ -12,6 +12,7 @@ final class AutoHideController {
     private var onPointerOutsideTrigger: ((NSPoint) -> Void)?
     private var pendingRevealTask: Task<Void, Never>?
     private var pendingRevealKey: String?
+    private var revealGate = AutoHideRevealGate()
     private var dockAutoHideResponsePreset: DockAutoHideResponsePreset = .standard
     private var dockPosition: DockPosition = .bottomCenter
 
@@ -43,6 +44,7 @@ final class AutoHideController {
             edgePanels[key] = nil
             edgePanelScreens[key] = nil
             edgePanelScreenFrames[key] = nil
+            revealGate.removeTarget(key)
         }
 
         for triggerScreen in screens {
@@ -73,6 +75,7 @@ final class AutoHideController {
         edgePanels = [:]
         edgePanelScreens = [:]
         edgePanelScreenFrames = [:]
+        revealGate.reset()
         onEnter = nil
         onTriggerContact = nil
         onPointerOutsideTrigger = nil
@@ -101,10 +104,10 @@ final class AutoHideController {
         // docks get one trigger per display so the Docking dock can appear on
         // whichever screen edge the user pushes into, matching the expectation
         // set by Apple's Dock on multi-display systems.
-        panel.contentView = EdgeTriggerView { [weak self] eventKind in
+        panel.contentView = EdgeTriggerView { [weak self] in
             let location = NSEvent.mouseLocation
             Task { @MainActor in
-                self?.handlePointerActivity(at: location, eventKind: eventKind)
+                self?.handlePointerActivity(at: location)
             }
         }
         return panel
@@ -138,11 +141,10 @@ final class AutoHideController {
         // or duplicating events already delivered to `EdgeTriggerView`. We keep
         // the work intentionally tiny: compare the current location against the
         // existing edge-panel frames, then reveal on the matching display.
-        globalMouseMovedMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] event in
+        globalMouseMovedMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] _ in
             let location = NSEvent.mouseLocation
-            let eventKind: EdgeTriggerEventKind = event.type == .leftMouseDragged ? .drag : .move
             Task { @MainActor in
-                self?.handlePointerActivity(at: location, eventKind: eventKind)
+                self?.handlePointerActivity(at: location)
             }
         }
     }
@@ -154,25 +156,39 @@ final class AutoHideController {
         globalMouseMovedMonitor = nil
     }
 
-    private func handlePointerActivity(at location: NSPoint, eventKind: EdgeTriggerEventKind) {
+    private func handlePointerActivity(at location: NSPoint) {
         guard let target = triggerTarget(containing: location) else {
             cancelPendingReveal()
+            revealGate.update(targetKey: nil, requiresSecondPush: false, now: ProcessInfo.processInfo.systemUptime)
             onPointerOutsideTrigger?(location)
             return
         }
 
         onTriggerContact?(location)
-        queueReveal(for: target, eventKind: eventKind)
+        let decision = revealGate.update(
+            targetKey: target.key,
+            requiresSecondPush: target.requiresSecondPush,
+            now: ProcessInfo.processInfo.systemUptime
+        )
+        guard let decision else {
+            return
+        }
+        switch decision {
+        case .ready:
+            queueReveal(for: target)
+        case .waitingForSecondPush:
+            cancelPendingReveal()
+        }
     }
 
-    private func queueReveal(for target: EdgeTriggerTarget, eventKind: EdgeTriggerEventKind) {
+    private func queueReveal(for target: EdgeTriggerTarget) {
         if pendingRevealKey == target.key {
             return
         }
 
         cancelPendingReveal()
         pendingRevealKey = target.key
-        let delay = Self.revealDelay(for: dockAutoHideResponsePreset, eventKind: eventKind)
+        let delay = dockAutoHideResponsePreset.revealDelay
         pendingRevealTask = Task { @MainActor [weak self] in
             do {
                 try await Task.sleep(nanoseconds: Self.nanoseconds(for: delay))
@@ -183,7 +199,8 @@ final class AutoHideController {
                 return
             }
             guard pendingRevealKey == target.key,
-                  triggerTarget(containing: NSEvent.mouseLocation)?.key == target.key else {
+                  triggerTarget(containing: NSEvent.mouseLocation)?.key == target.key,
+                  revealGate.currentTargetCanReveal(target.key) else {
                 cancelPendingReveal()
                 return
             }
@@ -215,7 +232,15 @@ final class AutoHideController {
                 continue
             }
 
-            return EdgeTriggerTarget(key: key, screen: screen)
+            return EdgeTriggerTarget(
+                key: key,
+                screen: screen,
+                requiresSecondPush: AutoHideTriggerGeometry.requiresSecondPush(
+                    screenFrame: screenFrame,
+                    visibleFrame: screen.visibleFrame,
+                    position: dockPosition
+                )
+            )
         }
         return nil
     }
@@ -226,13 +251,6 @@ final class AutoHideController {
 
     nonisolated static func revealDelay(for settings: DockingSettings) -> TimeInterval {
         settings.dockAutoHideResponsePreset.revealDelay
-    }
-
-    private static func revealDelay(for preset: DockAutoHideResponsePreset, eventKind: EdgeTriggerEventKind) -> TimeInterval {
-        switch eventKind {
-        case .move, .drag:
-            return preset.revealDelay
-        }
     }
 
     private func screenKey(_ screen: NSScreen?) -> String {
@@ -250,7 +268,7 @@ final class AutoHideController {
 
 enum AutoHideTriggerGeometry {
     static let panelThickness: CGFloat = 8
-    static let edgeActivationDistance: CGFloat = 2
+    static let edgeActivationDistance: CGFloat = 1
 
     static func containsEdgeContact(
         _ location: NSPoint,
@@ -276,22 +294,85 @@ enum AutoHideTriggerGeometry {
                 && location.x <= screenFrame.maxX
         }
     }
+
+    static func requiresSecondPush(screenFrame: NSRect, visibleFrame: NSRect, position: DockPosition) -> Bool {
+        position.isBottom
+            && abs(visibleFrame.minY - screenFrame.minY) < 1
+            && abs(visibleFrame.maxY - screenFrame.maxY) < 1
+    }
 }
 
 private struct EdgeTriggerTarget {
     let key: String
     let screen: NSScreen
+    let requiresSecondPush: Bool
 }
 
-private enum EdgeTriggerEventKind {
-    case move
-    case drag
+enum AutoHideRevealDecision: Equatable {
+    case ready
+    case waitingForSecondPush
+}
+
+struct AutoHideRevealGate {
+    private static let secondPushWindow: TimeInterval = 1.25
+
+    private var contactKey: String?
+    private var contactCanReveal = false
+    private var lastExitKey: String?
+    private var lastExitTime: TimeInterval?
+
+    @discardableResult
+    mutating func update(targetKey: String?, requiresSecondPush: Bool, now: TimeInterval) -> AutoHideRevealDecision? {
+        guard let targetKey else {
+            if let contactKey {
+                lastExitKey = contactKey
+                lastExitTime = now
+            }
+            contactKey = nil
+            contactCanReveal = false
+            return nil
+        }
+
+        if contactKey != targetKey {
+            contactKey = targetKey
+            contactCanReveal = !requiresSecondPush || isSecondPush(for: targetKey, now: now)
+        }
+
+        return contactCanReveal ? .ready : .waitingForSecondPush
+    }
+
+    mutating func removeTarget(_ key: String) {
+        if contactKey == key {
+            contactKey = nil
+            contactCanReveal = false
+        }
+        if lastExitKey == key {
+            lastExitKey = nil
+            lastExitTime = nil
+        }
+    }
+
+    mutating func reset() {
+        contactKey = nil
+        contactCanReveal = false
+        lastExitKey = nil
+        lastExitTime = nil
+    }
+
+    func currentTargetCanReveal(_ key: String) -> Bool {
+        contactKey == key && contactCanReveal
+    }
+
+    private func isSecondPush(for key: String, now: TimeInterval) -> Bool {
+        lastExitKey == key
+            && lastExitTime.map { now - $0 <= Self.secondPushWindow } == true
+    }
 }
 
 private final class EdgeTriggerView: NSView {
-    private let onPointerActivity: (EdgeTriggerEventKind) -> Void
+    private let onPointerActivity: () -> Void
 
-    init(onPointerActivity: @escaping (EdgeTriggerEventKind) -> Void) {
+    init(onPointerActivity: @escaping () -> Void) {
         self.onPointerActivity = onPointerActivity
         super.init(frame: .zero)
     }
@@ -317,18 +398,14 @@ private final class EdgeTriggerView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        onPointerActivity(.move)
+        onPointerActivity()
     }
 
     override func mouseMoved(with event: NSEvent) {
-        onPointerActivity(.move)
+        onPointerActivity()
     }
 
     override func mouseExited(with event: NSEvent) {
-        onPointerActivity(.move)
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        onPointerActivity(.drag)
+        onPointerActivity()
     }
 }

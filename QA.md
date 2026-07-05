@@ -21,15 +21,15 @@ Expected results:
 
 - `DockingValidation` prints `All Docking validation checks passed.`
 - A release app bundle is staged at `dist/Docking.app`.
-- A local release-candidate zip is written to `dist/Docking-0.0.2-macos26.zip`.
-- A tester-facing DMG is written to `dist/Docking-0.0.2-macos26.dmg`.
+- A local release-candidate zip is written to `dist/Docking-0.0.3-macos26.zip`.
+- A tester-facing DMG is written to `dist/Docking-0.0.3-macos26.dmg`.
 - Matching checksum files are written for the zip and DMG.
 - The zip contains the expected `Docking.app` bundle root, executable,
   `Info.plist`, app icon, and menu bar template icon.
 - The DMG contains `Docking.app`, the same required bundle files, and an
   Applications symlink for drag-install testing.
 - Both checksum files validate with `shasum -c`.
-- Both bundle version values are `0.0.2`.
+- Both bundle version values are `0.0.3`.
 - The bundle identifier is `app.docking.docking`.
 - The bundle minimum system version is `26.0`.
 - Calendar and Location usage descriptions match the reviewed Docking-specific
@@ -76,15 +76,25 @@ Expected results:
 - The unified log contains no SwiftUI `Publishing changes from within view
   updates` warning for Docking during launch.
 
-Latest automated evidence: passed 2026-07-05 in PR #8 on the macOS 26 Actions
+Latest local evidence: passed 2026-07-05 on `fix/auto-hide-edge-behavior`.
+The run created `dist/Docking-0.0.3-macos26.zip` and
+`dist/Docking-0.0.3-macos26.dmg`, verified the staged app signature, verified
+the archive contents and checksum files, and confirmed that unprovisioned builds
+omit the WeatherKit entitlement so Weather uses the Open-Meteo real-data
+fallback instead of failing at launch. The generated zip SHA-256 was
+`a66dba99aca4c0e39429573d07d4aceafc9b280635c2c969cd7431a0a314b2a3`; the
+generated DMG SHA-256 was
+`3ab7e4f829f14cd729130f06b8af9540cf1d74da73ab12ba44e8bc19f63e7e10`. The
+Homebrew cask checksum remains a post-publication follow-up because it must
+match the Actions-built release DMG, not a local or pull-request artifact; the
+online audit is only meaningful once that asset is public.
+
+Previous Actions evidence: passed 2026-07-05 in PR #8 on the macOS 26 Actions
 runner. The run created `dist/Docking-0.0.2-macos26.zip` and
 `dist/Docking-0.0.2-macos26.dmg`, verified the staged app signature, verified
 the archive contents and checksum files, and confirmed that unprovisioned builds
 omit the WeatherKit entitlement so Weather uses the Open-Meteo real-data
-fallback instead of failing at launch. The Homebrew cask checksum remains a
-post-publication follow-up because it must match the Actions-built release DMG,
-not a local or pull-request artifact; the online audit is only meaningful once
-that asset is public.
+fallback instead of failing at launch.
 
 Previous automated evidence: passed 2026-06-30 on the `0.0.1`
 release-candidate path. The run created `dist/Docking-0.0.1-macos26.zip` and
@@ -133,7 +143,7 @@ against that published artifact.
 | Dock accessibility | Show the Dock and inspect the accessibility tree. | Each dock item exposes its own name, running/folder state, and button role; the dock group label does not replace child labels. | Passed 2026-06-28 via Computer Use: dock items reported `button` with app-specific descriptions such as Finder, Zed, Calendar, Weather, and the add item control. |
 | Widget panel toggle | Open Calendar or Weather from Docking's Dock, then click the same widget again. | Detail panel opens without crashing; clicking the same widget closes it; Dock remains reachable while the panel is open. | Passed 2026-06-28: Computer Use confirmed the Weather detail panel opens through the same model action, and the user verified that clicking the widget again closes the panel. Validation covers same-click retoggle suppression so outside-click dismissal cannot immediately reopen the same widget. |
 | Reorder/drop | Reorder items inside the dock and drop an external `.app` or folder. | Ordering persists; app bundles become application items; folders become folder stack items; unsupported plain files are ignored. | Partially passed 2026-06-29 via Computer Use and validation: Items tab reorder still uses explicit up/down controls; validation covers `.app` bundle drops preserving app metadata, folder drops creating stack items, and plain file drops being rejected. Live Finder-to-Docking drag/drop is still not yet manually verified. |
-| Auto-hide | Enable auto-hide and move the pointer away, then hold at the physical screen edge. Also move through bottom-window UI at least 4 pt above the edge. | Dock hides after the configured delay, reveals only after the edge dwell, does not reveal at 4 pt above the edge, and re-hides after a passive edge reveal when the pointer leaves the edge without entering the dock. | Partially covered 2026-07-05 by validation and implementation review: edge panels still touch the physical screen edge, but reveal is gated to a 2 pt contact zone with a 0.5s dwell, the global monitor also handles file drags, and geometric panel containment prevents stale hover state from pinning the dock visible. Native Dock timing and physical pointer-edge reveal still need live measurement/manual verification. |
+| Auto-hide | Enable auto-hide and move the pointer away, then hold at the physical screen edge. Also move through bottom-window UI at least 4 pt above the edge and repeat in a fullscreen app with bottom UI. | Dock hides after the configured delay, reveals only after the edge dwell, does not reveal at 4 pt above the edge, requires a second bottom-edge push in fullscreen-like Spaces, and re-hides after a passive edge reveal when the pointer leaves the edge without entering the dock. | Partially covered 2026-07-05 by validation and implementation review: edge panels still touch the physical screen edge, but reveal is gated to a 1 pt contact zone with the configured dwell, fullscreen-like bottom edges require a second push, raw mouse-drag events no longer reveal because they misfire on bottom scrollbars, and geometric panel containment prevents stale hover state from pinning the dock visible. Native Dock timing and physical pointer-edge reveal still need live measurement/manual verification. |
 | Explicit Show Dock in auto-hide | Enable auto-hide, press Show Dock, close Control Center, and wait beyond the configured delay. | A stale auto-hide task must not immediately hide a dock the user explicitly asked to show. | Passed 2026-06-28 via Computer Use: pressing Show Dock in auto-hide mode, closing Control Center, and waiting beyond the 0.7s delay left the Docking Dock visible and accessible. |
 | Keep above windows | Toggle Control Center > General > Keep above other windows off and on. | Docking uses ordinary window level when off and floating dock level when on, without stealing focus. | Passed 2026-06-28 via Computer Use and validation: General toggle changed OFF and back ON without crashing or moving settings; `DockPanelController.windowLevel(for:)` validates `.normal` when off and `.floating` when on while the panel remains non-activating. |
 | Spaces/full-screen | Toggle all-Spaces/full-screen settings and move through Spaces/full-screen apps. | Dock remains available without stealing focus. | Partially covered 2026-06-28 by validation: dock and edge-trigger panels share the same transient/ignores-cycle collection behavior; default settings include all-Spaces and full-screen auxiliary flags, and turning the toggles off removes those flags. Live Space/full-screen movement is still not yet manually verified. |
