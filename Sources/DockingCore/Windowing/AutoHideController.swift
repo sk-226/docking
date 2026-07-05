@@ -315,6 +315,10 @@ private final class EdgeTriggerView: NSView {
         onPointerActivity(.move)
     }
 
+    override func mouseExited(with event: NSEvent) {
+        onPointerActivity(.move)
+    }
+
     override func mouseDragged(with event: NSEvent) {
         onPointerActivity(.drag)
     }
