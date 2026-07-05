@@ -21,15 +21,15 @@ Expected results:
 
 - `DockingValidation` prints `All Docking validation checks passed.`
 - A release app bundle is staged at `dist/Docking.app`.
-- A local release-candidate zip is written to `dist/Docking-0.0.1-macos26.zip`.
-- A tester-facing DMG is written to `dist/Docking-0.0.1-macos26.dmg`.
+- A local release-candidate zip is written to `dist/Docking-0.0.2-macos26.zip`.
+- A tester-facing DMG is written to `dist/Docking-0.0.2-macos26.dmg`.
 - Matching checksum files are written for the zip and DMG.
 - The zip contains the expected `Docking.app` bundle root, executable,
   `Info.plist`, app icon, and menu bar template icon.
 - The DMG contains `Docking.app`, the same required bundle files, and an
   Applications symlink for drag-install testing.
 - Both checksum files validate with `shasum -c`.
-- Both bundle version values are `0.0.1`.
+- Both bundle version values are `0.0.2`.
 - The bundle identifier is `app.docking.docking`.
 - The bundle minimum system version is `26.0`.
 - Calendar and Location usage descriptions match the reviewed Docking-specific
@@ -75,7 +75,17 @@ Expected results:
 - The unified log contains no SwiftUI `Publishing changes from within view
   updates` warning for Docking during launch.
 
-Latest automated evidence: passed 2026-06-30 on the `0.0.1`
+Latest automated evidence: passed 2026-07-05 on the `0.0.2`
+release-candidate path. The run created `dist/Docking-0.0.2-macos26.zip` and
+`dist/Docking-0.0.2-macos26.dmg`, verified the staged app signature, verified
+the archive contents and checksum files, and confirmed that unprovisioned builds
+omit the WeatherKit entitlement so Weather uses the Open-Meteo real-data
+fallback instead of failing at launch. The generated zip SHA-256 was
+`5e623df053b7de99ac7105f8ab04982fd46e34f3bf5810759a08826b0a27231f`; the
+generated DMG SHA-256 was
+`923360ac37536d7b6c4675952039677a93889be7281e12b829b637ecd46498dc`.
+
+Previous automated evidence: passed 2026-06-30 on the `0.0.1`
 release-candidate path. The run created `dist/Docking-0.0.1-macos26.zip` and
 `dist/Docking-0.0.1-macos26.dmg`, verified the staged app signature, verified
 the archive contents and checksum files, and confirmed that unprovisioned builds
@@ -87,7 +97,7 @@ generated DMG SHA-256 was
 published Actions-built `v0.0.1` DMG is the cask source of truth and has
 SHA-256 `268df87acd3af003befc2c2fd7b15f4e8c3167867fe969969fe340e98da23195`.
 
-Previous automated evidence: passed 2026-06-29 on the `0.0.0`
+Earlier automated evidence: passed 2026-06-29 on the `0.0.0`
 release-candidate path. The run created `dist/Docking-0.0.0-macos26.zip` and
 `dist/Docking-0.0.0-macos26.dmg`, verified the staged app signature, verified
 the archive contents and checksum files, and confirmed that unprovisioned builds
