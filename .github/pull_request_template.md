@@ -1,8 +1,8 @@
-# Docking 0.0.2 Pre-Release Candidate
+# Docking 0.0.3 Pre-Release Candidate
 
 ## Scope
 
-This PR is for the native macOS `Docking` 0.0.2 pre-release app candidate.
+This PR is for the native macOS `Docking` 0.0.3 pre-release app candidate.
 
 Apple Dock preferences remain overlay-only by default. Primary Dock mode is
 opt-in, confirmation-gated, and restoreable from Control Center > Restore.
@@ -10,10 +10,10 @@ opt-in, confirmation-gated, and restoreable from Control Center > Restore.
 ## Local Release Gate
 
 - [ ] `./script/release_check.sh` passes on this branch.
-- [ ] The generated fallback artifact is `dist/Docking-0.0.2-macos26.zip`.
-- [ ] The generated tester artifact is `dist/Docking-0.0.2-macos26.dmg`.
-- [ ] The generated checksums are `dist/Docking-0.0.2-macos26.zip.sha256` and
-      `dist/Docking-0.0.2-macos26.dmg.sha256`.
+- [ ] The generated fallback artifact is `dist/Docking-0.0.3-macos26.zip`.
+- [ ] The generated tester artifact is `dist/Docking-0.0.3-macos26.dmg`.
+- [ ] The generated checksums are `dist/Docking-0.0.3-macos26.zip.sha256` and
+      `dist/Docking-0.0.3-macos26.dmg.sha256`.
 - [ ] The zip and DMG SHA-256 values from `release_check.sh` are recorded in Notes.
 - [ ] The worktree contains no unrelated local changes.
 
@@ -21,8 +21,8 @@ opt-in, confirmation-gated, and restoreable from Control Center > Restore.
 
 - [ ] `.github/workflows/release-candidate.yml` is present and uses the same
       `./script/release_check.sh` gate.
-- [ ] The workflow uploads both `Docking-0.0.2-macos26.zip` and
-      `Docking-0.0.2-macos26.dmg` with their `.sha256` files.
+- [ ] The workflow uploads both `Docking-0.0.3-macos26.zip` and
+      `Docking-0.0.3-macos26.dmg` with their `.sha256` files.
 - [ ] Tag-triggered runs create/update only draft Release assets, and leave
       already-published Release assets unchanged.
 - [ ] If `Casks/docking.rb` changes, its checksum comes from the Actions-built

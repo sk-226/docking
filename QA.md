@@ -21,15 +21,15 @@ Expected results:
 
 - `DockingValidation` prints `All Docking validation checks passed.`
 - A release app bundle is staged at `dist/Docking.app`.
-- A local release-candidate zip is written to `dist/Docking-0.0.2-macos26.zip`.
-- A tester-facing DMG is written to `dist/Docking-0.0.2-macos26.dmg`.
+- A local release-candidate zip is written to `dist/Docking-0.0.3-macos26.zip`.
+- A tester-facing DMG is written to `dist/Docking-0.0.3-macos26.dmg`.
 - Matching checksum files are written for the zip and DMG.
 - The zip contains the expected `Docking.app` bundle root, executable,
   `Info.plist`, app icon, and menu bar template icon.
 - The DMG contains `Docking.app`, the same required bundle files, and an
   Applications symlink for drag-install testing.
 - Both checksum files validate with `shasum -c`.
-- Both bundle version values are `0.0.2`.
+- Both bundle version values are `0.0.3`.
 - The bundle identifier is `app.docking.docking`.
 - The bundle minimum system version is `26.0`.
 - Calendar and Location usage descriptions match the reviewed Docking-specific
@@ -76,15 +76,25 @@ Expected results:
 - The unified log contains no SwiftUI `Publishing changes from within view
   updates` warning for Docking during launch.
 
-Latest automated evidence: passed 2026-07-05 in PR #8 on the macOS 26 Actions
+Latest local evidence: passed 2026-07-05 on `fix/auto-hide-edge-behavior`.
+The run created `dist/Docking-0.0.3-macos26.zip` and
+`dist/Docking-0.0.3-macos26.dmg`, verified the staged app signature, verified
+the archive contents and checksum files, and confirmed that unprovisioned builds
+omit the WeatherKit entitlement so Weather uses the Open-Meteo real-data
+fallback instead of failing at launch. The generated zip SHA-256 was
+`a66dba99aca4c0e39429573d07d4aceafc9b280635c2c969cd7431a0a314b2a3`; the
+generated DMG SHA-256 was
+`3ab7e4f829f14cd729130f06b8af9540cf1d74da73ab12ba44e8bc19f63e7e10`. The
+Homebrew cask checksum remains a post-publication follow-up because it must
+match the Actions-built release DMG, not a local or pull-request artifact; the
+online audit is only meaningful once that asset is public.
+
+Previous Actions evidence: passed 2026-07-05 in PR #8 on the macOS 26 Actions
 runner. The run created `dist/Docking-0.0.2-macos26.zip` and
 `dist/Docking-0.0.2-macos26.dmg`, verified the staged app signature, verified
 the archive contents and checksum files, and confirmed that unprovisioned builds
 omit the WeatherKit entitlement so Weather uses the Open-Meteo real-data
-fallback instead of failing at launch. The Homebrew cask checksum remains a
-post-publication follow-up because it must match the Actions-built release DMG,
-not a local or pull-request artifact; the online audit is only meaningful once
-that asset is public.
+fallback instead of failing at launch.
 
 Previous automated evidence: passed 2026-06-30 on the `0.0.1`
 release-candidate path. The run created `dist/Docking-0.0.1-macos26.zip` and
