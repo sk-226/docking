@@ -75,15 +75,17 @@ Expected results:
 - The unified log contains no SwiftUI `Publishing changes from within view
   updates` warning for Docking during launch.
 
-Latest automated evidence: passed 2026-07-05 on the `0.0.2`
-release-candidate path. The run created `dist/Docking-0.0.2-macos26.zip` and
+Latest automated evidence: passed 2026-07-05 in PR #8 on the macOS 26 Actions
+runner. The run created `dist/Docking-0.0.2-macos26.zip` and
 `dist/Docking-0.0.2-macos26.dmg`, verified the staged app signature, verified
 the archive contents and checksum files, and confirmed that unprovisioned builds
 omit the WeatherKit entitlement so Weather uses the Open-Meteo real-data
 fallback instead of failing at launch. The generated zip SHA-256 was
-`5e623df053b7de99ac7105f8ab04982fd46e34f3bf5810759a08826b0a27231f`; the
+`93bb9490c9f471bc1c90922979dd0e56e43e1d765b8cfa46c88580ba6b1fed86`; the
 generated DMG SHA-256 was
-`923360ac37536d7b6c4675952039677a93889be7281e12b829b637ecd46498dc`.
+`1351e7e1a4795dc1445dd93495634254a0623085657eeaf440f64e1fdb9f2392`. The
+Homebrew cask uses the Actions-built DMG checksum because the release workflow
+publishes runner-built artifacts.
 
 Previous automated evidence: passed 2026-06-30 on the `0.0.1`
 release-candidate path. The run created `dist/Docking-0.0.1-macos26.zip` and
