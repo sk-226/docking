@@ -21,15 +21,15 @@ Expected results:
 
 - `DockingValidation` prints `All Docking validation checks passed.`
 - A release app bundle is staged at `dist/Docking.app`.
-- A local release-candidate zip is written to `dist/Docking-0.0.1-macos26.zip`.
-- A tester-facing DMG is written to `dist/Docking-0.0.1-macos26.dmg`.
+- A local release-candidate zip is written to `dist/Docking-0.0.2-macos26.zip`.
+- A tester-facing DMG is written to `dist/Docking-0.0.2-macos26.dmg`.
 - Matching checksum files are written for the zip and DMG.
 - The zip contains the expected `Docking.app` bundle root, executable,
   `Info.plist`, app icon, and menu bar template icon.
 - The DMG contains `Docking.app`, the same required bundle files, and an
   Applications symlink for drag-install testing.
 - Both checksum files validate with `shasum -c`.
-- Both bundle version values are `0.0.1`.
+- Both bundle version values are `0.0.2`.
 - The bundle identifier is `app.docking.docking`.
 - The bundle minimum system version is `26.0`.
 - Calendar and Location usage descriptions match the reviewed Docking-specific
@@ -52,10 +52,11 @@ Expected results:
   artifacts, attaches the same files to a draft GitHub Release when no published
   release exists, and refuses to mutate assets that were already published from
   a reviewed local candidate.
-- The Homebrew cask at `Casks/docking.rb` points at the release DMG, uses the
-  release DMG checksum, requires macOS 26 or newer, passes strict local cask
-  audit during release-candidate review, and passes `brew audit --cask --strict
-  --online` after the GitHub Release asset is public.
+- The Homebrew cask at `Casks/docking.rb` stays on the latest published DMG
+  until the Actions-built release DMG checksum is known. Draft release assets
+  can establish that SHA, but `brew audit --cask --strict --online` only works
+  after publication, so the clearest operation is to update the cask after the
+  release is public.
 
 `./script/build_and_run.sh --verify` remains the quick launch smoke test. The
 release gate packages without launching so an artifact inspection does not also
@@ -75,7 +76,17 @@ Expected results:
 - The unified log contains no SwiftUI `Publishing changes from within view
   updates` warning for Docking during launch.
 
-Latest automated evidence: passed 2026-06-30 on the `0.0.1`
+Latest automated evidence: passed 2026-07-05 in PR #8 on the macOS 26 Actions
+runner. The run created `dist/Docking-0.0.2-macos26.zip` and
+`dist/Docking-0.0.2-macos26.dmg`, verified the staged app signature, verified
+the archive contents and checksum files, and confirmed that unprovisioned builds
+omit the WeatherKit entitlement so Weather uses the Open-Meteo real-data
+fallback instead of failing at launch. The Homebrew cask checksum remains a
+post-publication follow-up because it must match the Actions-built release DMG,
+not a local or pull-request artifact; the online audit is only meaningful once
+that asset is public.
+
+Previous automated evidence: passed 2026-06-30 on the `0.0.1`
 release-candidate path. The run created `dist/Docking-0.0.1-macos26.zip` and
 `dist/Docking-0.0.1-macos26.dmg`, verified the staged app signature, verified
 the archive contents and checksum files, and confirmed that unprovisioned builds
@@ -87,7 +98,7 @@ generated DMG SHA-256 was
 published Actions-built `v0.0.1` DMG is the cask source of truth and has
 SHA-256 `268df87acd3af003befc2c2fd7b15f4e8c3167867fe969969fe340e98da23195`.
 
-Previous automated evidence: passed 2026-06-29 on the `0.0.0`
+Earlier automated evidence: passed 2026-06-29 on the `0.0.0`
 release-candidate path. The run created `dist/Docking-0.0.0-macos26.zip` and
 `dist/Docking-0.0.0-macos26.dmg`, verified the staged app signature, verified
 the archive contents and checksum files, and confirmed that unprovisioned builds
