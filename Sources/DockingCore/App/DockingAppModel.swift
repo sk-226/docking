@@ -97,6 +97,7 @@ public final class DockingAppModel: ObservableObject {
     // This flag is cleared as soon as the pointer actually enters or exits the
     // dock region, returning control to the normal auto-hide lifecycle.
     private var holdsDockAfterExplicitShow = false
+    private var dockReentryGate = AutoHideDockReentryGate()
     private static let settingsSaveDelayNanoseconds: UInt64 = 350_000_000
     private static let terminationObservationDelayNanoseconds: UInt64 = 750_000_000
     private static let terminationReconciliationDelayNanoseconds: UInt64 = 2_500_000_000
@@ -241,6 +242,7 @@ public final class DockingAppModel: ObservableObject {
     }
 
     public func showDock() {
+        dockReentryGate.reset()
         holdsDockAfterExplicitShow = true
         dockPanelController.show(model: self)
     }
@@ -260,6 +262,7 @@ public final class DockingAppModel: ObservableObject {
     }
 
     public func hideDock() {
+        dockReentryGate.reset()
         holdsDockAfterExplicitShow = false
         dockPanelController.hide()
     }
@@ -272,15 +275,35 @@ public final class DockingAppModel: ObservableObject {
     }
 
     func pointerEnteredDock() {
-        isPointerInsideDock = true
+        let pointerIsInsideDock = dockPanelController.containsPointer(at: NSEvent.mouseLocation)
+        isPointerInsideDock = pointerIsInsideDock
         holdsDockAfterExplicitShow = false
+        guard !dockReentryGate.shouldIgnoreDockReentry(
+            dockVisibility: settings.dockVisibility,
+            pointerIsInsideDock: pointerIsInsideDock
+        ) else {
+            return
+        }
+        dockReentryGate.recordDockReentry(
+            dockVisibility: settings.dockVisibility,
+            pointerIsInsideDock: pointerIsInsideDock
+        )
         dockPanelController.show(model: self)
     }
 
     func pointerExitedDock() {
         isPointerInsideDock = false
         holdsDockAfterExplicitShow = false
+        dockReentryGate.recordDockExit(dockVisibility: settings.dockVisibility)
         scheduleAutoHideIfNeeded(pointerLocation: NSEvent.mouseLocation)
+    }
+
+    func pointerContactedAutoHideTrigger() {
+        dockReentryGate.recordEdgeContact()
+        guard dockPanelController.isVisible else {
+            return
+        }
+        dockPanelController.cancelScheduledAutoHide()
     }
 
     func scheduleAutoHideIfNeeded(pointerLocation: NSPoint? = nil) {
@@ -297,7 +320,14 @@ public final class DockingAppModel: ObservableObject {
               !isDockAnchoredPanelVisible else {
             return false
         }
-        return !pointerIsInsideDock(pointerLocation: pointerLocation)
+        let pointerIsInsideDock = pointerIsInsideDock(pointerLocation: pointerLocation)
+        if !dockReentryGate.shouldTreatPointerInsideDockAsInside(
+            dockVisibility: settings.dockVisibility,
+            pointerIsInsideDock: pointerIsInsideDock
+        ) {
+            return true
+        }
+        return !pointerIsInsideDock
     }
 
     private func pointerIsInsideDock(pointerLocation: NSPoint?) -> Bool {
@@ -718,6 +748,7 @@ public final class DockingAppModel: ObservableObject {
             }
         )
         if widgetDetailPanelController.isVisible {
+            dockReentryGate.reset()
             // A widget detail panel is anchored to the Dock. Keeping the Dock
             // visible while the panel is open preserves the user's path back to
             // the same widget, which is the intended close control. Letting
@@ -747,6 +778,7 @@ public final class DockingAppModel: ObservableObject {
         )
 
         if folderStackPanelController.isVisible {
+            dockReentryGate.reset()
             // Folder stacks are Dock-attached panels just like widgets. Hiding
             // the dock while the stack is visible would remove the user's
             // source control for the open panel and break the standard "click
@@ -1063,6 +1095,7 @@ public final class DockingAppModel: ObservableObject {
                 dockPanelController.hide()
             }
         case .alwaysVisible:
+            dockReentryGate.reset()
             dockPanelController.orderFront()
         }
         // SwiftUI's MenuBarExtra is scene-declared and not a good fit for a
@@ -1096,5 +1129,44 @@ public final class DockingAppModel: ObservableObject {
         return dockRestoreStatus.hasSnapshot
             ? "A saved Apple Dock snapshot is available. Restore Apple Dock or match the saved layout into Docking if the current setup does not look right."
             : "Docking is currently overlay-only and has not changed Apple Dock settings."
+    }
+}
+
+struct AutoHideDockReentryGate {
+    private(set) var requiresEdgeContactBeforeDockReentry = false
+
+    mutating func recordDockExit(dockVisibility: DockVisibilityMode) {
+        requiresEdgeContactBeforeDockReentry = dockVisibility == .autoHide
+    }
+
+    mutating func recordEdgeContact() {
+        requiresEdgeContactBeforeDockReentry = false
+    }
+
+    mutating func recordDockReentry(
+        dockVisibility: DockVisibilityMode,
+        pointerIsInsideDock: Bool
+    ) {
+        if dockVisibility == .autoHide && pointerIsInsideDock {
+            requiresEdgeContactBeforeDockReentry = false
+        }
+    }
+
+    mutating func reset() {
+        requiresEdgeContactBeforeDockReentry = false
+    }
+
+    func shouldIgnoreDockReentry(
+        dockVisibility: DockVisibilityMode,
+        pointerIsInsideDock: Bool
+    ) -> Bool {
+        dockVisibility == .autoHide && requiresEdgeContactBeforeDockReentry && !pointerIsInsideDock
+    }
+
+    func shouldTreatPointerInsideDockAsInside(
+        dockVisibility: DockVisibilityMode,
+        pointerIsInsideDock: Bool
+    ) -> Bool {
+        !shouldIgnoreDockReentry(dockVisibility: dockVisibility, pointerIsInsideDock: pointerIsInsideDock)
     }
 }

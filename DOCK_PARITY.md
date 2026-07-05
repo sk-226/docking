@@ -12,11 +12,11 @@ public-API behavior that avoids the known overlay-scrollbar regression:
 
 | Behavior | Docking implementation | Native measurement status |
 | --- | --- | --- |
-| Reveal trigger geometry | Edge trigger panels remain 8 pt thick for AppKit event delivery, but reveal is gated to pointer contact within 2 pt of the physical screen edge. Pointer movement 4 pt or more inside the display must not reveal the dock. | Pending |
+| Reveal trigger geometry | Edge trigger panels remain 8 pt thick for AppKit event delivery, but reveal is gated to pointer contact within 1 pt of the physical screen edge. Pointer movement 4 pt or more inside the display must not reveal the dock. | Pending |
 | Reveal dwell | Edge contact must persist for 0.5 seconds before reveal; leaving the edge cancels the pending reveal. | Pending |
-| Drag-to-edge reveal | File drags use the same edge-contact gate and 0.5 second dwell so the dock can become a drop target without polling. | Pending |
+| Drag-to-edge reveal | Not implemented. Raw `.leftMouseDragged` events also cover bottom scrollbars and resize/selection gestures, so using them as a reveal signal causes accidental dock reveals. | Pending |
 | Re-hide after passive reveal | After an edge reveal, moving outside both the edge-contact zone and the dock panel schedules hide using the user's auto-hide delay. Widget/folder panels and explicit Show Dock keep the dock visible. | Pending |
-| Full-screen Spaces | Docking applies the same edge-contact gate and dwell in full-screen Spaces and avoids private Space or Accessibility inspection. Native full-screen timing or second-push behavior is not yet encoded. | Pending |
+| Full-screen Spaces | Bottom-edge reveal in a fullscreen-like Space requires a second edge push before the configured dwell starts. Docking uses the public screen/visible-frame relationship as the heuristic and avoids private Space or Accessibility inspection. | Pending |
 
 ## App icon context menu
 

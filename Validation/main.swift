@@ -1490,6 +1490,129 @@ func validateDockAutoHideResponsePreset() throws {
     try expect(AutoHideController.revealDelay(for: settings) == 0.0, "auto-hide controller should use the Docking Dock response setting")
 }
 
+func validateAutoHideRevealGate() throws {
+    var gate = AutoHideRevealGate()
+
+    try expect(
+        gate.update(targetKey: "desktop", requiresSecondPush: false, now: 0) == .ready,
+        "ordinary edge contact should start the configured reveal dwell"
+    )
+    try expect(gate.currentTargetCanReveal("desktop"), "ordinary edge contact should keep the current target revealable")
+    gate.update(targetKey: nil, requiresSecondPush: false, now: 0.2)
+
+    try expect(
+        gate.update(targetKey: "fullscreen", requiresSecondPush: true, now: 1.0) == .waitingForSecondPush,
+        "fullscreen bottom edge contact should not reveal from a single downward cursor move"
+    )
+    try expect(
+        gate.update(targetKey: "fullscreen", requiresSecondPush: true, now: 1.1) == .waitingForSecondPush,
+        "holding the same fullscreen edge contact should still wait for a second push"
+    )
+    try expect(!gate.currentTargetCanReveal("fullscreen"), "first fullscreen edge contact should not become revealable")
+
+    gate.update(targetKey: nil, requiresSecondPush: true, now: 1.2)
+    try expect(
+        gate.update(targetKey: "fullscreen", requiresSecondPush: true, now: 1.7) == .ready,
+        "a prompt second fullscreen edge push should start reveal"
+    )
+
+    gate.update(targetKey: nil, requiresSecondPush: true, now: 2.0)
+    try expect(
+        gate.update(targetKey: "fullscreen", requiresSecondPush: true, now: 3.4) == .waitingForSecondPush,
+        "a stale fullscreen edge contact should not count as the second push"
+    )
+}
+
+func validateAutoHideFullscreenTriggerPolicy() throws {
+    let screenFrame = NSRect(x: 0, y: 0, width: 1920, height: 1080)
+    let desktopVisibleFrame = NSRect(x: 0, y: 0, width: 1920, height: 1055)
+
+    try expect(
+        AutoHideTriggerGeometry.requiresSecondPush(
+            screenFrame: screenFrame,
+            visibleFrame: screenFrame,
+            position: .bottomCenter
+        ),
+        "bottom edge in a fullscreen-like space should require a second push"
+    )
+    try expect(
+        !AutoHideTriggerGeometry.requiresSecondPush(
+            screenFrame: screenFrame,
+            visibleFrame: desktopVisibleFrame,
+            position: .bottomCenter
+        ),
+        "ordinary desktop bottom edge should keep the regular dwell-only reveal"
+    )
+    try expect(
+        !AutoHideTriggerGeometry.requiresSecondPush(
+            screenFrame: screenFrame,
+            visibleFrame: screenFrame,
+            position: .left
+        ),
+        "side docks should not inherit the bottom scrollbar protection"
+    )
+}
+
+func validateAutoHideDockReentryGate() throws {
+    var gate = AutoHideDockReentryGate()
+
+    try expect(
+        !gate.shouldIgnoreDockReentry(dockVisibility: .autoHide, pointerIsInsideDock: true),
+        "ordinary dock entry should keep the dock visible"
+    )
+    try expect(
+        gate.shouldTreatPointerInsideDockAsInside(dockVisibility: .autoHide, pointerIsInsideDock: true),
+        "ordinary pointer residency should suppress auto-hide"
+    )
+
+    gate.recordDockExit(dockVisibility: .autoHide)
+    try expect(
+        gate.shouldIgnoreDockReentry(dockVisibility: .autoHide, pointerIsInsideDock: false),
+        "auto-hide dock exit should block stale panel re-entry from canceling the pending hide"
+    )
+    try expect(
+        !gate.shouldTreatPointerInsideDockAsInside(dockVisibility: .autoHide, pointerIsInsideDock: false),
+        "stale panel re-entry should not count as pointer residency for auto-hide"
+    )
+    try expect(
+        !gate.shouldIgnoreDockReentry(dockVisibility: .autoHide, pointerIsInsideDock: true),
+        "real panel re-entry should cancel the pending hide"
+    )
+    try expect(
+        gate.shouldTreatPointerInsideDockAsInside(dockVisibility: .autoHide, pointerIsInsideDock: true),
+        "real panel re-entry should still count as pointer residency for auto-hide"
+    )
+
+    gate.recordDockReentry(dockVisibility: .autoHide, pointerIsInsideDock: true)
+    try expect(
+        !gate.shouldIgnoreDockReentry(dockVisibility: .autoHide, pointerIsInsideDock: false),
+        "accepted panel re-entry should clear stale re-entry blocking"
+    )
+
+    gate.recordEdgeContact()
+    try expect(
+        !gate.shouldIgnoreDockReentry(dockVisibility: .autoHide, pointerIsInsideDock: false),
+        "real edge contact should restore normal dock re-entry handling"
+    )
+    try expect(
+        gate.shouldTreatPointerInsideDockAsInside(dockVisibility: .autoHide, pointerIsInsideDock: false),
+        "edge contact should let pointer residency suppress auto-hide again"
+    )
+
+    gate.recordDockExit(dockVisibility: .autoHide)
+    gate.reset()
+    try expect(
+        !gate.shouldIgnoreDockReentry(dockVisibility: .autoHide, pointerIsInsideDock: false),
+        "manual show/hide and anchored panels should clear the re-entry gate"
+    )
+
+    gate.recordDockExit(dockVisibility: .alwaysVisible)
+    try expect(
+        !gate.shouldIgnoreDockReentry(dockVisibility: .alwaysVisible, pointerIsInsideDock: false),
+        "always-visible docks should not inherit auto-hide re-entry blocking"
+    )
+}
+
 func validateDefaultSettingsFitEditableRanges() throws {
     let settings = DockingSettings.default
 
@@ -2605,6 +2728,9 @@ let validations: [(String, () throws -> Void)] = [
     ("dock position frames", validateDockPositionFrames),
     ("auto-hide trigger screens", validateAutoHideTriggerScreens),
     ("dock auto-hide response preset", validateDockAutoHideResponsePreset),
+    ("auto-hide reveal gate", validateAutoHideRevealGate),
+    ("auto-hide fullscreen trigger policy", validateAutoHideFullscreenTriggerPolicy),
+    ("auto-hide dock re-entry gate", validateAutoHideDockReentryGate),
     ("dock window collection behavior", validateDockingWindowCollectionBehavior),
     ("dock window level toggle", validateDockWindowLevelToggle),
     ("apple dock mirroring", validateAppleDockMirroring),
