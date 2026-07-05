@@ -12,6 +12,7 @@ final class AutoHideController {
     private var onPointerOutsideTrigger: ((NSPoint) -> Void)?
     private var pendingRevealTask: Task<Void, Never>?
     private var pendingRevealKey: String?
+    private var dockAutoHideResponsePreset: DockAutoHideResponsePreset = .standard
     private var dockPosition: DockPosition = .bottomCenter
 
     func update(
@@ -25,6 +26,7 @@ final class AutoHideController {
         self.onEnter = onEnter
         self.onTriggerContact = onTriggerContact
         self.onPointerOutsideTrigger = onPointerOutsideTrigger
+        dockAutoHideResponsePreset = settings.dockAutoHideResponsePreset
         dockPosition = settings.dockPosition
 
         guard settings.dockVisibility == .autoHide else {
@@ -170,9 +172,7 @@ final class AutoHideController {
 
         cancelPendingReveal()
         pendingRevealKey = target.key
-        let delay = eventKind == .drag
-            ? AutoHideTriggerGeometry.dragRevealDelay
-            : AutoHideTriggerGeometry.revealDelay
+        let delay = Self.revealDelay(for: dockAutoHideResponsePreset, eventKind: eventKind)
         pendingRevealTask = Task { @MainActor [weak self] in
             do {
                 try await Task.sleep(nanoseconds: Self.nanoseconds(for: delay))
@@ -224,6 +224,17 @@ final class AutoHideController {
         UInt64(seconds * 1_000_000_000)
     }
 
+    nonisolated static func revealDelay(for settings: DockingSettings) -> TimeInterval {
+        settings.dockAutoHideResponsePreset.revealDelay
+    }
+
+    private static func revealDelay(for preset: DockAutoHideResponsePreset, eventKind: EdgeTriggerEventKind) -> TimeInterval {
+        switch eventKind {
+        case .move, .drag:
+            return preset.revealDelay
+        }
+    }
+
     private func screenKey(_ screen: NSScreen?) -> String {
         guard let screen else {
             return "fallback"
@@ -240,8 +251,6 @@ final class AutoHideController {
 enum AutoHideTriggerGeometry {
     static let panelThickness: CGFloat = 8
     static let edgeActivationDistance: CGFloat = 2
-    static let revealDelay: TimeInterval = 0.5
-    static let dragRevealDelay: TimeInterval = 0.5
 
     static func containsEdgeContact(
         _ location: NSPoint,

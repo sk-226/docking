@@ -39,6 +39,19 @@ struct GeneralControlCenterSection: View {
 
                         if model.settings.dockVisibility == .autoHide {
                             GridRow {
+                                Text("Dock response")
+                                    .frame(width: 150, alignment: .leading)
+                                Picker("Dock response", selection: $model.settings.dockAutoHideResponsePreset) {
+                                    ForEach(DockAutoHideResponsePreset.allCases) { preset in
+                                        Text(preset.label).tag(preset)
+                                    }
+                                }
+                                .labelsHidden()
+                                .pickerStyle(.segmented)
+                                .frame(width: 240, alignment: .leading)
+                            }
+
+                            GridRow {
                                 Text("Hide delay")
                                     .frame(width: 150, alignment: .leading)
                                 HStack(spacing: 10) {

@@ -608,12 +608,43 @@ enum LiquidGlassSurfaceStyle: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+enum DockAutoHideResponsePreset: String, CaseIterable, Identifiable, Codable {
+    case standard
+    case fast
+    case instant
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .standard:
+            return "Default"
+        case .fast:
+            return "Fast"
+        case .instant:
+            return "Instant"
+        }
+    }
+
+    var revealDelay: TimeInterval {
+        switch self {
+        case .standard:
+            return 0.5
+        case .fast:
+            return 0.15
+        case .instant:
+            return 0.0
+        }
+    }
+}
+
 struct DockingSettings: Codable, Equatable {
     var launchAtLogin: Bool
     var showMenuBarIcon: Bool
     var dockVisibility: DockVisibilityMode
     var unpinnedRunningAppVisibility: UnpinnedRunningAppVisibility
     var keepAboveOtherWindows: Bool
+    var dockAutoHideResponsePreset: DockAutoHideResponsePreset
     var autoHideDelay: Double
     var showOnAllSpaces: Bool
     var showOnFullScreenSpaces: Bool
@@ -648,6 +679,7 @@ struct DockingSettings: Codable, Equatable {
         dockVisibility: .autoHide,
         unpinnedRunningAppVisibility: .separated,
         keepAboveOtherWindows: true,
+        dockAutoHideResponsePreset: .standard,
         autoHideDelay: 0.7,
         showOnAllSpaces: true,
         showOnFullScreenSpaces: true,
@@ -681,6 +713,83 @@ struct DockingSettings: Codable, Equatable {
         var settings = Self.default
         settings.dockVisibility = AppleDockPreferences.visibilityMode(from: dockDefaults)
         return settings
+    }
+}
+
+extension DockingSettings {
+    enum CodingKeys: String, CodingKey {
+        case launchAtLogin
+        case showMenuBarIcon
+        case dockVisibility
+        case unpinnedRunningAppVisibility
+        case keepAboveOtherWindows
+        case dockAutoHideResponsePreset
+        case autoHideDelay
+        case showOnAllSpaces
+        case showOnFullScreenSpaces
+        case displayMode
+        case dockDisplayID
+        case dockPosition
+        case dockSize
+        case iconSize
+        case calendarWidgetSizePreset
+        case weatherWidgetSizePreset
+        case spacing
+        case liquidGlassSurfaceStyle
+        case theme
+        case accentColorName
+        case calendarEnabled
+        case calendarLookaheadDays
+        case calendarMaxEventCount
+        case calendarShowsLocation
+        case calendarSelectedCalendarIDs
+        case weatherEnabled
+        case weatherUsesCurrentLocation
+        case weatherManualLocation
+        case weatherUnit
+        case weatherRefreshIntervalMinutes
+        case weatherShowsHumidity
+        case weatherShowsAQI
+        case dockReplacementModeEnabled
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = Self.default
+
+        launchAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? defaults.launchAtLogin
+        showMenuBarIcon = try container.decodeIfPresent(Bool.self, forKey: .showMenuBarIcon) ?? defaults.showMenuBarIcon
+        dockVisibility = try container.decodeIfPresent(DockVisibilityMode.self, forKey: .dockVisibility) ?? defaults.dockVisibility
+        unpinnedRunningAppVisibility = try container.decodeIfPresent(UnpinnedRunningAppVisibility.self, forKey: .unpinnedRunningAppVisibility) ?? defaults.unpinnedRunningAppVisibility
+        keepAboveOtherWindows = try container.decodeIfPresent(Bool.self, forKey: .keepAboveOtherWindows) ?? defaults.keepAboveOtherWindows
+        dockAutoHideResponsePreset = try container.decodeIfPresent(DockAutoHideResponsePreset.self, forKey: .dockAutoHideResponsePreset) ?? defaults.dockAutoHideResponsePreset
+        autoHideDelay = try container.decodeIfPresent(Double.self, forKey: .autoHideDelay) ?? defaults.autoHideDelay
+        showOnAllSpaces = try container.decodeIfPresent(Bool.self, forKey: .showOnAllSpaces) ?? defaults.showOnAllSpaces
+        showOnFullScreenSpaces = try container.decodeIfPresent(Bool.self, forKey: .showOnFullScreenSpaces) ?? defaults.showOnFullScreenSpaces
+        displayMode = try container.decodeIfPresent(DockDisplayMode.self, forKey: .displayMode) ?? defaults.displayMode
+        dockDisplayID = try container.decodeIfPresent(UInt32.self, forKey: .dockDisplayID) ?? defaults.dockDisplayID
+        dockPosition = try container.decodeIfPresent(DockPosition.self, forKey: .dockPosition) ?? defaults.dockPosition
+        dockSize = try container.decodeIfPresent(Double.self, forKey: .dockSize) ?? defaults.dockSize
+        iconSize = try container.decodeIfPresent(Double.self, forKey: .iconSize) ?? defaults.iconSize
+        calendarWidgetSizePreset = try container.decodeIfPresent(WidgetSizePreset.self, forKey: .calendarWidgetSizePreset) ?? defaults.calendarWidgetSizePreset
+        weatherWidgetSizePreset = try container.decodeIfPresent(WidgetSizePreset.self, forKey: .weatherWidgetSizePreset) ?? defaults.weatherWidgetSizePreset
+        spacing = try container.decodeIfPresent(Double.self, forKey: .spacing) ?? defaults.spacing
+        liquidGlassSurfaceStyle = try container.decodeIfPresent(LiquidGlassSurfaceStyle.self, forKey: .liquidGlassSurfaceStyle) ?? defaults.liquidGlassSurfaceStyle
+        theme = try container.decodeIfPresent(ThemeMode.self, forKey: .theme) ?? defaults.theme
+        accentColorName = try container.decodeIfPresent(String.self, forKey: .accentColorName) ?? defaults.accentColorName
+        calendarEnabled = try container.decodeIfPresent(Bool.self, forKey: .calendarEnabled) ?? defaults.calendarEnabled
+        calendarLookaheadDays = try container.decodeIfPresent(Int.self, forKey: .calendarLookaheadDays) ?? defaults.calendarLookaheadDays
+        calendarMaxEventCount = try container.decodeIfPresent(Int.self, forKey: .calendarMaxEventCount) ?? defaults.calendarMaxEventCount
+        calendarShowsLocation = try container.decodeIfPresent(Bool.self, forKey: .calendarShowsLocation) ?? defaults.calendarShowsLocation
+        calendarSelectedCalendarIDs = try container.decodeIfPresent([String].self, forKey: .calendarSelectedCalendarIDs) ?? defaults.calendarSelectedCalendarIDs
+        weatherEnabled = try container.decodeIfPresent(Bool.self, forKey: .weatherEnabled) ?? defaults.weatherEnabled
+        weatherUsesCurrentLocation = try container.decodeIfPresent(Bool.self, forKey: .weatherUsesCurrentLocation) ?? defaults.weatherUsesCurrentLocation
+        weatherManualLocation = try container.decodeIfPresent(String.self, forKey: .weatherManualLocation) ?? defaults.weatherManualLocation
+        weatherUnit = try container.decodeIfPresent(TemperatureUnit.self, forKey: .weatherUnit) ?? defaults.weatherUnit
+        weatherRefreshIntervalMinutes = try container.decodeIfPresent(Int.self, forKey: .weatherRefreshIntervalMinutes) ?? defaults.weatherRefreshIntervalMinutes
+        weatherShowsHumidity = try container.decodeIfPresent(Bool.self, forKey: .weatherShowsHumidity) ?? defaults.weatherShowsHumidity
+        weatherShowsAQI = try container.decodeIfPresent(Bool.self, forKey: .weatherShowsAQI) ?? defaults.weatherShowsAQI
+        dockReplacementModeEnabled = try container.decodeIfPresent(Bool.self, forKey: .dockReplacementModeEnabled) ?? defaults.dockReplacementModeEnabled
     }
 }
 

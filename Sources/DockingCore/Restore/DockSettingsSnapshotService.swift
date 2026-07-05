@@ -1,6 +1,17 @@
 import Foundation
 
 final class DockSettingsSnapshotService {
+    static let capturedPreferenceKeys = [
+        "autohide",
+        "tilesize",
+        "largesize",
+        "magnification",
+        "orientation",
+        "show-recents",
+        "autohide-delay",
+        "autohide-time-modifier"
+    ]
+
     private let fileURL: URL
     private let dockDefaults: UserDefaults?
     private let encoder = JSONEncoder()
@@ -35,19 +46,8 @@ final class DockSettingsSnapshotService {
     }
 
     func currentDockSnapshot() -> DockRestoreSnapshot {
-        let keys = [
-            "autohide",
-            "tilesize",
-            "largesize",
-            "magnification",
-            "orientation",
-            "show-recents",
-            "autohide-delay",
-            "autohide-time-modifier"
-        ]
-
         var values: [String: DockPreferenceValue] = [:]
-        for key in keys {
+        for key in Self.capturedPreferenceKeys {
             if let value = dockDefaults?.object(forKey: key) as? Bool {
                 values[key] = .bool(value)
             } else if let value = dockDefaults?.object(forKey: key) as? Double {
@@ -59,6 +59,11 @@ final class DockSettingsSnapshotService {
             }
         }
 
-        return DockRestoreSnapshot(createdAt: Date(), appVersion: AppMetadata.version, values: values)
+        return DockRestoreSnapshot(
+            createdAt: Date(),
+            appVersion: AppMetadata.version,
+            values: values,
+            capturedKeys: Self.capturedPreferenceKeys
+        )
     }
 }

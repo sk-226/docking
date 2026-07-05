@@ -67,20 +67,32 @@ final class DockSettingsRestoreService {
             )
         }
 
-        let commands = snapshot.values
+        var commands = snapshot.values
             .sorted { $0.key < $1.key }
             .map { key, value in
                 Self.defaultsCommand(key: key, value: value)
             }
-            .joined(separator: "\n")
+
+        if let capturedKeys = snapshot.capturedKeys {
+            commands += capturedKeys
+                .filter { snapshot.values[$0] == nil }
+                .sorted()
+                .map { "defaults delete com.apple.dock \($0)" }
+        }
 
         return DockManualRestoreInstructions(
             text: """
             If the Restore button fails or Docking has already been removed, these Terminal commands write the saved Apple Dock snapshot back:
-            \(commands)
+            \(commands.joined(separator: "\n"))
             killall Dock
             """
         )
+    }
+
+    func ensureSnapshotExists() throws {
+        if try snapshotService.loadSnapshot() == nil {
+            try snapshotService.saveSnapshot(snapshotService.currentDockSnapshot())
+        }
     }
 
     func enableReplacementMode() throws -> DockRestoreResult {
@@ -93,9 +105,7 @@ final class DockSettingsRestoreService {
         // tiles, or touch system files. The original preference snapshot is
         // captured before the first write so the Restore button has a durable
         // source of truth even if Docking is relaunched later.
-        if try snapshotService.loadSnapshot() == nil {
-            try snapshotService.saveSnapshot(snapshotService.currentDockSnapshot())
-        }
+        try ensureSnapshotExists()
 
         // The least invasive way to let Docking act as the primary dock is to
         // keep the Apple Dock present but strongly auto-hidden. This avoids
@@ -104,8 +114,7 @@ final class DockSettingsRestoreService {
         // or any Dock database-like state because those changes are harder for
         // users to audit and unnecessary for a personal overlay dock.
         dockDefaults.set(true, forKey: "autohide")
-        dockDefaults.set(1000.0, forKey: "autohide-delay")
-        dockDefaults.set(0.0, forKey: "autohide-time-modifier")
+        AppleDockPrimaryDockSuppression.apply(to: dockDefaults)
         dockDefaults.synchronize()
 
         return DockRestoreResult(
@@ -136,14 +145,24 @@ final class DockSettingsRestoreService {
                 dockDefaults.set(string, forKey: key)
             }
         }
+        if let capturedKeys = snapshot.capturedKeys {
+            for key in capturedKeys where snapshot.values[key] == nil {
+                dockDefaults.removeObject(forKey: key)
+            }
+        }
         dockDefaults.synchronize()
 
-        let mismatchedKeys = snapshot.values
+        var mismatchedKeys = snapshot.values
             .filter { key, expectedValue in
-                !Self.preferenceValue(expectedValue, matches: dockDefaults.object(forKey: key))
+                !expectedValue.matches(rawValue: dockDefaults.object(forKey: key))
             }
             .map(\.key)
-            .sorted()
+        if let capturedKeys = snapshot.capturedKeys {
+            mismatchedKeys += capturedKeys.filter { key in
+                snapshot.values[key] == nil && dockDefaults.object(forKey: key) != nil
+            }
+        }
+        mismatchedKeys.sort()
 
         guard mismatchedKeys.isEmpty else {
             throw DockSettingsRestoreError.restoreVerificationFailed(mismatchedKeys)
@@ -192,38 +211,6 @@ final class DockSettingsRestoreService {
         }
     }
 
-    private static func preferenceValue(_ expected: DockPreferenceValue, matches rawValue: Any?) -> Bool {
-        // UserDefaults values from the Dock domain often bridge through
-        // NSNumber even when the logical preference is a Bool or a numeric
-        // scalar. Verification should confirm the saved semantic value, not the
-        // exact Swift runtime wrapper used by defaults. String preferences stay
-        // strict because treating a non-string as a shell-restorable string
-        // would make the emergency instructions misleading.
-        switch expected {
-        case .bool(let expectedBool):
-            if let bool = rawValue as? Bool {
-                return bool == expectedBool
-            }
-            if let number = rawValue as? NSNumber {
-                return number.boolValue == expectedBool
-            }
-            return false
-        case .double(let expectedDouble):
-            if let double = rawValue as? Double {
-                return abs(double - expectedDouble) < 0.000_001
-            }
-            if let int = rawValue as? Int {
-                return abs(Double(int) - expectedDouble) < 0.000_001
-            }
-            if let number = rawValue as? NSNumber {
-                return abs(number.doubleValue - expectedDouble) < 0.000_001
-            }
-            return false
-        case .string(let expectedString):
-            return rawValue as? String == expectedString
-        }
-    }
-
     private static func shellSingleQuoted(_ value: String) -> String {
         // The restore keys we snapshot are expected to have simple values like
         // "bottom" or "left", but this text can become a Terminal command. A
@@ -231,5 +218,12 @@ final class DockSettingsRestoreService {
         // preference value from turning emergency instructions into malformed
         // shell syntax.
         "'\(value.replacingOccurrences(of: "'", with: "'\"'\"'"))'"
+    }
+}
+
+private enum AppleDockPrimaryDockSuppression {
+    static func apply(to dockDefaults: UserDefaults) {
+        dockDefaults.set(1000.0, forKey: "autohide-delay")
+        dockDefaults.set(0.0, forKey: "autohide-time-modifier")
     }
 }
