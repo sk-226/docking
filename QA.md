@@ -52,10 +52,11 @@ Expected results:
   artifacts, attaches the same files to a draft GitHub Release when no published
   release exists, and refuses to mutate assets that were already published from
   a reviewed local candidate.
-- The Homebrew cask at `Casks/docking.rb` points at the release DMG, uses the
-  release DMG checksum, requires macOS 26 or newer, passes strict local cask
-  audit during release-candidate review, and passes `brew audit --cask --strict
-  --online` after the GitHub Release asset is public.
+- The Homebrew cask at `Casks/docking.rb` stays on the latest published DMG
+  until the Actions-built release DMG checksum is known. Draft release assets
+  can establish that SHA, but `brew audit --cask --strict --online` only works
+  after publication, so the clearest operation is to update the cask after the
+  release is public.
 
 `./script/build_and_run.sh --verify` remains the quick launch smoke test. The
 release gate packages without launching so an artifact inspection does not also
@@ -80,12 +81,10 @@ runner. The run created `dist/Docking-0.0.2-macos26.zip` and
 `dist/Docking-0.0.2-macos26.dmg`, verified the staged app signature, verified
 the archive contents and checksum files, and confirmed that unprovisioned builds
 omit the WeatherKit entitlement so Weather uses the Open-Meteo real-data
-fallback instead of failing at launch. The generated zip SHA-256 was
-`93bb9490c9f471bc1c90922979dd0e56e43e1d765b8cfa46c88580ba6b1fed86`; the
-generated DMG SHA-256 was
-`1351e7e1a4795dc1445dd93495634254a0623085657eeaf440f64e1fdb9f2392`. The
-Homebrew cask uses the Actions-built DMG checksum because the release workflow
-publishes runner-built artifacts.
+fallback instead of failing at launch. The Homebrew cask checksum remains a
+post-publication follow-up because it must match the Actions-built release DMG,
+not a local or pull-request artifact; the online audit is only meaningful once
+that asset is public.
 
 Previous automated evidence: passed 2026-06-30 on the `0.0.1`
 release-candidate path. The run created `dist/Docking-0.0.1-macos26.zip` and

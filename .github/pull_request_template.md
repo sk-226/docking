@@ -25,8 +25,9 @@ opt-in, confirmation-gated, and restoreable from Control Center > Restore.
       `Docking-0.0.2-macos26.dmg` with their `.sha256` files.
 - [ ] Tag-triggered runs create/update only draft Release assets, and leave
       already-published Release assets unchanged.
-- [ ] `Casks/docking.rb` installs the published DMG and the workflow audits the
-      cask with Homebrew.
+- [ ] If `Casks/docking.rb` changes, its checksum comes from the Actions-built
+      release DMG; otherwise the post-publication cask update is recorded as
+      follow-up.
 
 ## Manual QA
 
