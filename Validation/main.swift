@@ -262,21 +262,71 @@ func validateDockPositionFrames() throws {
 
         switch position {
         case .bottomCenter, .bottomLeft, .bottomRight:
-            // The trigger must touch the physical screen edge, not merely fit
-            // inside visibleFrame. visibleFrame can be shifted by Apple's Dock,
-            // which is exactly what made Docking's auto-hide reveal feel dead
-            // when the standard Dock was still visible.
             try expect(abs(trigger.minY - screen.frame.minY) < 0.5, "\(position.label) auto-hide trigger should touch the bottom screen edge")
-            try expect(trigger.height >= 4, "\(position.label) auto-hide trigger should have enough thickness to catch pointer entry")
+            try expect(abs(trigger.height - AutoHideTriggerGeometry.panelThickness) < 0.5, "\(position.label) auto-hide trigger strip should keep the AppKit tracking thickness")
+            try expect(
+                AutoHideTriggerGeometry.containsEdgeContact(
+                    NSPoint(x: trigger.midX, y: screen.frame.minY + AutoHideTriggerGeometry.edgeActivationDistance),
+                    triggerFrame: trigger,
+                    screenFrame: screen.frame,
+                    position: position
+                ),
+                "\(position.label) auto-hide trigger should accept physical bottom-edge contact"
+            )
+            try expect(
+                !AutoHideTriggerGeometry.containsEdgeContact(
+                    NSPoint(x: trigger.midX, y: screen.frame.minY + 4),
+                    triggerFrame: trigger,
+                    screenFrame: screen.frame,
+                    position: position
+                ),
+                "\(position.label) auto-hide trigger should ignore pointer movement four points above the edge"
+            )
             let fullBottomTrigger = ScreenPlacementService.edgeTriggerFrame(dockFrame: frame, position: position, on: screen, spansFullBottomEdge: true)
             try expect(abs(fullBottomTrigger.minX - screen.frame.minX) < 0.5, "\(position.label) full-width trigger should start at the screen edge")
             try expect(abs(fullBottomTrigger.width - screen.frame.width) < 0.5, "\(position.label) full-width trigger should cover the whole display bottom")
         case .left:
             try expect(abs(trigger.minX - screen.frame.minX) < 0.5, "left auto-hide trigger should touch the left screen edge")
-            try expect(trigger.width >= 4, "left auto-hide trigger should have enough thickness to catch pointer entry")
+            try expect(abs(trigger.width - AutoHideTriggerGeometry.panelThickness) < 0.5, "left auto-hide trigger strip should keep the AppKit tracking thickness")
+            try expect(
+                AutoHideTriggerGeometry.containsEdgeContact(
+                    NSPoint(x: screen.frame.minX + AutoHideTriggerGeometry.edgeActivationDistance, y: trigger.midY),
+                    triggerFrame: trigger,
+                    screenFrame: screen.frame,
+                    position: position
+                ),
+                "left auto-hide trigger should accept physical left-edge contact"
+            )
+            try expect(
+                !AutoHideTriggerGeometry.containsEdgeContact(
+                    NSPoint(x: screen.frame.minX + 4, y: trigger.midY),
+                    triggerFrame: trigger,
+                    screenFrame: screen.frame,
+                    position: position
+                ),
+                "left auto-hide trigger should ignore pointer movement four points inside the edge"
+            )
         case .right:
             try expect(abs(trigger.maxX - screen.frame.maxX) < 0.5, "right auto-hide trigger should touch the right screen edge")
-            try expect(trigger.width >= 4, "right auto-hide trigger should have enough thickness to catch pointer entry")
+            try expect(abs(trigger.width - AutoHideTriggerGeometry.panelThickness) < 0.5, "right auto-hide trigger strip should keep the AppKit tracking thickness")
+            try expect(
+                AutoHideTriggerGeometry.containsEdgeContact(
+                    NSPoint(x: screen.frame.maxX - AutoHideTriggerGeometry.edgeActivationDistance, y: trigger.midY),
+                    triggerFrame: trigger,
+                    screenFrame: screen.frame,
+                    position: position
+                ),
+                "right auto-hide trigger should accept physical right-edge contact"
+            )
+            try expect(
+                !AutoHideTriggerGeometry.containsEdgeContact(
+                    NSPoint(x: screen.frame.maxX - 4, y: trigger.midY),
+                    triggerFrame: trigger,
+                    screenFrame: screen.frame,
+                    position: position
+                ),
+                "right auto-hide trigger should ignore pointer movement four points inside the edge"
+            )
         }
     }
 }

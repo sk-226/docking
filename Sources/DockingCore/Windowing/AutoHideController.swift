@@ -5,11 +5,27 @@ import Foundation
 final class AutoHideController {
     private var edgePanels: [String: NSPanel] = [:]
     private var edgePanelScreens: [String: NSScreen] = [:]
+    private var edgePanelScreenFrames: [String: NSRect] = [:]
     private var globalMouseMovedMonitor: Any?
     private var onEnter: ((NSScreen?) -> Void)?
+    private var onTriggerContact: ((NSPoint) -> Void)?
+    private var onPointerOutsideTrigger: ((NSPoint) -> Void)?
+    private var pendingRevealTask: Task<Void, Never>?
+    private var pendingRevealKey: String?
+    private var dockPosition: DockPosition = .bottomCenter
 
-    func update(settings: DockingSettings, dockFrame: NSRect, screen: NSScreen?, onEnter: @escaping (NSScreen?) -> Void) {
+    func update(
+        settings: DockingSettings,
+        dockFrame: NSRect,
+        screen: NSScreen?,
+        onEnter: @escaping (NSScreen?) -> Void,
+        onTriggerContact: @escaping (NSPoint) -> Void,
+        onPointerOutsideTrigger: @escaping (NSPoint) -> Void
+    ) {
         self.onEnter = onEnter
+        self.onTriggerContact = onTriggerContact
+        self.onPointerOutsideTrigger = onPointerOutsideTrigger
+        dockPosition = settings.dockPosition
 
         guard settings.dockVisibility == .autoHide else {
             close()
@@ -24,6 +40,7 @@ final class AutoHideController {
             panel.close()
             edgePanels[key] = nil
             edgePanelScreens[key] = nil
+            edgePanelScreenFrames[key] = nil
         }
 
         for triggerScreen in screens {
@@ -35,25 +52,31 @@ final class AutoHideController {
                 on: triggerScreen,
                 spansFullBottomEdge: settings.dockPosition.isBottom
             )
-            let panel = edgePanels[key] ?? makeEdgePanel(for: triggerScreen)
+            let panel = edgePanels[key] ?? makeEdgePanel()
             panel.setFrame(frame, display: true)
             panel.collectionBehavior = DockingWindowBehavior.collectionBehavior(for: settings)
             panel.orderFrontRegardless()
             edgePanels[key] = panel
             edgePanelScreens[key] = triggerScreen
+            edgePanelScreenFrames[key] = triggerScreen.frame
         }
     }
 
     func close() {
+        cancelPendingReveal()
         removeMouseMovedMonitors()
         for panel in edgePanels.values {
             panel.close()
         }
         edgePanels = [:]
         edgePanelScreens = [:]
+        edgePanelScreenFrames = [:]
+        onEnter = nil
+        onTriggerContact = nil
+        onPointerOutsideTrigger = nil
     }
 
-    private func makeEdgePanel(for screen: NSScreen?) -> NSPanel {
+    private func makeEdgePanel() -> NSPanel {
         let panel = NSPanel(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -76,8 +99,11 @@ final class AutoHideController {
         // docks get one trigger per display so the Docking dock can appear on
         // whichever screen edge the user pushes into, matching the expectation
         // set by Apple's Dock on multi-display systems.
-        panel.contentView = EdgeTriggerView { [weak self] in
-            self?.onEnter?(screen)
+        panel.contentView = EdgeTriggerView { [weak self] eventKind in
+            let location = NSEvent.mouseLocation
+            Task { @MainActor in
+                self?.handlePointerActivity(at: location, eventKind: eventKind)
+            }
         }
         return panel
     }
@@ -110,10 +136,11 @@ final class AutoHideController {
         // or duplicating events already delivered to `EdgeTriggerView`. We keep
         // the work intentionally tiny: compare the current location against the
         // existing edge-panel frames, then reveal on the matching display.
-        globalMouseMovedMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] _ in
+        globalMouseMovedMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] event in
             let location = NSEvent.mouseLocation
+            let eventKind: EdgeTriggerEventKind = event.type == .leftMouseDragged ? .drag : .move
             Task { @MainActor in
-                self?.revealIfLocationIsInsideEdgeTrigger(location)
+                self?.handlePointerActivity(at: location, eventKind: eventKind)
             }
         }
     }
@@ -125,20 +152,84 @@ final class AutoHideController {
         globalMouseMovedMonitor = nil
     }
 
-    private func revealIfLocationIsInsideEdgeTrigger(_ location: NSPoint) {
+    private func handlePointerActivity(at location: NSPoint, eventKind: EdgeTriggerEventKind) {
+        guard let target = triggerTarget(containing: location) else {
+            cancelPendingReveal()
+            onPointerOutsideTrigger?(location)
+            return
+        }
+
+        onTriggerContact?(location)
+        queueReveal(for: target, eventKind: eventKind)
+    }
+
+    private func queueReveal(for target: EdgeTriggerTarget, eventKind: EdgeTriggerEventKind) {
+        if pendingRevealKey == target.key {
+            return
+        }
+
+        cancelPendingReveal()
+        pendingRevealKey = target.key
+        let delay = eventKind == .drag
+            ? AutoHideTriggerGeometry.dragRevealDelay
+            : AutoHideTriggerGeometry.revealDelay
+        pendingRevealTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: Self.nanoseconds(for: delay))
+            } catch {
+                return
+            }
+            guard let self else {
+                return
+            }
+            guard pendingRevealKey == target.key,
+                  triggerTarget(containing: NSEvent.mouseLocation)?.key == target.key else {
+                cancelPendingReveal()
+                return
+            }
+
+            pendingRevealKey = nil
+            pendingRevealTask = nil
+            onEnter?(target.screen)
+        }
+    }
+
+    private func cancelPendingReveal() {
+        pendingRevealTask?.cancel()
+        pendingRevealTask = nil
+        pendingRevealKey = nil
+    }
+
+    private func triggerTarget(containing location: NSPoint) -> EdgeTriggerTarget? {
         for (key, panel) in edgePanels {
-            guard panel.frame.insetBy(dx: -2, dy: -2).contains(location) else {
+            guard let screen = edgePanelScreens[key] else {
+                continue
+            }
+            let screenFrame = edgePanelScreenFrames[key] ?? screen.frame
+            guard AutoHideTriggerGeometry.containsEdgeContact(
+                location,
+                triggerFrame: panel.frame,
+                screenFrame: screenFrame,
+                position: dockPosition
+            ) else {
                 continue
             }
 
-            onEnter?(edgePanelScreens[key])
-            return
+            return EdgeTriggerTarget(key: key, screen: screen)
         }
+        return nil
+    }
+
+    private static func nanoseconds(for seconds: TimeInterval) -> UInt64 {
+        UInt64(seconds * 1_000_000_000)
     }
 
     private func screenKey(_ screen: NSScreen?) -> String {
         guard let screen else {
             return "fallback"
+        }
+        if let displayID = ScreenPlacementService.displayID(for: screen) {
+            return "display-\(displayID)"
         }
         let frame = screen.frame
         return "\(screen.localizedName)-\(Int(frame.minX))-\(Int(frame.minY))-\(Int(frame.width))-\(Int(frame.height))"
@@ -146,11 +237,53 @@ final class AutoHideController {
 
 }
 
-private final class EdgeTriggerView: NSView {
-    private let onEnter: () -> Void
+enum AutoHideTriggerGeometry {
+    static let panelThickness: CGFloat = 8
+    static let edgeActivationDistance: CGFloat = 2
+    static let revealDelay: TimeInterval = 0.5
+    static let dragRevealDelay: TimeInterval = 0.5
 
-    init(onEnter: @escaping () -> Void) {
-        self.onEnter = onEnter
+    static func containsEdgeContact(
+        _ location: NSPoint,
+        triggerFrame: NSRect,
+        screenFrame: NSRect,
+        position: DockPosition
+    ) -> Bool {
+        switch position {
+        case .bottomCenter, .bottomLeft, .bottomRight:
+            return location.x >= triggerFrame.minX
+                && location.x <= triggerFrame.maxX
+                && location.y >= screenFrame.minY
+                && location.y <= screenFrame.minY + edgeActivationDistance
+        case .left:
+            return location.y >= triggerFrame.minY
+                && location.y <= triggerFrame.maxY
+                && location.x >= screenFrame.minX
+                && location.x <= screenFrame.minX + edgeActivationDistance
+        case .right:
+            return location.y >= triggerFrame.minY
+                && location.y <= triggerFrame.maxY
+                && location.x >= screenFrame.maxX - edgeActivationDistance
+                && location.x <= screenFrame.maxX
+        }
+    }
+}
+
+private struct EdgeTriggerTarget {
+    let key: String
+    let screen: NSScreen
+}
+
+private enum EdgeTriggerEventKind {
+    case move
+    case drag
+}
+
+private final class EdgeTriggerView: NSView {
+    private let onPointerActivity: (EdgeTriggerEventKind) -> Void
+
+    init(onPointerActivity: @escaping (EdgeTriggerEventKind) -> Void) {
+        self.onPointerActivity = onPointerActivity
         super.init(frame: .zero)
     }
 
@@ -175,15 +308,14 @@ private final class EdgeTriggerView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        onEnter()
+        onPointerActivity(.move)
     }
 
     override func mouseMoved(with event: NSEvent) {
-        // Do not debounce this with an "inside" flag. The trigger panel is only
-        // eight points tall and receives events only while the pointer is on the
-        // physical edge; repeating a cheap `orderFront` during edge movement is
-        // less fragile than remembering stale inside/outside state across
-        // hidden-panel cycles and display changes.
-        onEnter()
+        onPointerActivity(.move)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        onPointerActivity(.drag)
     }
 }

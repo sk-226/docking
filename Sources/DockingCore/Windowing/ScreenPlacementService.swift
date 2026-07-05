@@ -92,7 +92,7 @@ enum ScreenPlacementService {
 
     static func edgeTriggerFrame(dockFrame: NSRect, position: DockPosition = .bottomCenter, on screen: NSScreen? = NSScreen.main, spansFullBottomEdge: Bool = false) -> NSRect {
         let screenFrame = (screen ?? NSScreen.screens.first)?.frame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
-        let thickness: CGFloat = 8
+        let thickness = AutoHideTriggerGeometry.panelThickness
 
         switch position {
         case .bottomCenter, .bottomLeft, .bottomRight:
@@ -129,7 +129,21 @@ enum ScreenPlacementService {
         }
     }
 
-    private static func displayID(for screen: NSScreen) -> UInt32? {
+    static func sameDisplay(_ lhs: NSScreen?, _ rhs: NSScreen?) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil):
+            return true
+        case let (lhs?, rhs?):
+            if let lhsID = displayID(for: lhs), let rhsID = displayID(for: rhs) {
+                return lhsID == rhsID
+            }
+            return lhs.localizedName == rhs.localizedName && lhs.frame.equalTo(rhs.frame)
+        default:
+            return false
+        }
+    }
+
+    static func displayID(for screen: NSScreen) -> UInt32? {
         let key = NSDeviceDescriptionKey("NSScreenNumber")
         return (screen.deviceDescription[key] as? NSNumber)?.uint32Value
     }
