@@ -76,18 +76,14 @@ Expected results:
 - The unified log contains no SwiftUI `Publishing changes from within view
   updates` warning for Docking during launch.
 
-Latest local evidence: passed 2026-07-05 on `fix/auto-hide-edge-behavior`.
-The run created `dist/Docking-0.0.3-macos26.zip` and
-`dist/Docking-0.0.3-macos26.dmg`, verified the staged app signature, verified
-the archive contents and checksum files, and confirmed that unprovisioned builds
-omit the WeatherKit entitlement so Weather uses the Open-Meteo real-data
-fallback instead of failing at launch. The generated zip SHA-256 was
-`a66dba99aca4c0e39429573d07d4aceafc9b280635c2c969cd7431a0a314b2a3`; the
-generated DMG SHA-256 was
-`3ab7e4f829f14cd729130f06b8af9540cf1d74da73ab12ba44e8bc19f63e7e10`. The
-Homebrew cask checksum remains a post-publication follow-up because it must
-match the Actions-built release DMG, not a local or pull-request artifact; the
-online audit is only meaningful once that asset is public.
+Latest release evidence: passed 2026-07-05 on the `v0.0.3` tag. The Release
+Candidate workflow created `Docking-0.0.3-macos26.zip` and
+`Docking-0.0.3-macos26.dmg`, uploaded the public release assets, and generated
+checksum files that matched the downloaded artifacts. The release zip SHA-256
+was `31683b55cb4df8655f08c22e6160652f4106de8eccdb482aa70f5f35ecc80f4f`; the
+release DMG SHA-256 was
+`cea82c01faef0c6c7dceb4f10aefb1b81e65f15fc31805f75ee7fc16d3619bf9`. The
+Homebrew cask checksum matches the Actions-built public DMG.
 
 Previous Actions evidence: passed 2026-07-05 in PR #8 on the macOS 26 Actions
 runner. The run created `dist/Docking-0.0.2-macos26.zip` and
