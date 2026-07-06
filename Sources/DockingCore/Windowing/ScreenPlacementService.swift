@@ -2,6 +2,8 @@ import AppKit
 import Foundation
 
 enum ScreenPlacementService {
+    static let dockScreenMargin: CGFloat = 10
+
     static func dockScreen(for settings: DockingSettings) -> NSScreen? {
         switch settings.displayMode {
         case .main:
@@ -34,7 +36,7 @@ enum ScreenPlacementService {
 
     static func dockFrame(size: CGSize, on screen: NSScreen? = NSScreen.main, position: DockPosition = .bottomCenter) -> NSRect {
         let visibleFrame = (screen ?? NSScreen.screens.first)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
-        let margin: CGFloat = 10
+        let margin = dockScreenMargin
         let width = min(size.width, visibleFrame.width - margin * 2)
         let height = min(size.height, visibleFrame.height - margin * 2)
 
