@@ -8,6 +8,7 @@ final class DockPanelController {
     private var revealScreen: NSScreen?
     private var autoHideGeneration = 0
     private var isAutoHideScheduled = false
+    private var dockPosition: DockPosition = .bottomCenter
 
     var frame: NSRect? {
         panel?.frame
@@ -48,6 +49,7 @@ final class DockPanelController {
         }
 
         let settings = model.settings
+        dockPosition = settings.dockPosition
         if let revealScreen,
            !NSScreen.screens.contains(where: { ScreenPlacementService.sameDisplay($0, revealScreen) }) {
             self.revealScreen = nil
@@ -111,6 +113,7 @@ final class DockPanelController {
         }
 
         revealScreen = screen
+        dockPosition = settings.dockPosition
         let size = DockLayout.panelSize(
             itemCount: itemCount,
             settings: settings,
@@ -158,7 +161,10 @@ final class DockPanelController {
     }
 
     func containsPointer(at location: NSPoint) -> Bool {
-        panel?.isVisible == true && panel?.frame.contains(location) == true
+        guard let panel, panel.isVisible else {
+            return false
+        }
+        return DockPanelHitGeometry.contains(location, panelFrame: panel.frame, position: dockPosition)
     }
 
     private func makePanel(model: DockingAppModel) -> NSPanel {
@@ -191,5 +197,26 @@ final class DockPanelController {
             && abs(lhs.minY - rhs.minY) < 0.5
             && abs(lhs.width - rhs.width) < 0.5
             && abs(lhs.height - rhs.height) < 0.5
+    }
+}
+
+enum DockPanelHitGeometry {
+    static func contains(_ location: NSPoint, panelFrame: NSRect, position: DockPosition) -> Bool {
+        residenceFrame(for: panelFrame, position: position).contains(location)
+    }
+
+    private static func residenceFrame(for panelFrame: NSRect, position: DockPosition) -> NSRect {
+        var frame = panelFrame
+        switch position {
+        case .bottomCenter, .bottomLeft, .bottomRight:
+            frame.origin.y -= ScreenPlacementService.dockScreenMargin
+            frame.size.height += ScreenPlacementService.dockScreenMargin
+        case .left:
+            frame.origin.x -= ScreenPlacementService.dockScreenMargin
+            frame.size.width += ScreenPlacementService.dockScreenMargin
+        case .right:
+            frame.size.width += ScreenPlacementService.dockScreenMargin
+        }
+        return frame
     }
 }

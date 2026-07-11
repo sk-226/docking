@@ -331,6 +331,76 @@ func validateDockPositionFrames() throws {
     }
 }
 
+func validateDockPanelHitGeometry() throws {
+    let panelFrame = NSRect(x: 100, y: 100, width: 420, height: 72)
+    let insidePanel = NSPoint(x: panelFrame.midX, y: panelFrame.midY)
+    let justBelowBottomDock = NSPoint(
+        x: panelFrame.midX,
+        y: panelFrame.minY - ScreenPlacementService.dockScreenMargin / 2
+    )
+    let justLeftOfLeftDock = NSPoint(
+        x: panelFrame.minX - ScreenPlacementService.dockScreenMargin / 2,
+        y: panelFrame.midY
+    )
+    let justRightOfRightDock = NSPoint(
+        x: panelFrame.maxX + ScreenPlacementService.dockScreenMargin / 2,
+        y: panelFrame.midY
+    )
+
+    try expect(
+        DockPanelHitGeometry.contains(insidePanel, panelFrame: panelFrame, position: .bottomCenter),
+        "dock panel body should count as pointer residency"
+    )
+    try expect(
+        DockPanelHitGeometry.contains(justBelowBottomDock, panelFrame: panelFrame, position: .bottomCenter),
+        "bottom dock should treat the small screen-side gap below the panel as pointer residency"
+    )
+    try expect(
+        !DockPanelHitGeometry.contains(
+            NSPoint(x: panelFrame.midX, y: panelFrame.minY - ScreenPlacementService.dockScreenMargin - 1),
+            panelFrame: panelFrame,
+            position: .bottomCenter
+        ),
+        "bottom dock hit expansion should not grow past the placement margin"
+    )
+    try expect(
+        !DockPanelHitGeometry.contains(
+            NSPoint(x: panelFrame.minX - 1, y: justBelowBottomDock.y),
+            panelFrame: panelFrame,
+            position: .bottomCenter
+        ),
+        "bottom dock under-gap hit testing should stay horizontally scoped to the panel"
+    )
+    try expect(
+        DockPanelHitGeometry.contains(justLeftOfLeftDock, panelFrame: panelFrame, position: .left),
+        "left dock should treat the small screen-side gap left of the panel as pointer residency"
+    )
+    try expect(
+        !DockPanelHitGeometry.contains(
+            NSPoint(x: panelFrame.minX - ScreenPlacementService.dockScreenMargin - 1, y: panelFrame.midY),
+            panelFrame: panelFrame,
+            position: .left
+        ),
+        "left dock hit expansion should not grow past the placement margin"
+    )
+    try expect(
+        DockPanelHitGeometry.contains(justRightOfRightDock, panelFrame: panelFrame, position: .right),
+        "right dock should treat the small screen-side gap right of the panel as pointer residency"
+    )
+    try expect(
+        !DockPanelHitGeometry.contains(
+            NSPoint(x: panelFrame.maxX + ScreenPlacementService.dockScreenMargin + 1, y: panelFrame.midY),
+            panelFrame: panelFrame,
+            position: .right
+        ),
+        "right dock hit expansion should not grow past the placement margin"
+    )
+    try expect(
+        !DockPanelHitGeometry.contains(justBelowBottomDock, panelFrame: panelFrame, position: .left),
+        "side dock hit testing should not include the bottom dock gap"
+    )
+}
+
 func validateAutoHideTriggerScreens() throws {
     guard let screen = NSScreen.main ?? NSScreen.screens.first else {
         print("SKIP auto-hide trigger screens (no display)")
@@ -2726,6 +2796,7 @@ let validations: [(String, () throws -> Void)] = [
     ("widget panel dismiss hit testing", validateWidgetPanelDismissHitTesting),
     ("specific display selection", validateSpecificDisplaySelection),
     ("dock position frames", validateDockPositionFrames),
+    ("dock panel hit geometry", validateDockPanelHitGeometry),
     ("auto-hide trigger screens", validateAutoHideTriggerScreens),
     ("dock auto-hide response preset", validateDockAutoHideResponsePreset),
     ("auto-hide reveal gate", validateAutoHideRevealGate),
