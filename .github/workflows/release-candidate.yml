@@ -18,8 +18,8 @@ permissions:
   contents: read
 
 env:
-  DOCKING_RELEASE_VERSION: "0.0.3"
-  DOCKING_RELEASE_ARTIFACT_PREFIX: "Docking-0.0.3-macos26"
+  DOCKING_RELEASE_VERSION: "0.0.4"
+  DOCKING_RELEASE_ARTIFACT_PREFIX: "Docking-0.0.4-macos26"
 
 concurrency:
   group: release-candidate-${{ github.ref }}
@@ -145,7 +145,7 @@ jobs:
           if [[ "$tag_name" != "$expected_tag" ]]; then
             # The artifact names and release version are intentionally advanced in
             # lockstep by a release-prep change. Failing here is preferable to
-            # accidentally attaching the reviewed 0.0.3 DMG to a different tag
+            # accidentally attaching the reviewed 0.0.4 DMG to a different tag
             # just because the workflow trigger accepts every v* tag.
             echo "Expected tag ${expected_tag}, got ${tag_name}." >&2
             exit 1
