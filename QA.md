@@ -76,7 +76,16 @@ Expected results:
 - The unified log contains no SwiftUI `Publishing changes from within view
   updates` warning for Docking during launch.
 
-Latest release evidence: passed 2026-07-05 on the `v0.0.3` tag. The Release
+Latest release evidence: passed 2026-07-11 on the `v0.0.4` tag. The Release
+Candidate workflow created `Docking-0.0.4-macos26.zip` and
+`Docking-0.0.4-macos26.dmg`, uploaded the public release assets, and generated
+checksum files that matched the downloaded artifacts. The release zip SHA-256
+was `f700d5572b91d87c43d474e6e7ceeee13a5c1e6b92c926d26aff8b8bb8e756cf`; the
+release DMG SHA-256 was
+`872e1d56a9e8fd973cf46c6f160fa06787c9762487ce5a1148e6603b0be55aed`. The
+Homebrew cask checksum matches the Actions-built public DMG.
+
+Previous release evidence: passed 2026-07-05 on the `v0.0.3` tag. The Release
 Candidate workflow created `Docking-0.0.3-macos26.zip` and
 `Docking-0.0.3-macos26.dmg`, uploaded the public release assets, and generated
 checksum files that matched the downloaded artifacts. The release zip SHA-256

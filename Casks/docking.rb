@@ -1,6 +1,6 @@
 cask "docking" do
-  version "0.0.3"
-  sha256 "cea82c01faef0c6c7dceb4f10aefb1b81e65f15fc31805f75ee7fc16d3619bf9"
+  version "0.0.4"
+  sha256 "872e1d56a9e8fd973cf46c6f160fa06787c9762487ce5a1148e6603b0be55aed"
 
   url "https://github.com/sk-226/docking/releases/download/v#{version}/Docking-#{version}-macos26.dmg"
   name "Docking"
