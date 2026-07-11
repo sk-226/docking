@@ -401,6 +401,51 @@ func validateDockPanelHitGeometry() throws {
     )
 }
 
+func validateDockContextMenuPolicy() throws {
+    let appMenu = NSMenu()
+    appMenu.addItem(withTitle: "Open", action: nil, keyEquivalent: "")
+    appMenu.addItem(withTitle: "Show All Windows", action: nil, keyEquivalent: "")
+    appMenu.addItem(withTitle: "Hide", action: nil, keyEquivalent: "")
+    appMenu.addItem(withTitle: "Quit", action: nil, keyEquivalent: "")
+    appMenu.addItem(NSMenuItem.separator())
+    appMenu.addItem(withTitle: "Options", action: nil, keyEquivalent: "")
+    appMenu.addItem(NSMenuItem.separator())
+    appMenu.addItem(withTitle: "Docking", action: nil, keyEquivalent: "")
+
+    let dormantAppMenu = NSMenu()
+    dormantAppMenu.addItem(withTitle: "Open", action: nil, keyEquivalent: "")
+    dormantAppMenu.addItem(NSMenuItem.separator())
+    dormantAppMenu.addItem(withTitle: "Options", action: nil, keyEquivalent: "")
+    dormantAppMenu.addItem(NSMenuItem.separator())
+    dormantAppMenu.addItem(withTitle: "Docking", action: nil, keyEquivalent: "")
+
+    let statusMenu = NSMenu()
+    statusMenu.addItem(withTitle: "Open Control Center", action: nil, keyEquivalent: "")
+    statusMenu.addItem(withTitle: "Open Calendar", action: nil, keyEquivalent: "")
+    statusMenu.addItem(withTitle: "Quit Docking", action: nil, keyEquivalent: "")
+
+    let stackEntryMenu = NSMenu()
+    stackEntryMenu.addItem(withTitle: "Open", action: nil, keyEquivalent: "")
+    stackEntryMenu.addItem(withTitle: "Show in Finder", action: nil, keyEquivalent: "")
+
+    try expect(
+        DockContextMenuPolicy.isDockItemContextMenu(appMenu),
+        "dock item menus should be recognized as Dock-owned residency surfaces"
+    )
+    try expect(
+        DockContextMenuPolicy.isDockItemContextMenu(dormantAppMenu),
+        "dock item menus should be recognized even before the target app is running"
+    )
+    try expect(
+        !DockContextMenuPolicy.isDockItemContextMenu(statusMenu),
+        "menu bar status menus should not be treated as dock item context menus"
+    )
+    try expect(
+        !DockContextMenuPolicy.isDockItemContextMenu(stackEntryMenu),
+        "folder stack entry menus should keep using the stack panel residency"
+    )
+}
+
 func validateAutoHideTriggerScreens() throws {
     guard let screen = NSScreen.main ?? NSScreen.screens.first else {
         print("SKIP auto-hide trigger screens (no display)")
@@ -2797,6 +2842,7 @@ let validations: [(String, () throws -> Void)] = [
     ("specific display selection", validateSpecificDisplaySelection),
     ("dock position frames", validateDockPositionFrames),
     ("dock panel hit geometry", validateDockPanelHitGeometry),
+    ("dock context menu policy", validateDockContextMenuPolicy),
     ("auto-hide trigger screens", validateAutoHideTriggerScreens),
     ("dock auto-hide response preset", validateDockAutoHideResponsePreset),
     ("auto-hide reveal gate", validateAutoHideRevealGate),

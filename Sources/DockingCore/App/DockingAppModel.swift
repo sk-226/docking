@@ -70,6 +70,7 @@ public final class DockingAppModel: ObservableObject {
     private let runningObserver = RunningAppObserver()
     private let iconCache = AppIconCache()
     private let dockPanelController = DockPanelController()
+    private let dockContextMenuTracker = DockContextMenuTracker()
     private let widgetDetailPanelController = WidgetDetailPanelController()
     private let folderStackPanelController = FolderStackPanelController()
     private let restoreService = DockSettingsRestoreService()
@@ -97,6 +98,7 @@ public final class DockingAppModel: ObservableObject {
     // This flag is cleared as soon as the pointer actually enters or exits the
     // dock region, returning control to the normal auto-hide lifecycle.
     private var holdsDockAfterExplicitShow = false
+    private var isDockContextMenuVisible = false
     private var dockReentryGate = AutoHideDockReentryGate()
     private static let settingsSaveDelayNanoseconds: UInt64 = 350_000_000
     private static let terminationObservationDelayNanoseconds: UInt64 = 750_000_000
@@ -145,6 +147,10 @@ public final class DockingAppModel: ObservableObject {
 
     private var isDockAnchoredPanelVisible: Bool {
         widgetDetailPanelController.isVisible || folderStackPanelController.isVisible
+    }
+
+    private var isDockOwnedSurfaceVisible: Bool {
+        isDockAnchoredPanelVisible || isDockContextMenuVisible
     }
 
     public var showsMenuBarIcon: Bool {
@@ -227,6 +233,18 @@ public final class DockingAppModel: ObservableObject {
             self.activeProcessIdentifier = snapshot.activeProcessIdentifier
         }
         runningObserver.start()
+        dockContextMenuTracker.start(
+            onOpen: { [weak self] in
+                Task { @MainActor in
+                    self?.dockContextMenuOpened()
+                }
+            },
+            onClose: { [weak self] in
+                Task { @MainActor in
+                    self?.dockContextMenuClosed()
+                }
+            }
+        )
         installEnvironmentObservers()
         syncLaunchAtLoginState()
         syncRestoreStatus()
@@ -306,6 +324,23 @@ public final class DockingAppModel: ObservableObject {
         dockPanelController.cancelScheduledAutoHide()
     }
 
+    private func dockContextMenuOpened() {
+        guard !isDockContextMenuVisible else {
+            return
+        }
+        isDockContextMenuVisible = true
+        dockReentryGate.reset()
+        dockPanelController.cancelScheduledAutoHide()
+    }
+
+    private func dockContextMenuClosed() {
+        guard isDockContextMenuVisible else {
+            return
+        }
+        isDockContextMenuVisible = false
+        scheduleAutoHideIfNeeded(pointerLocation: NSEvent.mouseLocation)
+    }
+
     func scheduleAutoHideIfNeeded(pointerLocation: NSPoint? = nil) {
         guard shouldScheduleAutoHide(pointerLocation: pointerLocation) else {
             return
@@ -317,7 +352,7 @@ public final class DockingAppModel: ObservableObject {
         guard settings.dockVisibility == .autoHide,
               dockPanelController.isVisible,
               !holdsDockAfterExplicitShow,
-              !isDockAnchoredPanelVisible else {
+              !isDockOwnedSurfaceVisible else {
             return false
         }
         let pointerIsInsideDock = pointerIsInsideDock(pointerLocation: pointerLocation)
@@ -1091,7 +1126,7 @@ public final class DockingAppModel: ObservableObject {
             // content immediately after launch.
             let pointerInsideVisibleDock = dockPanelController.containsPointer(at: NSEvent.mouseLocation)
             isPointerInsideDock = pointerInsideVisibleDock
-            if !pointerInsideVisibleDock && !holdsDockAfterExplicitShow && !isDockAnchoredPanelVisible {
+            if !pointerInsideVisibleDock && !holdsDockAfterExplicitShow && !isDockOwnedSurfaceVisible {
                 dockPanelController.hide()
             }
         case .alwaysVisible:

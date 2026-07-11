@@ -260,4 +260,9 @@ enum DockContextMenuPolicy {
     // shape it can execute with public APIs, while app-specific extras remain
     // available from the real app/system surfaces that own them.
     static let includesAppProvidedDockMenuItems = false
+
+    static func isDockItemContextMenu(_ menu: NSMenu) -> Bool {
+        let titles = Set(menu.items.map(\.title))
+        return titles.contains("Open") && titles.contains("Options") && titles.contains("Docking")
+    }
 }
