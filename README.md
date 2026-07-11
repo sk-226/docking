@@ -41,8 +41,8 @@ brew tap sk-226/docking https://github.com/sk-226/docking
 ```
 
 A standalone build is available from the
-[v0.0.3 release](https://github.com/sk-226/docking/releases/tag/v0.0.3) as a
-DMG. This 0.0.3 build is not Developer ID notarized, so macOS may ask you to
+[v0.0.4 release](https://github.com/sk-226/docking/releases/tag/v0.0.4) as a
+DMG. This 0.0.4 build is not Developer ID notarized, so macOS may ask you to
 confirm the app on first launch. If macOS blocks the first launch, approve
 Docking in System Settings > Privacy & Security and launch it again.
 
