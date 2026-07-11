@@ -2705,7 +2705,7 @@ private struct DelayedWeatherProvider: WeatherProvider {
 }
 
 func validateRestoreSnapshot() throws {
-    try expect(AppMetadata.version == "0.0.3", "app metadata should keep the explicit pre-release version")
+    try expect(AppMetadata.version == "0.0.4", "app metadata should keep the explicit pre-release version")
 
     let suiteName = "docking.validation.restore.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!
