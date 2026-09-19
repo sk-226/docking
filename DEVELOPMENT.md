@@ -50,6 +50,9 @@ The normal VM-backed development loop is:
 ./script/tart.sh smoke
 ```
 
+`check` builds the app and runs both `DockingValidation` and the XCTest suite.
+`validate` runs both validation suites without a separate app build.
+
 `start` runs the VM headlessly and mounts the current host checkout as
 `/Volumes/My Shared Files/docking`. Source files stay on the host, so Git and AI
 tools can work with the normal checkout while builds and launch checks execute
@@ -73,16 +76,18 @@ For manual visual inspection, stop a headless VM and run:
 
 ## Validation
 
-Run pure-logic validation with:
+Run the validation executable and unit tests with:
 
 ```bash
 swift run DockingValidation
+swift test
 ```
 
 Use a scratch path if the local SwiftPM build database is stale or failing:
 
 ```bash
 swift run --scratch-path /private/tmp/docking-validation DockingValidation
+swift test --scratch-path /private/tmp/docking-validation
 ```
 
 Run the launch smoke check after startup, window, widget, AppKit, or SwiftUI
@@ -103,8 +108,9 @@ Before sharing a build, run:
 ./script/release_check.sh
 ```
 
-The release gate builds the release app bundle and verifies bundle metadata,
-permission usage descriptions, icon resources, local signature integrity,
+The release gate runs `DockingValidation` and the XCTest suite, then builds the
+release app bundle and verifies bundle metadata, permission usage descriptions,
+icon resources, local signature integrity,
 WeatherKit entitlement/profile consistency, source hygiene, release-only mock
 boundaries, and generated zip/DMG artifacts.
 

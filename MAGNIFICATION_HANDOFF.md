@@ -1,7 +1,8 @@
 # Dock appearance and magnification checkpoint
 
-Status: implementation checkpoint, not a claim of Apple Dock motion parity.
-The next pass should finish motion behavior before treating the UI as complete.
+Status: target-coordinate mapping verified in the existing Tart macOS VM,
+including native tests, app launch, motion replay, and selected UI checks.
+Comparison with the Apple Dock reference recording remains open.
 
 ## Intended behavior
 
@@ -20,50 +21,109 @@ jerky implementation. The recordings are not included in this repository.
   surface, compact widgets, size sliders, and Apple Dock size import.
 - Magnification enlarges adjacent icons with a cosine profile and allocates real
   space between them. Widgets keep their resting size.
-- Size and origin now interpolate together. Previously the latest pointer
-  position recomputed the origin from partially animated icon sizes, causing
-  large sideways jumps on fast movement and reversal.
+- Size and origin interpolate together. The latest pointer does not recompute
+  the origin from partially animated icon sizes.
 - A fixed NSPanel canvas holds the moving content. Pointer residency and detail
   panel anchors use the visible content frame, not the reserved canvas.
-- CADisplayLink replaces a 60 Hz Timer. Its requested frame range follows the
-  display; default adaptive cadence dropped toward 30 Hz in the VM. Elapsed time
-  uses the monotonic clock because the first resumed target timestamps were
-  irregular in this environment. The link pauses after settling.
+- CADisplayLink follows the display cadence and pauses after settling. The
+  existing elapsed-time interpolation and accessibility behavior are preserved.
+- The target origin now centers total growth, constrained by the available room
+  on each side. Pointer movement inside an interior icon no longer translates
+  the whole Dock periodically.
+- Pointer coordinates are mapped back to resting coordinates through enlarged
+  icon centers. The mapping includes screen clamping before choosing the
+  magnification peak, including top-to-bottom order on vertical docks.
 
 Relevant files: `DockLayout.swift`, `DockView.swift`, and
 `Windowing/DockPanelController.swift` under `Sources/DockingCore`.
+Regression tests: `Tests/DockingCoreTests/DockMagnificationTests.swift`.
 
-## Remaining motion issue
+## Target-coordinate correction
 
-`DockLayout.metrics` still computes `originShift` using a piecewise fraction of
-each icon's growth. Even with a constant total width, that target moves sideways
-as the pointer crosses a single icon. Interpolating the entire geometry removes
-the large transient jump but does not remove this smaller periodic target motion.
+The previous `DockLayout.metrics` computed `originShift` from piecewise fractions
+of individual icons' growth. Its total width could remain constant while its
+origin oscillated as the pointer crossed one icon.
 
-A direct calculation with 16 icons, base size 36, magnification size 128, and the
-pointer moving from interior icon center 6 to center 7 gives:
+For 16 icons, base size 36, magnification size 128, and a pointer moving from
+interior icon center 6 to center 7:
 
-| Fraction between centers | Total growth | Origin shift |
-| --- | --- | --- |
-| 0 | 184 | 92.000 |
-| 0.25 | 184 | 97.425 |
-| 0.375 | 184 | 97.952 |
-| 0.5 | 184 | 92.000 |
-| 0.625 | 184 | 86.048 |
-| 0.75 | 184 | 86.575 |
-| 1 | 184 | 92.000 |
+| Fraction between centers | Total growth | Previous origin shift | Corrected origin shift |
+| --- | --- | --- | --- |
+| 0 | 184 | 92.000 | 92.000 |
+| 0.25 | 184 | 97.425 | 92.000 |
+| 0.375 | 184 | 97.952 | 92.000 |
+| 0.5 | 184 | 92.000 | 92.000 |
+| 0.625 | 184 | 86.048 | 92.000 |
+| 0.75 | 184 | 86.575 | 92.000 |
+| 1 | 184 | 92.000 | 92.000 |
 
-This is a remaining mathematical discrepancy, not evidence that the current
-checkpoint matches the native clip. Compare a stable centered origin and a
-continuous inverse mapping between screen coordinates and resting icon
-coordinates. Preserve targeting near the two ends and screen-edge clamping;
-blindly centering the growth can move the peak away from the pointer there.
+Simply centering growth is insufficient at the ends or against a screen edge.
+The corrected model solves for the resting focus whose position between enlarged
+icon centers matches the pointer. It uses a bounded bisection against target
+geometry, not a feedback loop through the current animation state.
 
-The current regression test covers rapid transitions between icon centers,
-reversal, 60/120 Hz timing, exit, and the fixed canvas on every edge. Extend it
-with sub-icon sweeps when deciding the correct mapping.
+The inverse uses center-to-center interpolation, not the previous piecewise
+within-icon fractions: those fractions can produce a non-monotone mapping at
+large magnification. Beyond the first/last center, continuous extensions retain
+the two-pitch cosine falloff in pointer coordinates, rather than pinning the end
+icon while the pointer crosses padding or widgets. That end behavior still needs
+comparison with the native reference; it is not an extracted Apple algorithm.
 
-## Validation evidence
+`DockMagnificationBounds` carries unscaled leading/trailing screen room into the
+solver. For vertical docks, leading means above the first icon. Total growth is
+also capped by that room, so the final window clamp does not move the target away
+from the pointer. No Apple Dock preferences, VM configuration, rendering cadence,
+widget sizing, or animation time constants are changed by this correction.
+
+## Initial isolated validation
+
+On 2026-09-19, Swift 6.2.1 on Linux, in an isolated harness:
+
+- All 10 XCTest cases passed in both Debug and Release configurations.
+- The harness compiled the actual `DockLayout.swift` and the pure geometry enums
+  extracted unchanged from `DockPanelController.swift`. A minimal settings
+  fixture supplied the layout properties from `Models.swift`; it did not replace
+  the magnification implementation with a separate model.
+- Coverage includes sub-icon sweeps/reversal, center-target accuracy at both
+  ends and dividers, monotonicity across supported icon sizes and constrained
+  growth, inverse round trips, continuous end falloff, translated screen bounds,
+  true bottom-left/right alignment, all Dock edges, 0/1/16/70 icons, fixed-canvas
+  containment, 60/120/240 Hz elapsed-time equivalence, and exact exit settlement.
+- Disabled magnification, non-finite pointer input, no expansion room, and
+  unchanged glass/widget thickness are also covered.
+- The edited AppKit controller passed a Swift syntax-only parse. Its framework
+  integration was not typechecked or launched on macOS in this environment.
+
+These initial checks covered geometry only. Subsequent macOS validation is
+recorded below. Both `script/tart.sh check` and `script/tart.sh validate` now run
+`DockingValidation` and the XCTest suite. `script/release_check.sh` runs both
+suites as part of the GitHub Actions release-candidate workflow.
+
+## Native validation of the coordinate mapping
+
+On 2026-09-19, in the existing `docking-dev` VM, macOS 26.6.2, Swift 6.2.3:
+
+- All 10 XCTest cases and all 60 `DockingValidation` checks passed.
+- After adding XCTest to the standard gates, `script/tart.sh check` and
+  `script/tart.sh release` both passed, including zip/DMG checksum verification.
+- The app bundle built and verified, and the launch smoke check passed.
+- A temporary deterministic replay exercised sub-icon movement, reversal,
+  traversal, the ends, the widget side, and exit. The interior target origin
+  stayed at 92 pt, and the NSPanel frame had exactly one value throughout.
+- During continuous animation, 590 display intervals had a median of 16.67 ms,
+  95th percentile of 17.88 ms, and maximum of 18.06 ms. Longer wall-clock gaps
+  occurred while the display link was paused outside the magnification area.
+- Actual SwiftUI frame reports were collected; all 12 icons returned to their
+  36 pt resting size after exit. A settled idle sample showed 0.0% CPU.
+- Live UI checks covered bottom, left, and right placement with 128 pt maximum
+  magnification. Clicking an enlarged System Settings icon activated that app.
+- The replay and instrumentation existed only in the guest. They were removed,
+  source hashes were checked, and a normal app bundle was built and verified.
+
+These checks establish the coordinate correction and the measured VM cadence.
+They do not establish motion parity with the Apple Dock reference recording.
+
+## Previous checkpoint evidence (before this correction)
 
 On 2026-09-19, in the existing `docking-dev` VM, macOS 26.6.2:
 
@@ -78,21 +138,38 @@ On 2026-09-19, in the existing `docking-dev` VM, macOS 26.6.2:
   before the final normal build. They are not production features.
 - Static UI checks covered the three Dock edges, sliders, widget open/close,
   and the add picker. Those checks do not establish continuous native parity.
-- No final end-to-end comparison of the corrected motion against the native
-  recording has passed. Multi-display, full-screen, and accessibility changes
-  need the applicable QA checks.
+
+The Appearance and magnification entry in `QA.md` separates these earlier UI
+checks from validation of the current coordinate mapping.
+
+## Remaining native comparison
+
+Compare the 13.08.13 native reference with Docking at the same icon size, maximum
+magnification, item order, screen scale, and pointer path. Include slow sub-icon movement,
+fast traversal/reversal, both ends, dividers, widgets, diagonal entry/exit,
+bottom/left/right placement, and screen-edge clamping. Check click targeting,
+auto-hide residency, and idle settling as well as appearance.
+
+No final end-to-end comparison against the native recording has passed for this
+correction. Multi-display, full-screen, and accessibility changes still need the
+applicable `QA.md` checks. Do not label this change "identical to Apple Dock"
+until that comparison is recorded.
 
 ## Tart source transfer
 
 The VM already exists; do not recreate it. The shared folder showed stale file
-contents during in-place host edits in this session. An exact tar snapshot sent
-through `tart exec -i` avoided that issue. Use a guest-local source directory and
-scratch directory for a trustworthy build:
+contents during in-place host edits in the earlier session. An exact tar snapshot
+sent through `tart exec -i` avoided that issue. Use a guest-local source directory
+and scratch directory for a trustworthy build. Include `Tests` now that the
+package declares a test target:
 
 ```bash
-COPYFILE_DISABLE=1 tar --no-xattrs -cf - Package.swift Sources Validation script Resources |
+COPYFILE_DISABLE=1 tar --no-xattrs -cf - Package.swift Sources Validation Tests script Resources |
   tart exec -i docking-dev /bin/zsh -lc \
   'mkdir -p /private/tmp/docking-ui-work && tar -xf - -C /private/tmp/docking-ui-work'
+
+tart exec docking-dev /bin/zsh -lc \
+  'cd /private/tmp/docking-ui-work && swift test --scratch-path /private/tmp/docking-ui-build --filter DockMagnificationTests'
 
 tart exec docking-dev /bin/zsh -lc \
   'cd /private/tmp/docking-ui-work && swift run --scratch-path /private/tmp/docking-ui-build DockingValidation'
