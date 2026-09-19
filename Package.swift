@@ -30,6 +30,11 @@ let package = Package(
             name: "DockingValidation",
             dependencies: ["DockingCore"],
             path: "Validation"
+        ),
+        .testTarget(
+            name: "DockingCoreTests",
+            dependencies: ["DockingCore"],
+            path: "Tests/DockingCoreTests"
         )
     ]
 )

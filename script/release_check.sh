@@ -160,6 +160,9 @@ fail_if_matches() {
 section "Validation executable"
 swift run --scratch-path /private/tmp/docking-app-swiftpm-validation DockingValidation
 
+section "Unit tests"
+swift test --scratch-path /private/tmp/docking-app-swiftpm-validation
+
 section "Release app bundle and artifacts"
 # The release artifact must be built through the same app-bundle staging script
 # that developers run every day. A separate release-only packager would look
@@ -225,7 +228,7 @@ fail_if_matches \
 fail_if_matches \
   "user-specific path or old bundle identifier still appears in authored files" \
   "s[u]gu|/U[s]ers/|com\\.s[u]gu\\.docking" \
-  -g '!dist/**' -g '!.git/**' -g '!script/release_check.sh' .
+  -g '!dist/**' -g '!.git' -g '!.git/**' -g '!script/release_check.sh' .
 
 section "Production mock boundary"
 # The product requirement is stronger than "real provider exists": production

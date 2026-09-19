@@ -148,12 +148,12 @@ final class DockPanelController: NSObject {
         }
     }
 
-    private func layoutMetrics(pointer: Double? = nil) -> DockLayoutMetrics {
+    private func layoutMetrics(pointer: Double? = nil, bounds: DockMagnificationBounds = DockMagnificationBounds()) -> DockLayoutMetrics {
         var settings = layoutSettings
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { settings.magnificationEnabled = false }
         return DockLayout.metrics(itemCount: layoutItemCount, settings: settings,
                                   separatedRunningStart: separatedRunningStart, maximumLength: maximumLength,
-                                  pointerOffset: pointer)
+                                  pointerOffset: pointer, magnificationBounds: bounds)
     }
 
     private func resetMagnification() {
@@ -168,7 +168,9 @@ final class DockPanelController: NSObject {
         let location = NSEvent.mouseLocation
         let inside = DockPanelHitGeometry.contains(location, panelFrame: contentFrame, position: dockPosition)
         let offset = dockPosition.isVertical ? baseFrame.maxY - location.y : location.x - baseFrame.minX
-        targetMetrics = layoutMetrics(pointer: inside ? offset / presentation.metrics.scale : nil)
+        let bounds = DockPanelGeometry.magnificationBounds(baseFrame: baseFrame, position: dockPosition,
+                                                          limits: screenLimits, scale: presentation.metrics.scale)
+        targetMetrics = layoutMetrics(pointer: inside ? offset / presentation.metrics.scale : nil, bounds: bounds)
         panel.ignoresMouseEvents = !contentFrame.contains(location)
         if targetMetrics != presentation.metrics, displayLink?.isPaused == true {
             lastFrameTimestamp = nil
@@ -297,6 +299,15 @@ final class DockPanelController: NSObject {
 }
 
 enum DockPanelGeometry {
+    static func magnificationBounds(baseFrame: NSRect, position: DockPosition, limits: NSRect, scale: Double) -> DockMagnificationBounds {
+        if position.isVertical {
+            return DockMagnificationBounds(leading: max(0, limits.maxY - baseFrame.maxY) / scale,
+                                           trailing: max(0, baseFrame.minY - limits.minY) / scale)
+        }
+        return DockMagnificationBounds(leading: max(0, baseFrame.minX - limits.minX) / scale,
+                                       trailing: max(0, limits.maxX - baseFrame.maxX) / scale)
+    }
+
     static func contentFrame(baseFrame: NSRect, metrics: DockLayoutMetrics, position: DockPosition, limits: NSRect) -> NSRect {
         var frame = NSRect(origin: baseFrame.origin, size: metrics.scaledPanelSize)
         if position.isVertical {

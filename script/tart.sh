@@ -24,8 +24,8 @@ Commands:
   exec CMD    Run CMD in the mounted repository.
   doctor      Print guest macOS, Xcode, and Swift versions.
   build       Build Docking in the guest.
-  validate    Run DockingValidation in the guest.
-  check       Build and validate in the guest.
+  validate    Run DockingValidation and unit tests in the guest.
+  check       Build, validate, and run unit tests in the guest.
   verify      Build, stage, launch, and verify Docking in the guest.
   smoke       Run the launch smoke check in the guest.
   release     Run the local release gate in the guest.
@@ -182,10 +182,10 @@ case "$command" in
     guest "swift build --product Docking --scratch-path /private/tmp/docking-app-swiftpm-run"
     ;;
   validate)
-    guest "swift run --scratch-path /private/tmp/docking-validation DockingValidation"
+    guest "swift run --scratch-path /private/tmp/docking-validation DockingValidation && swift test --scratch-path /private/tmp/docking-validation"
     ;;
   check)
-    guest "swift build --product Docking --scratch-path /private/tmp/docking-app-swiftpm-run && swift run --scratch-path /private/tmp/docking-validation DockingValidation"
+    guest "swift build --product Docking --scratch-path /private/tmp/docking-app-swiftpm-run && swift run --scratch-path /private/tmp/docking-validation DockingValidation && swift test --scratch-path /private/tmp/docking-validation"
     ;;
   verify)
     guest "./script/build_and_run.sh --verify"
