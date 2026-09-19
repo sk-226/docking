@@ -59,7 +59,7 @@ vm_ready() {
 }
 
 repo_mounted() {
-  tart exec "$VM_NAME" /usr/bin/test -d "$GUEST_ROOT" >/dev/null 2>&1
+  tart exec "$VM_NAME" /bin/test -d "$GUEST_ROOT" >/dev/null 2>&1
 }
 
 require_vm() {
