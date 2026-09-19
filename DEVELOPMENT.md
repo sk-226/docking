@@ -23,6 +23,54 @@ The script stages a real `.app` bundle because a SwiftPM executable launch does
 not exercise the same Info.plist, resource, permission-description, and signing
 paths that users run.
 
+## Tart VM
+
+For a clean macOS 26 + Xcode development environment, use Tart on an Apple
+Silicon host. Install Tart on the host with:
+
+```bash
+brew install openai/tools/tart
+```
+
+Create the Docking VM once:
+
+```bash
+./script/tart.sh setup
+```
+
+By default this clones `ghcr.io/cirruslabs/macos-tahoe-xcode:latest` as
+`docking-dev` and configures it with 8 CPUs and 16 GiB of memory. Override
+`TART_IMAGE`, `TART_VM_NAME`, `TART_CPU`, or `TART_MEMORY_MB` when needed.
+
+The normal VM-backed development loop is:
+
+```bash
+./script/tart.sh check
+./script/tart.sh verify
+./script/tart.sh smoke
+```
+
+`start` runs the VM headlessly and mounts the current host checkout as
+`/Volumes/My Shared Files/docking`. Source files stay on the host, so Git and AI
+tools can work with the normal checkout while builds and launch checks execute
+inside the guest. Tart's guest agent is used through `tart exec`, so SSH setup
+and guest GitHub credentials are not required.
+
+Useful commands:
+
+```bash
+./script/tart.sh doctor
+./script/tart.sh shell
+./script/tart.sh exec 'swift --version'
+./script/tart.sh stop
+```
+
+For manual visual inspection, stop a headless VM and run:
+
+```bash
+./script/tart.sh gui
+```
+
 ## Validation
 
 Run pure-logic validation with:
