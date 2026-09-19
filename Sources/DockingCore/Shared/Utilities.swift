@@ -23,59 +23,24 @@ extension View {
 }
 
 private struct DockingSurfaceModifier: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     let settings: DockingSettings
     let cornerRadius: Double?
 
     func body(content: Content) -> some View {
-        let radius = cornerRadius ?? settings.cornerRadius
-        let strength = min(max(settings.materialStrength, 0), 1)
-        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-
-        content
-            .background {
-                // Keep the dock rooted in AppKit/SwiftUI system materials. A
-                // hand-painted translucent black rectangle looks harsh on macOS,
-                // and it is the reason the previous dock read as having a black
-                // outline. The neutral fill is only a damping layer for the
-                // user-facing "material strength" setting; it never replaces the
-                // native material as the base surface.
-                shape.fill(systemMaterial)
-                    .opacity(settings.opacity)
-                shape.fill(Color(nsColor: .controlBackgroundColor).opacity((1 - strength) * 0.28))
-
-                // Accent color belongs inside the glass, not on the outer edge.
-                // A colored border makes the dock look like custom web chrome;
-                // this soft tint keeps the setting visible while preserving an
-                // Apple-like system surface.
-                shape.fill(settings.accentColor.opacity(0.035 * strength))
-            }
-            .clipShape(shape)
-            .overlay {
-                // This is an inner highlight, not a frame. Using a light,
-                // adaptive hairline avoids the black rim that appeared when the
-                // border/shadow stack was darker than the material underneath.
-                shape.strokeBorder(
-                    Color.white.opacity(colorScheme == .dark ? 0.18 : 0.52),
-                    lineWidth: 0.6
-                )
-                .blendMode(.plusLighter)
-            }
+        let shape = RoundedRectangle(cornerRadius: cornerRadius ?? settings.cornerRadius, style: .continuous)
+        if reduceTransparency {
+            content.background(.regularMaterial, in: shape)
+        } else {
+            content.glassEffect(glass, in: shape)
+        }
     }
 
-    private var systemMaterial: Material {
-        // The named presets should be visibly different, not just numerically
-        // different. Keeping all three on `.thinMaterial` made "Liquid Glass"
-        // feel like a label that barely changed anything. These are still
-        // system materials, so the dock remains adaptive instead of becoming a
-        // hand-painted translucent rectangle.
+    private var glass: Glass {
         switch settings.liquidGlassSurfaceStyle {
-        case .clear:
-            return .ultraThinMaterial
-        case .balanced:
-            return .thinMaterial
-        case .dense:
-            return .regularMaterial
+        case .clear: return .clear
+        case .balanced: return .regular
+        case .dense: return .regular.tint(Color(nsColor: .controlBackgroundColor).opacity(0.18))
         }
     }
 }

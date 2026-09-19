@@ -957,6 +957,16 @@ public final class DockingAppModel: ObservableObject {
         }
     }
 
+    func matchAppleDockAppearance() {
+        var mirrored = settings
+        _ = AppleDockPreferences.mirrorOriginalDock(into: &mirrored, savedValues: restoreService.savedDockPreferenceValues())
+        var updated = settings
+        updated.iconSize = mirrored.iconSize
+        updated.magnificationEnabled = mirrored.magnificationEnabled
+        updated.magnificationSize = mirrored.magnificationSize
+        settings = updated
+    }
+
     func matchOriginalAppleDockLayout(updateStatus: Bool = true) {
         var mirroredSettings = settings
         let didApplyPreferences = AppleDockPreferences.mirrorOriginalDock(

@@ -116,6 +116,105 @@ func validateDockLayout() throws {
     )
 }
 
+func validateDockMagnificationMotion() throws {
+    var settings = DockingSettings.default
+    settings.magnificationSize = 120
+    let resting = DockLayout.metrics(itemCount: 16, settings: settings)
+    func target(_ index: Int) -> DockLayoutMetrics {
+        DockLayout.metrics(itemCount: 16, settings: settings, pointerOffset: resting.iconCenters[index])
+    }
+    let left = target(3)
+    let right = target(12)
+    var moving = left
+    for destination in [right, left, right, left] {
+        for _ in 0..<12 {
+            moving = moving.approaching(destination, elapsed: 1.0 / 60)
+            try expect(abs(moving.originShift - left.originShift) < 0.0001,
+                       "crossing or reversing through interior icons must not throw the entire dock sideways")
+            try expect(abs(moving.panelSize.width - left.panelSize.width) < 0.0001,
+                       "transferring magnification between interior icons must preserve total dock width")
+        }
+    }
+    var sixtyHz = resting
+    var oneTwentyHz = resting
+    for _ in 0..<6 { sixtyHz = sixtyHz.approaching(left, elapsed: 1.0 / 60) }
+    for _ in 0..<12 { oneTwentyHz = oneTwentyHz.approaching(left, elapsed: 1.0 / 120) }
+    try expect(zip(sixtyHz.iconSizes, oneTwentyHz.iconSizes).allSatisfy { abs($0 - $1) < 0.0001 }
+               && abs(sixtyHz.originShift - oneTwentyHz.originShift) < 0.0001,
+               "magnification timing must follow elapsed time instead of display refresh rate")
+    for _ in 0..<60 { moving = moving.approaching(resting, elapsed: 1.0 / 60) }
+    try expect(moving == resting, "pointer exit must settle completely and allow rendering to pause")
+
+    let limits = NSRect(x: 10, y: 10, width: 1000, height: 760)
+    for position in DockPosition.allCases {
+        settings.dockPosition = position
+        for count in [0, 1, 16, 70] {
+            let length = position.isVertical ? limits.height : limits.width
+            let base = DockLayout.metrics(itemCount: count, settings: settings, maximumLength: length)
+            var baseFrame = NSRect(x: limits.midX - base.scaledPanelSize.width / 2,
+                                   y: limits.midY - base.scaledPanelSize.height / 2,
+                                   width: base.scaledPanelSize.width, height: base.scaledPanelSize.height)
+            switch position {
+            case .left: baseFrame.origin.x = limits.minX
+            case .right: baseFrame.origin.x = limits.maxX - baseFrame.width
+            default: baseFrame.origin.y = limits.minY
+            }
+            let canvas = DockPanelGeometry.canvasFrame(baseFrame: baseFrame, resting: base, settings: settings, limits: limits)
+            var current = base
+            let offsets = Array(stride(from: -30.0, through: length / base.scale + 30, by: 7))
+            for offset in offsets + offsets.reversed() {
+                let next = DockLayout.metrics(itemCount: count, settings: settings, maximumLength: length, pointerOffset: offset)
+                current = current.approaching(next, elapsed: 1.0 / 60)
+                let frame = DockPanelGeometry.contentFrame(baseFrame: baseFrame, metrics: current, position: position, limits: limits)
+                try expect(canvas.insetBy(dx: -0.001, dy: -0.001).contains(frame),
+                           "a continuous pointer sweep must fit the same window on every Dock edge")
+            }
+            let outsideDock = NSPoint(x: canvas.minX + 1, y: canvas.maxY - 1)
+            if !baseFrame.contains(outsideDock) {
+                try expect(!DockPanelHitGeometry.contains(outsideDock, panelFrame: baseFrame, position: position),
+                           "empty magnification space must not keep auto-hide open")
+            }
+        }
+    }
+}
+
+func validateDockMagnificationAndDensity() throws {
+    var settings = DockingSettings.default
+    settings.calendarEnabled = false
+    settings.weatherEnabled = false
+    let base = DockLayout.metrics(itemCount: 7, settings: settings)
+    let enlarged = DockLayout.metrics(itemCount: 7, settings: settings, pointerOffset: base.iconCenters[3])
+    try expect(enlarged.iconSizes[3] == 72, "the icon under the pointer should reach the configured maximum")
+    try expect(enlarged.iconSizes[0] == 36 && enlarged.iconSizes[6] == 36, "distant icons should stay at their original size")
+    try expect(abs(enlarged.iconSizes[2] - enlarged.iconSizes[4]) < 0.0001, "magnification should spread symmetrically to neighboring icons")
+    try expect(enlarged.panelSize.width > base.panelSize.width, "magnification needs real layout space so icons do not overlap")
+    try expect(enlarged.panelSize.height == 84, "the window should fit enlarged icons above the surface")
+    try expect(enlarged.surfaceSize.height == base.surfaceSize.height, "magnification should not inflate the glass or widgets")
+    settings.magnificationEnabled = false
+    try expect(DockLayout.metrics(itemCount: 7, settings: settings, pointerOffset: base.iconCenters[3]) == base, "disabled magnification should leave geometry unchanged")
+    settings.magnificationEnabled = true
+    for position in DockPosition.allCases {
+        settings.dockPosition = position
+        for count in [0, 1, 25, 70] {
+            let fitted = DockLayout.metrics(itemCount: count, settings: settings, maximumLength: 760, pointerOffset: 300)
+            let length = position.isVertical ? fitted.scaledPanelSize.height : fitted.scaledPanelSize.width
+            try expect(length <= 760.001 && length > 0, "crowded docks should fit the screen, including during magnification")
+        }
+    }
+    settings = .default
+    settings.iconSize = 24
+    settings.widgetScale = 1.5
+    settings.calendarWidgetSizePreset = .detailed
+    settings.weatherWidgetSizePreset = .detailed
+    for position in DockPosition.allCases {
+        settings.dockPosition = position
+        let small = DockLayout.metrics(itemCount: 5, settings: settings)
+        let thickness = position.isVertical ? small.surfaceSize.width : small.surfaceSize.height
+        try expect(thickness == 36, "widgets must not force a small dock to be taller or wider")
+        try expect(settings.widgetTileHeight <= thickness - 8, "widget content should remain inside the surface")
+    }
+}
+
 func validateDockIconRendererUsesFullBackingScale() throws {
     let image = DockIconImageRenderer.render { rect in
         NSColor.systemBlue.setFill()
@@ -524,6 +623,8 @@ func validateAppleDockMirroring() throws {
     try FileManager.default.createDirectory(at: downloadsURL, withIntermediateDirectories: true)
 
     defaults.set(true, forKey: "autohide")
+    defaults.set(true, forKey: "magnification")
+    defaults.set(88.0, forKey: "largesize")
     defaults.set("right", forKey: "orientation")
     defaults.set(40.0, forKey: "tilesize")
     defaults.set(
@@ -571,17 +672,21 @@ func validateAppleDockMirroring() throws {
     try expect(settings.dockVisibility == .autoHide, "Apple Dock autohide should map to Docking visibility")
     try expect(settings.dockPosition == .right, "Apple Dock orientation should map to Docking position")
     try expect(settings.iconSize == 40.0, "Apple Dock tile size should map to Docking icon size")
+    try expect(settings.magnificationEnabled && settings.magnificationSize == 88, "Apple Dock magnification should be imported")
 
     let savedValues: [String: DockPreferenceValue] = [
         "autohide": .bool(false),
         "orientation": .string("left"),
-        "tilesize": .double(44.0)
+        "tilesize": .double(44.0),
+        "magnification": .bool(false),
+        "largesize": .double(96.0)
     ]
     let appliedFromSnapshot = AppleDockPreferences.mirrorOriginalDock(into: &settings, savedValues: savedValues, dockDefaults: defaults)
     try expect(appliedFromSnapshot, "saved Apple Dock snapshot should override already-mutated Dock defaults")
     try expect(settings.dockVisibility == .alwaysVisible, "saved autohide should restore original visibility intent")
     try expect(settings.dockPosition == .left, "saved orientation should restore original Dock edge")
     try expect(settings.iconSize == 44.0, "saved tile size should restore original icon size")
+    try expect(!settings.magnificationEnabled && settings.magnificationSize == 96, "saved magnification should override current Apple Dock preferences")
 
     let items = AppleDockPreferences.persistentDockItems(from: defaults)
     try expect(items.count == 2, "Apple Dock mirror should import apps and folder stack tiles")
@@ -1348,6 +1453,9 @@ func validateSettingsStore() throws {
     settings.dockAutoHideResponsePreset = .fast
     settings.calendarWidgetSizePreset = .compact
     settings.weatherWidgetSizePreset = .detailed
+    settings.widgetScale = 1.25
+    settings.magnificationEnabled = false
+    settings.magnificationSize = 96
     store.save(settings)
     try expect(store.load() == settings, "settings should round-trip through UserDefaults")
 
@@ -1358,15 +1466,25 @@ func validateSettingsStore() throws {
         "encoded settings should be representable as a JSON object"
     )
     legacySettingsObject.removeValue(forKey: "dockAutoHideResponsePreset")
+    legacySettingsObject.removeValue(forKey: "widgetScale")
+    legacySettingsObject.removeValue(forKey: "magnificationEnabled")
+    legacySettingsObject.removeValue(forKey: "magnificationSize")
+    legacySettingsObject["dockSize"] = 88
+    legacySettingsObject["spacing"] = 12
     defaults.set(try JSONSerialization.data(withJSONObject: legacySettingsObject), forKey: "DockingSettings.v2")
     let legacyLoadedSettings = store.load()
     try expect(legacyLoadedSettings.dockAutoHideResponsePreset == .standard, "legacy settings should default Docking Dock response without resetting other preferences")
     try expect(legacyLoadedSettings.dockVisibility == settings.dockVisibility, "legacy settings should preserve existing Docking visibility")
+    try expect(legacyLoadedSettings.iconSize == settings.iconSize, "legacy icon size must survive the new sliders")
+    try expect(legacyLoadedSettings.widgetScale == 1, "legacy settings should get a readable widget scale")
+    try expect(legacyLoadedSettings.magnificationSize == 72, "legacy settings should get the default magnification size")
 }
 
 func validateSettingsRefreshKeys() throws {
     var appearanceOnly = DockingSettings.default
-    appearanceOnly.dockSize = 88
+    appearanceOnly.widgetScale = 1.2
+    appearanceOnly.magnificationEnabled = false
+    appearanceOnly.magnificationSize = 100
     appearanceOnly.iconSize = 60
     appearanceOnly.calendarWidgetSizePreset = .detailed
     appearanceOnly.weatherWidgetSizePreset = .compact
@@ -1735,23 +1853,21 @@ func validateDefaultSettingsFitEditableRanges() throws {
     try expect(DockingSettingLimits.autoHideDelay.contains(settings.autoHideDelay), "default auto-hide delay should be editable in Control Center")
     try expect(abs(DockingSettingLimits.autoHideDelay.lowerBound - 0.05) < 0.000_001, "auto-hide delay should allow near-instant hiding for users who prefer a faster dock")
     try expect(abs(DockingSettingLimits.autoHideDelayStep - 0.05) < 0.000_001, "auto-hide delay should expose fine-grained subsecond adjustment")
-    try expect(DockingSettingLimits.dockSize.contains(settings.dockSize), "default dock size should be editable in Control Center")
     try expect(DockingSettingLimits.iconSize.contains(settings.iconSize), "default icon size should be editable in Control Center")
     try expect(WidgetSizePreset.allCases.contains(settings.calendarWidgetSizePreset), "default calendar widget size should be selectable in Control Center")
     try expect(WidgetSizePreset.allCases.contains(settings.weatherWidgetSizePreset), "default weather widget size should be selectable in Control Center")
-    try expect(DockingSettingLimits.spacing.contains(settings.spacing), "default spacing should be editable in Control Center")
+    try expect(DockingSettingLimits.widgetScale.contains(settings.widgetScale), "default widget scale should be editable")
     try expect(LiquidGlassSurfaceStyle.allCases.contains(settings.liquidGlassSurfaceStyle), "default Liquid Glass style should be selectable in Control Center")
-    try expect(DockScalePreset.nearest(to: settings) == .comfortable, "default dock scale should map to a user-facing preset")
     try expect(settings.calendarWidgetSizePreset == .standard, "default calendar widget size should map to a user-facing preset")
     try expect(settings.weatherWidgetSizePreset == .standard, "default weather widget size should map to a user-facing preset")
-    try expect(WidgetSizePreset.detailed.width(iconSize: settings.iconSize) > WidgetSizePreset.standard.width(iconSize: settings.iconSize), "detailed widget preset should expose a wider dock tile")
-    try expect(WidgetSizePreset.compact.width(iconSize: settings.iconSize) < WidgetSizePreset.standard.width(iconSize: settings.iconSize), "compact widget preset should remain narrower than standard")
-    try expect(WidgetSizePreset.detailed.width(iconSize: settings.iconSize) >= 180, "detailed widget preset should have enough horizontal room for side-by-side context")
-    try expect(WidgetSizePreset.detailed.width(iconSize: settings.iconSize) <= 205, "default detailed widget width should not create unowned blank space around concise weather context")
+    try expect(WidgetSizePreset.detailed.contentWidth > WidgetSizePreset.standard.contentWidth, "detailed widget preset should expose a wider dock tile")
+    try expect(WidgetSizePreset.compact.contentWidth < WidgetSizePreset.standard.contentWidth, "compact widget preset should remain narrower than standard")
+    try expect(WidgetSizePreset.detailed.contentWidth >= 180, "detailed widget preset should have enough horizontal room for side-by-side context")
+    try expect(WidgetSizePreset.detailed.contentWidth <= 205, "default detailed widget width should not create unowned blank space around concise weather context")
     var detailedWidgets = settings
     detailedWidgets.calendarWidgetSizePreset = .detailed
     detailedWidgets.weatherWidgetSizePreset = .detailed
-    try expect(detailedWidgets.widgetTileHeight <= detailedWidgets.dockSize - 10, "detailed widget presets must not increase dock vertical occupation")
+    try expect(detailedWidgets.widgetTileHeight <= detailedWidgets.effectiveDockThickness - 8, "detailed widget presets must not increase dock vertical occupation")
     try expect(DockingSettingLimits.calendarLookaheadDays.contains(settings.calendarLookaheadDays), "default calendar lookahead should be editable in Control Center")
     try expect(DockingSettingLimits.calendarMaxEventCount.contains(settings.calendarMaxEventCount), "default calendar max events should be editable in Control Center")
     try expect(DockingSettingLimits.weatherRefreshIntervalMinutes.contains(settings.weatherRefreshIntervalMinutes), "default weather refresh interval should be editable in Control Center")
@@ -1759,32 +1875,6 @@ func validateDefaultSettingsFitEditableRanges() throws {
         settings.weatherRefreshIntervalMinutes.isMultiple(of: DockingSettingLimits.weatherRefreshIntervalStep),
         "default weather refresh interval should align with the Control Center stepper"
     )
-}
-
-func validateDockWidgetMetrics() throws {
-    let persistedSmallSize = 44.0
-    let editableMinimumSize = DockingSettingLimits.widgetReadableMinimum
-
-    for height in [persistedSmallSize, editableMinimumSize, DockingSettings.default.widgetTileHeight] {
-        let metrics = DockWidgetMetrics(width: height, height: height)
-
-        // This guards the specific UI regression the user saw: when SwiftUI was
-        // allowed to infer the widget's internal heights, the Calendar icon and
-        // labels could occupy the same pixels at compact sizes. The invariant is
-        // intentionally mechanical because screenshots are still the final UI
-        // check, while this catches impossible geometry during fast validation.
-        try expect(metrics.allocatedHeight <= height + 0.001, "compact widget layout should not over-allocate vertical space at \(height)pt")
-        try expect(metrics.iconExtent > 0, "compact widget should always reserve an icon row")
-        try expect(metrics.contentHeight > 0, "compact widget should always reserve a text content row")
-        try expect(metrics.cornerRadius < height / 2, "compact widget corner radius should not collapse the rounded rectangle at \(height)pt")
-    }
-
-    let wideMetrics = DockWidgetMetrics(
-        width: WidgetSizePreset.detailed.width(iconSize: DockingSettings.default.iconSize),
-        height: DockingSettings.default.widgetTileHeight
-    )
-    try expect(wideMetrics.usesHorizontalLayout, "wide widget presets should use horizontal layout to spend width instead of height")
-    try expect(wideMetrics.allocatedHeight <= DockingSettings.default.widgetTileHeight + 0.001, "wide widget layout should stay within the dock tile height")
 }
 
 func validateDockItemTerminationMenuPolicy() throws {
@@ -2035,16 +2125,17 @@ func validateSettingsPersistenceIsDebounced() async throws {
     )
 
     var first = model.settings
-    first.dockSize = 80
+    let initialIconSize = model.settings.iconSize
+    first.iconSize = 60
     model.settings = first
 
     var second = model.settings
-    second.dockSize = 81
+    second.iconSize = 61
     model.settings = second
 
-    try expect(store.load().dockSize == DockingSettings.default.dockSize, "settings should not persist every transient slider value immediately")
+    try expect(store.load().iconSize == initialIconSize, "settings should not persist every transient slider value immediately")
     try await Task.sleep(nanoseconds: 900_000_000)
-    try expect(store.load().dockSize == 81, "debounced settings persistence should save the latest visible value")
+    try expect(store.load().iconSize == 61, "debounced settings persistence should save the latest visible value")
 }
 
 @MainActor
@@ -2836,6 +2927,8 @@ let validations: [(String, () throws -> Void)] = [
     ("formatters", validateFormatters),
     ("calendar grouping", validateCalendarGrouping),
     ("dock layout", validateDockLayout),
+    ("dock magnification and density", validateDockMagnificationAndDensity),
+    ("dock magnification motion", validateDockMagnificationMotion),
     ("dock icon renderer backing scale", validateDockIconRendererUsesFullBackingScale),
     ("detail panel anchoring", validateDetailPanelAnchoring),
     ("widget panel dismiss hit testing", validateWidgetPanelDismissHitTesting),
@@ -2861,7 +2954,6 @@ let validations: [(String, () throws -> Void)] = [
     ("settings refresh keys", validateSettingsRefreshKeys),
     ("unpinned running app resolver", validateUnpinnedRunningAppResolver),
     ("default settings fit editable ranges", validateDefaultSettingsFitEditableRanges),
-    ("dock widget metrics", validateDockWidgetMetrics),
     ("dock item termination menu policy", validateDockItemTerminationMenuPolicy),
     ("weather dock location display", validateWeatherDockLocationDisplay),
     ("calendar widget presentation", validateCalendarWidgetPresentation),

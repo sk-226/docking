@@ -355,20 +355,42 @@ struct AppearanceControlCenterSection: View {
                 ControlCenterSettingsGroup("Size") {
                     Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 12) {
                         GridRow {
-                            Text("Dock scale")
+                            Text("Dock size")
                                 .frame(width: AppearanceLayout.labelWidth, alignment: .leading)
-                            Picker("Dock scale", selection: dockScale) {
-                                ForEach(DockScalePreset.allCases) { preset in
-                                    Text(preset.label).tag(preset)
-                                }
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.segmented)
-                            .frame(width: AppearanceLayout.segmentedControlWidth)
+                            Slider(value: $model.settings.iconSize, in: DockingSettingLimits.iconSize, step: 1) {
+                                Text("Dock size")
+                            } minimumValueLabel: { Text("Small") } maximumValueLabel: { Text("Large") }
+                                .labelsHidden()
+                                .frame(width: AppearanceLayout.segmentedControlWidth)
+                        }
+                        GridRow {
+                            Text("Widget size")
+                            Slider(value: widgetScale, in: DockingSettingLimits.widgetScale.lowerBound...model.settings.maximumWidgetScale) {
+                                Text("Widget size")
+                            } minimumValueLabel: { Text("Small") } maximumValueLabel: { Text("Large") }
+                                .labelsHidden()
+                                .frame(width: AppearanceLayout.segmentedControlWidth)
+                        }
+                        GridRow {
+                            Text("Magnification")
+                            Toggle("Magnify nearby icons", isOn: $model.settings.magnificationEnabled)
+                        }
+                        GridRow {
+                            Color.clear.frame(width: 1, height: 1)
+                            Slider(value: magnificationSize, in: model.settings.iconSize...DockingSettingLimits.magnificationSize.upperBound, step: 1) {
+                                Text("Magnification size")
+                            } minimumValueLabel: { Text("Small") } maximumValueLabel: { Text("Large") }
+                                .labelsHidden()
+                                .disabled(!model.settings.magnificationEnabled)
+                                .frame(width: AppearanceLayout.segmentedControlWidth)
+                        }
+                        GridRow {
+                            Color.clear.frame(width: 1, height: 1)
+                            Button("Match Apple Dock size") { model.matchAppleDockAppearance() }
                         }
 
                         GridRow {
-                            Text("Calendar widget")
+                            Text("Calendar detail")
                                 .frame(width: AppearanceLayout.labelWidth, alignment: .leading)
                             Picker("Calendar widget size", selection: $model.settings.calendarWidgetSizePreset) {
                                 ForEach(WidgetSizePreset.allCases) { preset in
@@ -381,7 +403,7 @@ struct AppearanceControlCenterSection: View {
                         }
 
                         GridRow {
-                            Text("Weather widget")
+                            Text("Weather detail")
                                 .frame(width: AppearanceLayout.labelWidth, alignment: .leading)
                             Picker("Weather widget size", selection: $model.settings.weatherWidgetSizePreset) {
                                 ForEach(WidgetSizePreset.allCases) { preset in
@@ -408,17 +430,17 @@ struct AppearanceControlCenterSection: View {
         }
     }
 
-    private var dockScale: Binding<DockScalePreset> {
+    private var widgetScale: Binding<Double> {
         Binding(
-            get: { DockScalePreset.nearest(to: model.settings) },
-            set: { preset in
-                // Store concrete dimensions instead of the preset enum so the
-                // model stays honest about what the renderer needs. The preset
-                // is a control-center affordance, not a second source of truth.
-                model.settings.dockSize = preset.dockSize
-                model.settings.iconSize = preset.iconSize
-                model.settings.spacing = preset.spacing
-            }
+            get: { model.settings.effectiveWidgetScale },
+            set: { model.settings.widgetScale = $0 }
+        )
+    }
+
+    private var magnificationSize: Binding<Double> {
+        Binding(
+            get: { max(model.settings.iconSize, model.settings.magnificationSize) },
+            set: { model.settings.magnificationSize = $0 }
         )
     }
 

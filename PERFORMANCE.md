@@ -49,9 +49,12 @@ not interacting with the dock.
 - Reduced Motion disables panel frame animation and hover magnification. This is
   both an accessibility requirement and a guard against unnecessary motion work
   on machines where users have opted out of animation.
-- Material strength uses native SwiftUI material plus lightweight neutral and
-  accent overlays. It intentionally avoids private blur APIs so the dock stays
-  maintainable and grounded in public macOS APIs.
+- The Dock surface uses native SwiftUI Liquid Glass, with a system material
+  when Reduce Transparency is enabled.
+- Magnification uses a display link only while geometry is changing. The link
+  pauses when settled, and the window reserves expansion space so pointer
+  movement does not resize its backing surface. Transparent space outside the
+  visible Dock passes mouse events through.
 - Apple Dock preferences are not modified by default, avoiding visible system
   restarts or preference churn.
 

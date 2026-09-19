@@ -45,13 +45,15 @@ enum AppleDockPreferences {
         if let tileSize = doubleValue(forKey: "tilesize", savedValues: savedValues, dockDefaults: dockDefaults) {
             let iconSize = clamped(tileSize, to: DockingSettingLimits.iconSize)
             settings.iconSize = iconSize
-            // Apple Dock's tile size maps most closely to the app icon, while
-            // Docking also needs room for running indicators and compact
-            // widgets. Keeping the existing widget readability floor avoids
-            // recreating the Calendar-overlap bug when a user's Apple Dock is
-            // very small.
-            let readableDockSize = max(iconSize + 26, DockingSettingLimits.widgetReadableMinimum + 14)
-            settings.dockSize = clamped(readableDockSize, to: DockingSettingLimits.dockSize)
+            didApply = true
+        }
+
+        if let magnification = boolValue(forKey: "magnification", savedValues: savedValues, dockDefaults: dockDefaults) {
+            settings.magnificationEnabled = magnification
+            didApply = true
+        }
+        if let largeSize = doubleValue(forKey: "largesize", savedValues: savedValues, dockDefaults: dockDefaults) {
+            settings.magnificationSize = clamped(largeSize, to: DockingSettingLimits.magnificationSize)
             didApply = true
         }
 
@@ -215,7 +217,7 @@ enum AppleDockPreferences {
         if case .bool(let value) = savedValues?[key] {
             return value
         }
-        return dockAutohideValue(from: key == "autohide" ? dockDefaults : nil)
+        return (dockDefaults?.object(forKey: key) as? NSNumber)?.boolValue
     }
 
     private static func doubleValue(forKey key: String, savedValues: [String: DockPreferenceValue]?, dockDefaults: UserDefaults?) -> Double? {

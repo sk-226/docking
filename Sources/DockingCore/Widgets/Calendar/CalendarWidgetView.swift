@@ -15,15 +15,22 @@ struct CalendarWidgetView: View {
             title: "Calendar",
             systemImage: presentation.symbolName,
             iconStyle: .calendar,
-            iconScale: preset == .detailed ? 1.25 : 1,
+            iconScale: 1,
             width: model.settings.calendarWidgetWidth,
             height: model.settings.widgetTileHeight
         ) {
             model.toggleWidgetPanel(.calendar)
         } content: {
-            CalendarDockContent(presentation: presentation, preset: preset)
+            if model.settings.dockPosition.isVertical {
+                Text(presentation.compactPrimary)
+                    .font(.system(size: 9, weight: .medium))
+                    .lineLimit(1)
+            } else {
+                CalendarDockContent(presentation: presentation, preset: preset)
+            }
         }
         .background(WidgetFrameReporter(kind: .calendar))
+        .accessibilityValue([presentation.primary, presentation.secondary, presentation.tertiary].compactMap { $0 }.joined(separator: ", "))
     }
 }
 
@@ -43,64 +50,33 @@ private struct CalendarDockContent: View {
     }
 
     private var compactContent: some View {
-        VStack(spacing: 0) {
-            DockWidgetLine(
-                presentation.compactPrimary,
-                font: .system(size: 13, weight: .semibold, design: .rounded)
-            )
-            DockWidgetLine(
-                presentation.secondary,
-                font: .system(size: 9, weight: .medium),
-                isSecondary: true
-            )
-        }
+        Text(presentation.compactPrimary)
+            .font(.system(size: 12, weight: .medium))
+            .lineLimit(1)
     }
 
     private var standardContent: some View {
         VStack(alignment: .leading, spacing: 1) {
-            DockWidgetLine(
-                presentation.primary,
-                font: .system(size: 12, weight: .semibold, design: .rounded)
-            )
-            DockWidgetLine(
-                presentation.secondary,
-                font: .system(size: 10, weight: .medium),
-                isSecondary: true
-            )
+            DockWidgetLine(presentation.primary, font: .system(size: 11, weight: .semibold))
+            DockWidgetLine(presentation.secondary, font: .system(size: 10), isSecondary: true)
         }
     }
 
     private var detailedContent: some View {
-        HStack(alignment: .center, spacing: 8) {
-            VStack(alignment: .leading, spacing: 1) {
-                DockWidgetLine(
-                    presentation.primary,
-                    font: .system(size: 12, weight: .semibold, design: .rounded)
-                )
-                DockWidgetLine(
-                    presentation.detailLines.first ?? presentation.secondary,
-                    font: .system(size: 9, weight: .medium),
-                    isSecondary: true
-                )
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 6) {
+                Text(presentation.primary)
+                    .font(.system(size: 10, weight: .medium))
+                    .fixedSize()
+                Text(presentation.detailLines.first ?? "")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-            .frame(width: 66, alignment: .leading)
-
-            VStack(alignment: .leading, spacing: 1) {
-                DockWidgetLine(
-                    presentation.secondary,
-                    font: .system(size: 11, weight: .semibold)
-                )
-                if let tertiary = presentation.detailLines.dropFirst().first {
-                    DockWidgetLine(
-                        tertiary,
-                        font: .system(size: 9, weight: .medium),
-                        isSecondary: true
-                    )
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            DockWidgetLine(presentation.secondary, font: .system(size: 11, weight: .semibold))
         }
     }
+
 }
 
 struct CalendarDockPresentation {

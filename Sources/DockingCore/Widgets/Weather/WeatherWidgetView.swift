@@ -14,64 +14,44 @@ struct WeatherWidgetView: View {
             title: "Weather",
             systemImage: presentation.symbolName,
             iconStyle: presentation.tone.iconStyle,
-            iconScale: model.settings.weatherWidgetSizePreset == .detailed ? 1.7 : 1.45,
+            iconScale: 1.3,
             width: model.settings.weatherWidgetWidth,
             height: model.settings.widgetTileHeight
         ) {
             model.toggleWidgetPanel(.weather)
         } content: {
-            WeatherDockContent(
-                presentation: presentation,
-                isDetailed: model.settings.weatherWidgetSizePreset == .detailed
-            )
+            if model.settings.dockPosition.isVertical {
+                Text(presentation.primary)
+                    .font(.system(size: 10, weight: .semibold))
+                    .lineLimit(1)
+            } else {
+                WeatherDockContent(presentation: presentation, preset: model.settings.weatherWidgetSizePreset)
+            }
         }
         .background(WidgetFrameReporter(kind: .weather))
+        .accessibilityValue([presentation.primary, presentation.secondary, presentation.tertiary].compactMap { $0 }.joined(separator: ", "))
     }
 }
 
 private struct WeatherDockContent: View {
     let presentation: WeatherDockPresentation
-    let isDetailed: Bool
+    let preset: WidgetSizePreset
 
     var body: some View {
-        if isDetailed {
-            HStack(alignment: .center, spacing: 7) {
-                primaryStack
-
-                if !presentation.detailLines.isEmpty {
-                    VStack(alignment: .leading, spacing: 2) {
-                        ForEach(Array(presentation.detailLines.prefix(3).enumerated()), id: \.offset) { index, line in
-                            Text(line)
-                                .font(.system(size: index == 0 ? 10.5 : 9.5, weight: .medium))
-                                .foregroundStyle(index == 0 ? .primary : .secondary)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.7)
-                                .allowsTightening(true)
-                        }
+        HStack(spacing: 6) {
+            Text(presentation.primary)
+                .font(.system(size: preset == .compact ? 17 : 20, weight: .medium, design: .rounded))
+                .fixedSize()
+            if preset != .compact {
+                VStack(alignment: .leading, spacing: 1) {
+                    DockWidgetLine(preset == .detailed ? presentation.detailLines.first ?? presentation.secondary : presentation.secondary,
+                                   font: .system(size: 10, weight: .medium))
+                    if preset == .detailed {
+                        DockWidgetLine(presentation.detailLines.dropFirst().first ?? presentation.secondary,
+                                       font: .system(size: 9), isSecondary: true)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-        } else {
-            primaryStack
-        }
-    }
-
-    private var primaryStack: some View {
-        VStack(alignment: .leading, spacing: isDetailed ? 2 : 1) {
-            Text(presentation.primary)
-                .font(.system(size: isDetailed ? 21 : 18, weight: .bold, design: .rounded))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-                .allowsTightening(true)
-
-            Text(presentation.secondary)
-                .font(.system(size: isDetailed ? 11.5 : 10, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-                .allowsTightening(true)
         }
     }
 }

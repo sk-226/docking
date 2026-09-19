@@ -444,76 +444,6 @@ struct DockWidgetConfiguration: Codable, Equatable {
     )
 }
 
-// Dock scale groups the three dimensions users perceive as one choice: surface
-// thickness, app icon size, and spacing. Exposing them independently made the
-// settings powerful but hard to reason about; the renderer still stores the
-// exact values so validation can guard geometry without another abstraction.
-enum DockScalePreset: String, CaseIterable, Identifiable, Codable {
-    case compact
-    case comfortable
-    case large
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .compact:
-            return "Compact"
-        case .comfortable:
-            return "Comfortable"
-        case .large:
-            return "Large"
-        }
-    }
-
-    var dockSize: Double {
-        switch self {
-        case .compact:
-            return 64
-        case .comfortable:
-            return 72
-        case .large:
-            return 88
-        }
-    }
-
-    var iconSize: Double {
-        switch self {
-        case .compact:
-            return 40
-        case .comfortable:
-            return 46
-        case .large:
-            return 58
-        }
-    }
-
-    var spacing: Double {
-        switch self {
-        case .compact:
-            return 6
-        case .comfortable:
-            return 8
-        case .large:
-            return 12
-        }
-    }
-
-    static func nearest(to settings: DockingSettings) -> DockScalePreset {
-        allCases.min { left, right in
-            left.distance(to: settings) < right.distance(to: settings)
-        } ?? .comfortable
-    }
-
-    private func distance(to settings: DockingSettings) -> Double {
-        abs(dockSize - settings.dockSize) + abs(iconSize - settings.iconSize) + abs(spacing - settings.spacing)
-    }
-}
-
-// Widget size remains a semantic preset, not a strict geometry contract. The
-// app-icon comparison is only a design calibration point for choosing widths;
-// encoding "one/two/three icons" as product semantics would make future layout
-// tuning harder and would expose an implementation detail to users.
 enum WidgetSizePreset: String, CaseIterable, Identifiable, Codable {
     case compact
     case standard
@@ -532,21 +462,11 @@ enum WidgetSizePreset: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    func width(iconSize: Double) -> Double {
+    var contentWidth: Double {
         switch self {
-        case .compact:
-            return max(DockingSettingLimits.widgetReadableMinimum, iconSize + 8)
-        case .standard:
-            return max(88, iconSize * 1.9)
-        case .detailed:
-            // Detailed widgets should earn their space with side-by-side
-            // context, not taller rows. The width is calibrated from the icon
-            // rhythm, but we cap the default footprint to roughly the amount
-            // of useful context the tile can actually explain. A wider value
-            // looked generous at first, but it created blank, unowned space in
-            // Weather; the widget should feel intentionally dense before the
-            // user clicks through to the full panel.
-            return max(196, iconSize * 4.25)
+        case .compact: return 76
+        case .standard: return 124
+        case .detailed: return 184
         }
     }
 }
@@ -582,28 +502,6 @@ enum LiquidGlassSurfaceStyle: String, CaseIterable, Identifiable, Codable {
             return 22
         case .dense:
             return 18
-        }
-    }
-
-    var materialStrength: Double {
-        switch self {
-        case .clear:
-            return 1.0
-        case .balanced:
-            return 0.9
-        case .dense:
-            return 0.58
-        }
-    }
-
-    var opacity: Double {
-        switch self {
-        case .clear:
-            return 0.92
-        case .balanced:
-            return 0.96
-        case .dense:
-            return 0.99
         }
     }
 }
@@ -651,11 +549,12 @@ struct DockingSettings: Codable, Equatable {
     var displayMode: DockDisplayMode
     var dockDisplayID: UInt32?
     var dockPosition: DockPosition
-    var dockSize: Double
     var iconSize: Double
+    var widgetScale: Double
+    var magnificationEnabled: Bool
+    var magnificationSize: Double
     var calendarWidgetSizePreset: WidgetSizePreset
     var weatherWidgetSizePreset: WidgetSizePreset
-    var spacing: Double
     var liquidGlassSurfaceStyle: LiquidGlassSurfaceStyle
     var theme: ThemeMode
     var accentColorName: String
@@ -686,11 +585,12 @@ struct DockingSettings: Codable, Equatable {
         displayMode: .main,
         dockDisplayID: nil,
         dockPosition: .bottomCenter,
-        dockSize: 72,
-        iconSize: 46,
+        iconSize: 36,
+        widgetScale: 1,
+        magnificationEnabled: true,
+        magnificationSize: 72,
         calendarWidgetSizePreset: .standard,
         weatherWidgetSizePreset: .standard,
-        spacing: 8,
         liquidGlassSurfaceStyle: .balanced,
         theme: .system,
         accentColorName: "blue",
@@ -711,7 +611,7 @@ struct DockingSettings: Codable, Equatable {
 
     static func defaults(matchingAppleDock dockDefaults: UserDefaults?) -> DockingSettings {
         var settings = Self.default
-        settings.dockVisibility = AppleDockPreferences.visibilityMode(from: dockDefaults)
+        _ = AppleDockPreferences.mirrorOriginalDock(into: &settings, savedValues: nil, dockDefaults: dockDefaults)
         return settings
     }
 }
@@ -730,11 +630,12 @@ extension DockingSettings {
         case displayMode
         case dockDisplayID
         case dockPosition
-        case dockSize
         case iconSize
+        case widgetScale
+        case magnificationEnabled
+        case magnificationSize
         case calendarWidgetSizePreset
         case weatherWidgetSizePreset
-        case spacing
         case liquidGlassSurfaceStyle
         case theme
         case accentColorName
@@ -769,11 +670,12 @@ extension DockingSettings {
         displayMode = try container.decodeIfPresent(DockDisplayMode.self, forKey: .displayMode) ?? defaults.displayMode
         dockDisplayID = try container.decodeIfPresent(UInt32.self, forKey: .dockDisplayID) ?? defaults.dockDisplayID
         dockPosition = try container.decodeIfPresent(DockPosition.self, forKey: .dockPosition) ?? defaults.dockPosition
-        dockSize = try container.decodeIfPresent(Double.self, forKey: .dockSize) ?? defaults.dockSize
-        iconSize = try container.decodeIfPresent(Double.self, forKey: .iconSize) ?? defaults.iconSize
+        iconSize = min(max(try container.decodeIfPresent(Double.self, forKey: .iconSize) ?? defaults.iconSize, DockingSettingLimits.iconSize.lowerBound), DockingSettingLimits.iconSize.upperBound)
+        widgetScale = min(max(try container.decodeIfPresent(Double.self, forKey: .widgetScale) ?? defaults.widgetScale, DockingSettingLimits.widgetScale.lowerBound), DockingSettingLimits.widgetScale.upperBound)
+        magnificationEnabled = try container.decodeIfPresent(Bool.self, forKey: .magnificationEnabled) ?? defaults.magnificationEnabled
+        magnificationSize = min(max(try container.decodeIfPresent(Double.self, forKey: .magnificationSize) ?? defaults.magnificationSize, DockingSettingLimits.magnificationSize.lowerBound), DockingSettingLimits.magnificationSize.upperBound)
         calendarWidgetSizePreset = try container.decodeIfPresent(WidgetSizePreset.self, forKey: .calendarWidgetSizePreset) ?? defaults.calendarWidgetSizePreset
         weatherWidgetSizePreset = try container.decodeIfPresent(WidgetSizePreset.self, forKey: .weatherWidgetSizePreset) ?? defaults.weatherWidgetSizePreset
-        spacing = try container.decodeIfPresent(Double.self, forKey: .spacing) ?? defaults.spacing
         liquidGlassSurfaceStyle = try container.decodeIfPresent(LiquidGlassSurfaceStyle.self, forKey: .liquidGlassSurfaceStyle) ?? defaults.liquidGlassSurfaceStyle
         theme = try container.decodeIfPresent(ThemeMode.self, forKey: .theme) ?? defaults.theme
         accentColorName = try container.decodeIfPresent(String.self, forKey: .accentColorName) ?? defaults.accentColorName
@@ -794,22 +696,11 @@ extension DockingSettings {
 }
 
 enum DockingSettingLimits {
-    // These are product constraints, not persistence migrations. The settings UI
-    // and validation share them so a default value cannot drift outside the
-    // range the user can later edit back to.
-    static let widgetReadableMinimum = 52.0
-    // The lower bound stays above zero because an immediate hide makes the dock
-    // feel like it is fighting pointer movement, especially while opening
-    // widget panels. 0.05s is still fast enough for users who want a near-
-    // instant hide without turning the setting into an accidental flicker mode.
     static let autoHideDelay: ClosedRange<Double> = 0.05...2.0
     static let autoHideDelayStep = 0.05
-    static let dockSize: ClosedRange<Double> = 58...104
-    static let iconSize: ClosedRange<Double> = 32...72
-    // 44pt allowed the Calendar icon and two compact text rows to compete for
-    // the same vertical space. The app is pre-1.0, so we choose the readable
-    // product constraint instead of preserving a size that produced broken UI.
-    static let spacing: ClosedRange<Double> = 4...18
+    static let iconSize: ClosedRange<Double> = 24...72
+    static let widgetScale: ClosedRange<Double> = 0.75...1.5
+    static let magnificationSize: ClosedRange<Double> = 24...128
     static let calendarLookaheadDays: ClosedRange<Int> = 1...30
     static let calendarMaxEventCount: ClosedRange<Int> = 1...50
     static let weatherRefreshIntervalMinutes: ClosedRange<Int> = 30...180
@@ -832,40 +723,32 @@ struct WeatherRefreshKey: Equatable {
 }
 
 extension DockingSettings {
-    var effectiveDockThickness: Double {
-        // Wider widgets should not make Docking vertically greedy. If a user
-        // wants dense vertical detail they can click the widget panel; the dock
-        // itself should preserve a low horizontal silhouette and spend extra
-        // information density across the x-axis.
-        max(dockSize, iconSize + 18)
+    var effectiveDockThickness: Double { iconSize + 12 }
+
+    var spacing: Double { max(3, iconSize * 0.12) }
+
+    var maximumWidgetScale: Double {
+        min(DockingSettingLimits.widgetScale.upperBound, (effectiveDockThickness - 8) / 36)
+    }
+
+    var effectiveWidgetScale: Double {
+        min(widgetScale, maximumWidgetScale)
     }
 
     var widgetTileHeight: Double {
-        // This is intentionally capped to the dock's app-icon rhythm. Vertical
-        // occupation is much more expensive than horizontal occupation because
-        // it reduces the usable workspace even when the user is not reading the
-        // widget. Detailed widgets must therefore buy room with width only.
-        min(max(DockingSettingLimits.widgetReadableMinimum, iconSize + 8), dockSize - 10)
+        dockPosition.isVertical ? iconSize : 36 * effectiveWidgetScale
     }
 
     var calendarWidgetWidth: Double {
-        calendarWidgetSizePreset.width(iconSize: iconSize)
+        dockPosition.isVertical ? iconSize : calendarWidgetSizePreset.contentWidth * effectiveWidgetScale
     }
 
     var weatherWidgetWidth: Double {
-        weatherWidgetSizePreset.width(iconSize: iconSize)
+        dockPosition.isVertical ? iconSize : (weatherWidgetSizePreset.contentWidth - 8) * effectiveWidgetScale
     }
 
     var cornerRadius: Double {
-        liquidGlassSurfaceStyle.cornerRadius
-    }
-
-    var materialStrength: Double {
-        liquidGlassSurfaceStyle.materialStrength
-    }
-
-    var opacity: Double {
-        liquidGlassSurfaceStyle.opacity
+        min(liquidGlassSurfaceStyle.cornerRadius, effectiveDockThickness * 0.34)
     }
 
     var enabledWidgetWidths: [Double] {

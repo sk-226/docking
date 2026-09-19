@@ -1,100 +1,107 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+@MainActor
+final class DockPresentation: ObservableObject {
+    @Published var layout = DockPresentationLayout()
+
+    var metrics: DockLayoutMetrics { layout.metrics }
+}
+
+struct DockPresentationLayout: Equatable {
+    var metrics = DockLayout.metrics(itemCount: 0, settings: .default)
+    var origin = CGPoint.zero
+    var canvasSize = CGSize.zero
+}
+
 struct DockView: View {
     @EnvironmentObject private var model: DockingAppModel
+    @ObservedObject var presentation: DockPresentation
 
     var body: some View {
-        let isVertical = model.settings.dockPosition.isVertical
-        let dockThickness = DockLayout.shortAxisSize(settings: model.settings)
-        let layout = isVertical
-            ? AnyLayout(VStackLayout(spacing: model.settings.spacing))
-            : AnyLayout(HStackLayout(spacing: model.settings.spacing))
+        let settings = model.settings
+        let metrics = presentation.metrics
+        let vertical = settings.dockPosition.isVertical
+        let alignment: Alignment = vertical ? (settings.dockPosition == .left ? .leading : .trailing) : .bottom
+        let layout = vertical
+            ? AnyLayout(VStackLayout(alignment: settings.dockPosition == .left ? .leading : .trailing, spacing: settings.spacing))
+            : AnyLayout(HStackLayout(alignment: .bottom, spacing: settings.spacing))
 
         layout {
-            ForEach(model.displayDockItems) { item in
-                DockItemView(item: item)
-                    .onDrag {
-                        NSItemProvider(object: item.id.uuidString as NSString)
-                    }
-                    .onDrop(
-                        of: [.text, .fileURL],
-                        delegate: DockItemDropDelegate(target: item, model: model)
-                    )
+            ForEach(Array(model.displayDockItems.enumerated()), id: \.element.id) { index, item in
+                dockItem(item, index: index)
+                    .onDrag { NSItemProvider(object: item.id.uuidString as NSString) }
+                    .onDrop(of: [.text, .fileURL], delegate: DockItemDropDelegate(target: item, model: model))
             }
-
             if !model.unpinnedRunningItems.isEmpty {
-                // Match the Apple Dock mental model: apps the user keeps in
-                // Docking stay in the primary group, while merely-running apps
-                // sit behind a divider so they can be discovered without
-                // silently becoming permanent dock items.
-                dockDivider(isVertical: isVertical)
-
-                ForEach(model.unpinnedRunningItems) { item in
-                    DockItemView(item: item, isTransientRunningItem: true)
+                dockDivider
+                ForEach(Array(model.unpinnedRunningItems.enumerated()), id: \.element.id) { index, item in
+                    dockItem(item, index: model.displayDockItems.count + index, transient: true)
                 }
             }
-
-            if model.enabledWidgetCount > 0 && model.visibleAppItemCount > 0 {
-                dockDivider(isVertical: isVertical)
+            if model.enabledWidgetCount > 0 && model.visibleAppItemCount > 0 { dockDivider }
+            if settings.calendarEnabled {
+                CalendarWidgetView().padding(edge, widgetInset)
             }
-
-            if model.settings.calendarEnabled {
-                CalendarWidgetView()
+            if settings.weatherEnabled {
+                WeatherWidgetView().padding(edge, widgetInset)
             }
-
-            if model.settings.weatherEnabled {
-                WeatherWidgetView()
-            }
-
-            Button {
-                model.addDockItem()
-            } label: {
+            Button { model.addDockItem() } label: {
                 Image(systemName: "plus")
-                    .frame(width: model.settings.iconSize, height: model.settings.iconSize)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: DockLayout.addButtonSize, height: DockLayout.addButtonSize)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .padding(edge, (settings.effectiveDockThickness - DockLayout.addButtonSize) / 2)
             .dockTooltip("Add app or folder")
             .accessibilityLabel("Add app or folder")
-            .accessibilityHint("Choose an application bundle or folder to add to Docking")
         }
-        .padding(.horizontal, isVertical ? 0 : dockThickness * 0.16)
-        .padding(.vertical, isVertical ? dockThickness * 0.16 : 0)
-        .frame(
-            width: isVertical ? dockThickness : nil,
-            height: isVertical ? nil : dockThickness
-        )
-        .dockingSurface(settings: model.settings)
-        // AppKit's rectangular panel shadow is disabled, so this is the only
-        // depth treatment for the dock. Keeping it soft and tied to the rounded
-        // SwiftUI surface avoids the black rectangular rim that made the dock
-        // feel unlike native macOS chrome.
-        .shadow(color: .black.opacity(0.06), radius: 14, x: 0, y: 5)
-        .preferredColorScheme(model.settings.theme.colorScheme)
-        .tint(model.settings.accentColor)
-        .onHover { inside in
-            if inside {
-                model.pointerEnteredDock()
-            } else {
-                model.pointerExitedDock()
-            }
+        .padding(vertical ? .vertical : .horizontal, metrics.padding)
+        .frame(width: metrics.panelSize.width, height: metrics.panelSize.height, alignment: alignment)
+        .background(alignment: alignment) {
+            Color.clear
+                .frame(width: metrics.surfaceSize.width, height: metrics.surfaceSize.height)
+                .dockingSurface(settings: settings)
+                .allowsHitTesting(false)
         }
+        .scaleEffect(metrics.scale, anchor: .topLeading)
+        .frame(width: metrics.scaledPanelSize.width, height: metrics.scaledPanelSize.height, alignment: .topLeading)
+        .offset(x: presentation.layout.origin.x, y: presentation.layout.origin.y)
+        .frame(width: presentation.layout.canvasSize.width, height: presentation.layout.canvasSize.height, alignment: .topLeading)
+        .preferredColorScheme(settings.theme.colorScheme)
+        .tint(settings.accentColor)
         .onDrop(of: [.fileURL], delegate: DockExternalAppDropDelegate(model: model))
-        // The dock container should be discoverable as a group without
-        // replacing the names of every child button. `.contain` preserves
-        // child controls, while the explicit label gives VoiceOver a sensible
-        // group name when entering the dock.
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Docking Dock")
     }
 
-    private func dockDivider(isVertical: Bool) -> some View {
-        Divider()
-            .frame(
-                width: isVertical ? model.settings.iconSize * 0.62 : nil,
-                height: isVertical ? nil : model.settings.iconSize * 0.62
-            )
+    private var edge: Edge.Set {
+        switch model.settings.dockPosition {
+        case .left: return .leading
+        case .right: return .trailing
+        default: return .bottom
+        }
+    }
+
+    private var widgetInset: Double {
+        (model.settings.effectiveDockThickness - model.settings.widgetTileHeight) / 2
+    }
+
+    private func dockItem(_ item: DockItem, index: Int, transient: Bool = false) -> some View {
+        let sizes = presentation.metrics.iconSizes
+        return DockItemView(item: item, iconSize: sizes.indices.contains(index) ? sizes[index] : model.settings.iconSize, isTransientRunningItem: transient)
+            .padding(edge, 3)
+    }
+
+    private var dockDivider: some View {
+        let vertical = model.settings.dockPosition.isVertical
+        let extent = model.settings.iconSize * 0.65
+        return Rectangle()
+            .fill(.primary.opacity(0.16))
+            .frame(width: vertical ? extent : 1, height: vertical ? 1 : extent)
+            .padding(edge, (model.settings.effectiveDockThickness - extent) / 2)
     }
 }
 

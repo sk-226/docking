@@ -14,6 +14,11 @@ Docking was built for desktops where the menu bar is already crowded: frequently
 used actions and glanceable information can live in the dock instead. It also
 supports Liquid Glass appearance presets.
 
+Control Center > Appearance provides sliders for Dock size, widget size, and
+pointer magnification. Widgets fit within the Dock thickness; Compact, Standard,
+and Detailed control how much information they show. Match Apple Dock size
+imports the original icon and magnification settings without changing pinned items.
+
 ## Requirements
 
 - macOS 26 or later.

@@ -3,18 +3,13 @@ import SwiftUI
 
 struct DockItemView: View {
     @EnvironmentObject private var model: DockingAppModel
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let item: DockItem
+    let iconSize: Double
     var isTransientRunningItem = false
-    @State private var isHovering = false
     @State private var confirmsForceQuit = false
 
     private var isRunning: Bool {
         model.isRunning(item)
-    }
-
-    private var isActive: Bool {
-        model.isActive(item)
     }
 
     private var isTerminationPending: Bool {
@@ -23,7 +18,6 @@ struct DockItemView: View {
 
     var body: some View {
         let isVertical = model.settings.dockPosition.isVertical
-        let hoverScale: CGFloat = isHovering && !reduceMotion ? 1.08 : 1.0
 
         Button {
             if NSEvent.modifierFlags.contains(.command) {
@@ -39,32 +33,25 @@ struct DockItemView: View {
                 model.launch(item)
             }
         } label: {
-            VStack(spacing: 4) {
+            let iconLayout = isVertical
+                ? AnyLayout(HStackLayout(spacing: 2))
+                : AnyLayout(VStackLayout(spacing: 2))
+            iconLayout {
+                if model.settings.dockPosition == .left { runningIndicator }
                 Image(nsImage: model.icon(for: item))
+                    .renderingMode(.original)
                     .resizable()
                     .interpolation(.high)
-                    .antialiased(true)
                     .aspectRatio(contentMode: .fit)
-                    .frame(width: model.settings.iconSize, height: model.settings.iconSize)
-                    .scaleEffect(hoverScale)
-
-                Circle()
-                    .fill(isActive ? model.settings.accentColor : (isRunning ? Color.primary.opacity(0.8) : Color.clear))
-                    .frame(width: 5, height: 5)
+                    .frame(width: iconSize, height: iconSize)
+                if model.settings.dockPosition != .left { runningIndicator }
             }
-            .frame(
-                width: isVertical ? model.settings.dockSize - 8 : model.settings.iconSize + 4,
-                height: isVertical ? model.settings.iconSize + 10 : model.settings.dockSize - 8
-            )
+            .frame(width: isVertical ? iconSize + DockLayout.indicatorSpace : iconSize,
+                   height: isVertical ? iconSize : iconSize + DockLayout.indicatorSpace)
             .contentShape(Rectangle())
-            .background {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isHovering ? Color.primary.opacity(0.08) : Color.clear)
-            }
             .background(DockItemFrameReporter(itemID: item.id))
         }
         .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
         .dockTooltip(item.title)
         .contextMenu {
             contextMenuContent
@@ -84,6 +71,12 @@ struct DockItemView: View {
         .accessibilityLabel(item.title)
         .accessibilityValue(accessibilityValue)
         .accessibilityHint(item.isFolder ? "Opens the \(item.title) stack" : "Opens \(item.title)")
+    }
+
+    private var runningIndicator: some View {
+        Circle()
+            .fill(isRunning ? Color.primary.opacity(0.65) : Color.clear)
+            .frame(width: 3, height: 3)
     }
 
     private var accessibilityValue: String {

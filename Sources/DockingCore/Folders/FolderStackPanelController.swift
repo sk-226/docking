@@ -47,7 +47,7 @@ final class FolderStackPanelController {
         self.panel = panel
 
         installDismissMonitors(panel: panel, anchorFrame: anchorFrame)
-        showPanel(panel, targetAlpha: model.settings.opacity)
+        showPanel(panel, targetAlpha: 1)
     }
 
     func close() {
