@@ -18,8 +18,8 @@ permissions:
   contents: read
 
 env:
-  DOCKING_RELEASE_VERSION: "0.0.4"
-  DOCKING_RELEASE_ARTIFACT_PREFIX: "Docking-0.0.4-macos26"
+  DOCKING_RELEASE_VERSION: "0.0.5"
+  DOCKING_RELEASE_ARTIFACT_PREFIX: "Docking-0.0.5-macos26"
 
 concurrency:
   group: release-candidate-${{ github.ref }}
@@ -145,7 +145,7 @@ jobs:
           if [[ "$tag_name" != "$expected_tag" ]]; then
             # The artifact names and release version are intentionally advanced in
             # lockstep by a release-prep change. Failing here is preferable to
-            # accidentally attaching the reviewed 0.0.4 DMG to a different tag
+            # accidentally attaching the reviewed DMG to a different tag
             # just because the workflow trigger accepts every v* tag.
             echo "Expected tag ${expected_tag}, got ${tag_name}." >&2
             exit 1
@@ -158,7 +158,10 @@ jobs:
             echo "Docking ${DOCKING_RELEASE_VERSION} macOS 26 release."
             echo
             echo "Changes:"
-            echo "- Refines auto-hide edge reveal behavior for fullscreen and bottom-edge interactions."
+            echo "- Adds animated icon magnification with screen-edge support."
+            echo "- Reduces magnification jitter with frame-coalesced input and fixed surface anchoring."
+            echo "- Improves widget contrast on Liquid Glass."
+            echo "- Adds explicit display placement and separates edge summoning from Auto-hide."
             echo
             echo "Artifacts are produced by ./script/release_check.sh on the macos-26 runner."
             echo

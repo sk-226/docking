@@ -6,6 +6,9 @@ GitHub branch or pull request for a user-facing milestone.
 
 ## Automated gates
 
+See [GitHub Releases](https://github.com/sk-226/docking/releases) for published
+versions, release notes, and artifacts.
+
 Run this after each meaningful code change:
 
 ```bash
@@ -22,15 +25,15 @@ Expected results:
 - `DockingValidation` prints `All Docking validation checks passed.`
 - The XCTest suite passes, including the magnification regression tests.
 - A release app bundle is staged at `dist/Docking.app`.
-- A local release-candidate zip is written to `dist/Docking-0.0.4-macos26.zip`.
-- A tester-facing DMG is written to `dist/Docking-0.0.4-macos26.dmg`.
+- A local release-candidate zip is written to `dist/Docking-<version>-macos26.zip`.
+- A tester-facing DMG is written to `dist/Docking-<version>-macos26.dmg`.
 - Matching checksum files are written for the zip and DMG.
 - The zip contains the expected `Docking.app` bundle root, executable,
   `Info.plist`, app icon, and menu bar template icon.
 - The DMG contains `Docking.app`, the same required bundle files, and an
   Applications symlink for drag-install testing.
 - Both checksum files validate with `shasum -c`.
-- Both bundle version values are `0.0.4`.
+- Both bundle version values match `APP_VERSION` in `script/release_check.sh`.
 - The bundle identifier is `app.docking.docking`.
 - The bundle minimum system version is `26.0`.
 - Calendar and Location usage descriptions match the reviewed Docking-specific
@@ -77,7 +80,7 @@ Expected results:
 - The unified log contains no SwiftUI `Publishing changes from within view
   updates` warning for Docking during launch.
 
-Latest release evidence: passed 2026-07-11 on the `v0.0.4` tag. The Release
+Recorded release evidence: passed 2026-07-11 on the `v0.0.4` tag. The Release
 Candidate workflow created `Docking-0.0.4-macos26.zip` and
 `Docking-0.0.4-macos26.dmg`, uploaded the public release assets, and generated
 checksum files that matched the downloaded artifacts. The release zip SHA-256
