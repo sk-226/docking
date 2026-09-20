@@ -6,6 +6,8 @@ final class AutoHideController {
     private var edgePanels: [String: NSPanel] = [:]
     private var edgePanelScreens: [String: NSScreen] = [:]
     private var edgePanelScreenFrames: [String: NSRect] = [:]
+    private var triggerConfiguration: DockEdgeConfiguration?
+    private var triggerEnvironment: [String: [NSRect]] = [:]
     private var globalMouseMovedMonitor: Any?
     private var onEnter: ((NSScreen?) -> Void)?
     private var onTriggerContact: ((NSPoint) -> Void)?
@@ -24,20 +26,40 @@ final class AutoHideController {
         onTriggerContact: @escaping (NSPoint) -> Void,
         onPointerOutsideTrigger: @escaping (NSPoint) -> Void
     ) {
+        let separateSpaces = NSScreen.screensHaveSeparateSpaces
+        let screens = Self.triggerScreens(
+            for: settings, selectedScreen: screen, availableScreens: NSScreen.screens,
+            screensHaveSeparateSpaces: separateSpaces
+        )
+        guard !screens.isEmpty else {
+            close()
+            return
+        }
+
+        let configuration = DockEdgeConfiguration(
+            settings: settings,
+            currentDisplayID: screen.flatMap { ScreenPlacementService.displayID(for: $0) },
+            separateSpaces: separateSpaces
+        )
+        let environment = Dictionary(uniqueKeysWithValues: screens.map {
+            (screenKey($0), [$0.frame, $0.visibleFrame])
+        })
+        if triggerConfiguration != configuration || triggerEnvironment != environment {
+            // Settings, display removal and Space transitions invalidate queued
+            // gestures; an ordinary app-icon refresh must not do so.
+            cancelPendingReveal()
+            revealGate.reset()
+        }
+        triggerConfiguration = configuration
+        triggerEnvironment = environment
         self.onEnter = onEnter
         self.onTriggerContact = onTriggerContact
         self.onPointerOutsideTrigger = onPointerOutsideTrigger
         dockAutoHideResponsePreset = settings.dockAutoHideResponsePreset
         dockPosition = settings.dockPosition
 
-        guard settings.dockVisibility == .autoHide else {
-            close()
-            return
-        }
-
         installMouseMovedMonitorsIfNeeded()
 
-        let screens = Self.triggerScreens(for: settings, selectedScreen: screen, availableScreens: NSScreen.screens)
         let wantedKeys = Set(screens.map(screenKey))
         for (key, panel) in edgePanels where !wantedKeys.contains(key) {
             panel.close()
@@ -75,6 +97,8 @@ final class AutoHideController {
         edgePanels = [:]
         edgePanelScreens = [:]
         edgePanelScreenFrames = [:]
+        triggerConfiguration = nil
+        triggerEnvironment = [:]
         revealGate.reset()
         onEnter = nil
         onTriggerContact = nil
@@ -100,10 +124,9 @@ final class AutoHideController {
         // app.
         panel.acceptsMouseMovedEvents = true
         panel.level = .statusBar
-        // Tiny edge trigger panels avoid timer-based mouse polling. Bottom
-        // docks get one trigger per display so the Docking dock can appear on
-        // whichever screen edge the user pushes into, matching the expectation
-        // set by Apple's Dock on multi-display systems.
+        // The same event-driven strip reveals a hidden dock or summons a
+        // visible dock from another eligible display. It never follows the
+        // pointer merely because the pointer changed displays.
         panel.contentView = EdgeTriggerView { [weak self] in
             let location = NSEvent.mouseLocation
             Task { @MainActor in
@@ -113,20 +136,24 @@ final class AutoHideController {
         return panel
     }
 
-    nonisolated static func triggerScreens(for settings: DockingSettings, selectedScreen: NSScreen?, availableScreens: [NSScreen]) -> [NSScreen] {
-        if settings.dockPosition.isBottom {
-            // Bottom auto-hide is the one mode where selected-display behavior
-            // is intentionally overridden. Apple's Dock can be revealed from
-            // the bottom edge of any attached display, and users expect the
-            // same muscle memory here. A single selected-screen trigger looked
-            // simpler, but it made the Docking dock feel broken as soon as the
-            // pointer was on another monitor. Non-bottom docks stay scoped to
-            // one display because full-height left/right trigger strips on
-            // every monitor would be much more likely to intercept unrelated
-            // edge gestures.
-            return availableScreens.isEmpty ? selectedScreen.map { [$0] } ?? [] : availableScreens
+    // The injected flag describes the topology, independently of the test
+    // machine's settings. Runtime callers pass NSScreen.screensHaveSeparateSpaces.
+    nonisolated static func triggerScreens(
+        for settings: DockingSettings,
+        selectedScreen: NSScreen?,
+        availableScreens: [NSScreen],
+        screensHaveSeparateSpaces: Bool = true
+    ) -> [NSScreen] {
+        let screens = availableScreens.isEmpty ? selectedScreen.map { [$0] } ?? [] : availableScreens
+        let ids = DockDisplayPolicy.triggerDisplayIDs(
+            settings: settings,
+            currentDisplayID: selectedScreen.flatMap { ScreenPlacementService.displayID(for: $0) },
+            availableDisplayIDs: screens.compactMap { ScreenPlacementService.displayID(for: $0) },
+            screensHaveSeparateSpaces: screensHaveSeparateSpaces
+        )
+        return screens.filter { screen in
+            ScreenPlacementService.displayID(for: screen).map { ids.contains($0) } ?? false
         }
-        return selectedScreen.map { [$0] } ?? availableScreens.prefix(1).map { $0 }
     }
 
     private func installMouseMovedMonitorsIfNeeded() {

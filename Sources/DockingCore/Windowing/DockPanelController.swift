@@ -20,7 +20,7 @@ final class DockPanelController: NSObject {
     private var lastFrameTimestamp: CFTimeInterval?
     private var targetMetrics = DockLayout.metrics(itemCount: 0, settings: .default)
     private let autoHideController = AutoHideController()
-    private var revealScreen: NSScreen?
+    private var currentDisplayID: UInt32?
     private var autoHideGeneration = 0
     private var isAutoHideScheduled = false
     private var dockPosition: DockPosition = .bottomCenter
@@ -62,6 +62,7 @@ final class DockPanelController: NSObject {
         pointerMonitors.removeAll()
         panel?.close()
         panel = nil
+        currentDisplayID = nil
     }
 
     func applySettings(model: DockingAppModel) {
@@ -71,16 +72,10 @@ final class DockPanelController: NSObject {
 
         let settings = model.settings
         dockPosition = settings.dockPosition
-        if let revealScreen,
-           !NSScreen.screens.contains(where: { ScreenPlacementService.sameDisplay($0, revealScreen) }) {
-            self.revealScreen = nil
-        }
-
-        if settings.dockVisibility != .autoHide || !settings.dockPosition.isBottom {
-            revealScreen = nil
-        }
-
-        let screen = revealScreen ?? ScreenPlacementService.dockScreen(for: settings)
+        // Fixed settings always win. Automatic keeps its current connected
+        // display across resizing, app updates and visibility changes.
+        let screen = ScreenPlacementService.dockScreen(for: settings, currentDisplayID: currentDisplayID)
+        currentDisplayID = screen.flatMap { ScreenPlacementService.displayID(for: $0) }
         configureLayout(model: model, screen: screen)
         panel.alphaValue = 1
         // The default is floating because Docking is meant to act like system
@@ -112,10 +107,18 @@ final class DockPanelController: NSObject {
     }
 
     private func reveal(on screen: NSScreen?, model: DockingAppModel) {
-        guard let panel else { return }
-        revealScreen = screen
-        dockPosition = model.settings.dockPosition
-        configureLayout(model: model, screen: screen ?? ScreenPlacementService.dockScreen(for: model.settings))
+        guard let panel, let screen,
+              let id = ScreenPlacementService.displayID(for: screen) else { return }
+        // A delayed edge callback must not override a newer fixed-display or
+        // Spaces setting, even if the display is still physically connected.
+        let eligible = DockDisplayPolicy.triggerDisplayIDs(
+            settings: model.settings, currentDisplayID: currentDisplayID,
+            availableDisplayIDs: NSScreen.screens.compactMap { ScreenPlacementService.displayID(for: $0) },
+            screensHaveSeparateSpaces: NSScreen.screensHaveSeparateSpaces
+        )
+        guard eligible.contains(id) else { return }
+        currentDisplayID = id
+        applySettings(model: model)
         cancelScheduledAutoHide()
         if !panel.isVisible { panel.orderFrontRegardless() }
         pointerMoved()
@@ -124,10 +127,12 @@ final class DockPanelController: NSObject {
     private func configureLayout(model: DockingAppModel, screen: NSScreen?) {
         let settings = model.settings
         let visibleFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
-        screenLimits = visibleFrame.insetBy(dx: ScreenPlacementService.dockScreenMargin, dy: ScreenPlacementService.dockScreenMargin)
+        let newScreenLimits = visibleFrame.insetBy(dx: ScreenPlacementService.dockScreenMargin, dy: ScreenPlacementService.dockScreenMargin)
+        let screenChanged = screenLimits != newScreenLimits
+        screenLimits = newScreenLimits
         let length = settings.dockPosition.isVertical ? screenLimits.height : screenLimits.width
         let runningStart = model.hasSeparatedRunningItems ? model.displayDockItems.count : nil
-        let changed = layoutSettings != settings || layoutItemCount != model.visibleAppItemCount || separatedRunningStart != runningStart || maximumLength != length
+        let changed = screenChanged || layoutSettings != settings || layoutItemCount != model.visibleAppItemCount || separatedRunningStart != runningStart || maximumLength != length
         layoutSettings = settings
         layoutItemCount = model.visibleAppItemCount
         separatedRunningStart = runningStart
