@@ -21,6 +21,11 @@ struct DockView: View {
     var body: some View {
         let settings = model.settings
         let metrics = presentation.metrics
+        let surfaceFrame = DockSurfaceGeometry.frame(
+            in: CGRect(origin: presentation.layout.origin, size: metrics.scaledPanelSize),
+            size: CGSize(width: metrics.surfaceSize.width * metrics.scale, height: metrics.surfaceSize.height * metrics.scale),
+            position: settings.dockPosition
+        )
         let vertical = settings.dockPosition.isVertical
         let alignment: Alignment = vertical ? (settings.dockPosition == .left ? .leading : .trailing) : .bottom
         let layout = vertical
@@ -59,7 +64,7 @@ struct DockView: View {
             .accessibilityLabel("Add app or folder")
         }
         .padding(vertical ? .vertical : .horizontal, metrics.padding)
-        .frame(width: metrics.panelSize.width, height: metrics.panelSize.height, alignment: alignment)
+        .frame(width: metrics.surfaceSize.width, height: metrics.surfaceSize.height, alignment: alignment)
         // Apply glass to the content, not to a separate Color.clear background:
         // semantic widget text must participate in Liquid Glass foreground
         // adaptation. The shape keeps the glass compact as icons magnify.
@@ -69,8 +74,8 @@ struct DockView: View {
             cornerRadius: settings.cornerRadius
         ))
         .scaleEffect(metrics.scale, anchor: .topLeading)
-        .frame(width: metrics.scaledPanelSize.width, height: metrics.scaledPanelSize.height, alignment: .topLeading)
-        .offset(x: presentation.layout.origin.x, y: presentation.layout.origin.y)
+        .frame(width: surfaceFrame.width, height: surfaceFrame.height, alignment: .topLeading)
+        .offset(x: surfaceFrame.minX, y: surfaceFrame.minY)
         .frame(width: presentation.layout.canvasSize.width, height: presentation.layout.canvasSize.height, alignment: .topLeading)
         .preferredColorScheme(settings.theme.colorScheme)
         .tint(settings.accentColor)

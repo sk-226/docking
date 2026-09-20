@@ -17,7 +17,7 @@ final class DockPanelController: NSObject {
     private var onPointerPresenceChange: ((Bool) -> Void)?
     private var pointerMonitors: [Any] = []
     private var displayLink: CADisplayLink?
-    private var lastFrameTimestamp: CFTimeInterval?
+    private var magnificationFrameState = DockMagnificationFrameState()
     private var targetMetrics = DockLayout.metrics(itemCount: 0, settings: .default)
     private let autoHideController = AutoHideController()
     private var currentDisplayID: UInt32?
@@ -58,6 +58,7 @@ final class DockPanelController: NSObject {
         autoHideController.close()
         displayLink?.invalidate()
         displayLink = nil
+        magnificationFrameState = DockMagnificationFrameState()
         pointerMonitors.forEach(NSEvent.removeMonitor)
         pointerMonitors.removeAll()
         panel?.close()
@@ -163,7 +164,7 @@ final class DockPanelController: NSObject {
 
     private func resetMagnification() {
         displayLink?.isPaused = true
-        lastFrameTimestamp = nil
+        magnificationFrameState = DockMagnificationFrameState()
         targetMetrics = layoutMetrics()
         applyGeometry(targetMetrics)
     }
@@ -173,12 +174,14 @@ final class DockPanelController: NSObject {
         let location = NSEvent.mouseLocation
         let inside = DockPanelHitGeometry.contains(location, panelFrame: contentFrame, position: dockPosition)
         let offset = dockPosition.isVertical ? baseFrame.maxY - location.y : location.x - baseFrame.minX
-        let bounds = DockPanelGeometry.magnificationBounds(baseFrame: baseFrame, position: dockPosition,
-                                                          limits: screenLimits, scale: presentation.metrics.scale)
-        targetMetrics = layoutMetrics(pointer: inside ? offset / presentation.metrics.scale : nil, bounds: bounds)
-        panel.ignoresMouseEvents = !contentFrame.contains(location)
-        if targetMetrics != presentation.metrics, displayLink?.isPaused == true {
-            lastFrameTimestamp = nil
+        let magnifies = layoutSettings.magnificationEnabled && layoutItemCount > 0
+            && layoutSettings.magnificationSize > layoutSettings.iconSize
+            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let requestedOffset = inside && magnifies ? offset / presentation.metrics.scale : nil
+        let targetChanged = magnificationFrameState.request(pointerOffset: requestedOffset)
+        updateMousePassthrough(at: location)
+        if targetChanged, displayLink?.isPaused == true {
+            magnificationFrameState.resetClock()
             displayLink?.isPaused = false
         }
         if pointerIsInside != inside {
@@ -188,14 +191,30 @@ final class DockPanelController: NSObject {
     }
 
     @objc private func stepMagnification(_ link: CADisplayLink) {
+        guard panel?.isVisible == true else {
+            link.isPaused = true
+            magnificationFrameState.resetClock()
+            return
+        }
         pointerMoved()
-        let now = CACurrentMediaTime()
-        let elapsed = lastFrameTimestamp.map { now - $0 } ?? (link.targetTimestamp - link.timestamp)
-        lastFrameTimestamp = now
+        if let update = magnificationFrameState.takeTargetUpdate() {
+            let bounds = DockPanelGeometry.magnificationBounds(baseFrame: baseFrame, position: dockPosition,
+                                                              limits: screenLimits, scale: presentation.metrics.scale)
+            targetMetrics = layoutMetrics(pointer: update.pointerOffset, bounds: bounds)
+        }
+        let elapsed = magnificationFrameState.elapsedTime(timestamp: link.timestamp, targetTimestamp: link.targetTimestamp)
         applyGeometry(presentation.metrics.approaching(targetMetrics, elapsed: elapsed))
         if presentation.metrics == targetMetrics {
             link.isPaused = true
-            lastFrameTimestamp = nil
+            magnificationFrameState.resetClock()
+        }
+    }
+
+    private func updateMousePassthrough(at location: NSPoint) {
+        guard let panel else { return }
+        let ignoresMouseEvents = !contentFrame.contains(location)
+        if panel.ignoresMouseEvents != ignoresMouseEvents {
+            panel.ignoresMouseEvents = ignoresMouseEvents
         }
     }
 
@@ -209,7 +228,7 @@ final class DockPanelController: NSObject {
             canvasSize: panel.frame.size
         )
         if presentation.layout != layout { presentation.layout = layout }
-        panel.ignoresMouseEvents = !contentFrame.contains(NSEvent.mouseLocation)
+        updateMousePassthrough(at: NSEvent.mouseLocation)
     }
 
     func scheduleAutoHide(model: DockingAppModel) {
