@@ -18,17 +18,20 @@ extension View {
     }
 
     func dockingSurface(settings: DockingSettings, cornerRadius: Double? = nil) -> some View {
-        modifier(DockingSurfaceModifier(settings: settings, cornerRadius: cornerRadius))
+        dockingSurface(settings: settings, in: RoundedRectangle(cornerRadius: cornerRadius ?? settings.cornerRadius, style: .continuous))
+    }
+
+    func dockingSurface<S: Shape>(settings: DockingSettings, in shape: S) -> some View {
+        modifier(DockingSurfaceModifier(settings: settings, shape: shape))
     }
 }
 
-private struct DockingSurfaceModifier: ViewModifier {
+private struct DockingSurfaceModifier<S: Shape>: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     let settings: DockingSettings
-    let cornerRadius: Double?
+    let shape: S
 
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius ?? settings.cornerRadius, style: .continuous)
         if reduceTransparency {
             content.background(.regularMaterial, in: shape)
         } else {

@@ -60,12 +60,14 @@ struct DockView: View {
         }
         .padding(vertical ? .vertical : .horizontal, metrics.padding)
         .frame(width: metrics.panelSize.width, height: metrics.panelSize.height, alignment: alignment)
-        .background(alignment: alignment) {
-            Color.clear
-                .frame(width: metrics.surfaceSize.width, height: metrics.surfaceSize.height)
-                .dockingSurface(settings: settings)
-                .allowsHitTesting(false)
-        }
+        // Apply glass to the content, not to a separate Color.clear background:
+        // semantic widget text must participate in Liquid Glass foreground
+        // adaptation. The shape keeps the glass compact as icons magnify.
+        .dockingSurface(settings: settings, in: DockSurfaceShape(
+            surfaceSize: metrics.surfaceSize,
+            position: settings.dockPosition,
+            cornerRadius: settings.cornerRadius
+        ))
         .scaleEffect(metrics.scale, anchor: .topLeading)
         .frame(width: metrics.scaledPanelSize.width, height: metrics.scaledPanelSize.height, alignment: .topLeading)
         .offset(x: presentation.layout.origin.x, y: presentation.layout.origin.y)
@@ -102,6 +104,17 @@ struct DockView: View {
             .fill(.primary.opacity(0.16))
             .frame(width: vertical ? extent : 1, height: vertical ? 1 : extent)
             .padding(edge, (model.settings.effectiveDockThickness - extent) / 2)
+    }
+}
+
+private struct DockSurfaceShape: Shape {
+    let surfaceSize: CGSize
+    let position: DockPosition
+    let cornerRadius: Double
+
+    func path(in rect: CGRect) -> Path {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .path(in: DockSurfaceGeometry.frame(in: rect, size: surfaceSize, position: position))
     }
 }
 
