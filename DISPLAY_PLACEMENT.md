@@ -18,7 +18,9 @@ There is one pure selection policy, one current display ID, and the existing eve
 
 Touch the Dock edge, continue moving a little farther toward the outside of the screen, then hold there for the selected Edge response delay. Merely arriving at the edge and waiting does not summon the Dock. Show Dock remains an explicit alternative.
 
-`DockEdgeIntent` ignores the arriving movement and requires 6 points of further outward mouse delta. Partial motion expires after a 0.3-second gap; sideways-dominant or inward movement resets it, as does drifting more than 8 points along the edge. These are initial usability thresholds, not measured Apple Dock constants. They need real mouse and trackpad checks, including slow movement and different display scales.
+`DockEdgeIntent` ignores the arriving movement and requires 5 points of further outward mouse delta. Partial motion expires after a 0.3-second gap; sideways-dominant or inward movement resets it, as does drifting more than 8 points along the edge. These are usability thresholds, not measured Apple Dock constants. They need real mouse and trackpad checks, including slow movement and different display scales.
+
+The push threshold was reduced from 6 to 5 on 2026-09-20 after user feedback that the gesture felt promising for avoiding accidental summons but needed slightly too much additional downward travel. Response delays and all cancellation rules are unchanged. This feedback does not establish that accidental summons are eliminated, and the tuned value still needs a hands-on check.
 
 Clicks, button releases, drags and scrolling cancel pending intent rather than counting as a push. The final delayed callback checks the current pointer, button state, intent and target availability. Each continuous contact is consumed after one reveal. In full-screen-like bottom layouts, the existing second-push gate receives only deliberate pushes, not incidental contact or clicks.
 
@@ -29,6 +31,8 @@ Edge panels are click-through in both Auto-hide and Always visible. They only re
 On 2026-09-20, all 16 new `DockDisplayPolicyTests` passed under Swift 6.2.1 in an isolated Linux XCTest package. It compiled the actual policy and `Models.swift`; the unused Apple Dock preference importer was stubbed only in that temporary harness. Syntax-only parsing passed for all seven added/edited Swift files. This does not establish AppKit integration or visual correctness.
 
 The review follow-up adds 16 `DockEdgeIntentTests`, passed in Debug and Release on Swift 6.2.1/Linux with the actual intent source and existing second-push gate. It also adds two macOS-only `DockEdgeInputTests` for the click-through panel and monitored event types. These do not prove live input delivery or the physical feel of the gesture.
+
+After tuning the threshold to 5, all 17 intent tests passed in Debug and Release in the isolated Swift 6.2.1/Linux harness. The suite now checks fractional motion just below and exactly at the new threshold, alongside stationary contact, sideways motion, cancellation and full-screen push behavior. No native interaction result is inferred from these checks.
 
 The existing validation helper defaults its injected separate-Spaces flag to true, modeling independent displays without relying on the test host's setting. Both runtime selection and runtime edge installation explicitly read the live AppKit flag. The pure policy tests cover both flag values.
 

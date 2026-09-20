@@ -2,7 +2,7 @@ import Foundation
 
 // Mouse deltas continue at a clamped screen edge; arriving there is not a push.
 struct DockEdgeIntent {
-    static let minimumPush: CGFloat = 6
+    static let minimumPush: CGFloat = 5
     static let maximumLateralDrift: CGFloat = 8
     static let pushWindow: TimeInterval = 0.3
 
