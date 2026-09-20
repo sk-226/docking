@@ -4,6 +4,36 @@ Status: target-coordinate mapping verified in the existing Tart macOS VM,
 including native tests, app launch, motion replay, and selected UI checks.
 Comparison with the Apple Dock reference recording remains open.
 
+## Short-axis jitter correction (2026-09-20)
+
+PR #20 (`42c07c8`) still allowed the SwiftUI content frame to change thickness
+on every magnification update. Its screen-edge offset used the unrounded
+expanded thickness, while SwiftUI aligned the content on its pixel grid.
+A deterministic horizontal sweep in the existing Tart VM exposed a 0.49924 pt
+vertical range in an icon outside the magnification lens. Its horizontal
+position was constant, and the NSPanel frame did not change.
+
+The fix lays out the foreground in the compact surface frame and anchors that
+frame to the same screen edge. Enlarged icons overflow inward; expanded panel
+geometry still controls pointer residency and click-through behavior.
+The magnification curve, timing, and Liquid Glass foreground treatment are
+unchanged.
+
+Using direct SwiftUI image-frame measurements, the same 12-icon sweep at
+36 -> 79 pt produced a 0 pt vertical range after the fix. At 27 -> 60 pt,
+the fixed-axis range was also 0 pt in bottom, left, and right placement.
+AppKit frame reports alone rounded away this residual motion, so they are not
+sufficient evidence for this regression. Temporary replay and measurement
+code were confined to the test copy, not the production source.
+
+After removing instrumentation, Show Docking displayed the normal build in
+Tart. Moving onto Calendar enlarged it, and clicking its portion above the
+glass activated Calendar. The clean PR #20 plus fix passed all 64 XCTest cases,
+DockingValidation, and the launch smoke check without a publish-within-update
+warning. Physical edge summoning and the broader Auto-hide matrix were not
+retested. This isolates one source of jitter; it does not establish Apple Dock
+motion parity or eliminate every possible rendering hitch.
+
 ## Intended behavior
 
 Make Docking feel as close as possible to Apple's Dock. Keep original app icons,

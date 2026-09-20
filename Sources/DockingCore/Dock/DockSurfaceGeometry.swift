@@ -1,7 +1,6 @@
 import Foundation
 
-// SwiftUI coordinates: y grows downwards. The foreground keeps the expanded
-// panel bounds, while only the glass shape is anchored to the resting edge.
+// SwiftUI coordinates: y grows downwards.
 enum DockSurfaceGeometry {
     static func frame(in bounds: CGRect, size: CGSize, position: DockPosition) -> CGRect {
         let width = min(size.width, bounds.width)
