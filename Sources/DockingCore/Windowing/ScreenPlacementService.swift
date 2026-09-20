@@ -4,19 +4,16 @@ import Foundation
 enum ScreenPlacementService {
     static let dockScreenMargin: CGFloat = 10
 
-    static func dockScreen(for settings: DockingSettings) -> NSScreen? {
-        switch settings.displayMode {
-        case .main:
-            return NSScreen.main ?? NSScreen.screens.first
-        case .pointer:
-            return screenContainingPoint(NSEvent.mouseLocation) ?? NSScreen.main ?? NSScreen.screens.first
-        case .specific:
-            if let dockDisplayID = settings.dockDisplayID,
-               let screen = NSScreen.screens.first(where: { displayID(for: $0) == dockDisplayID }) {
-                return screen
-            }
-            return NSScreen.main ?? NSScreen.screens.first
-        }
+    static func dockScreen(for settings: DockingSettings, currentDisplayID: UInt32? = nil) -> NSScreen? {
+        // NSScreen.main follows keyboard focus. The first screen is the actual
+        // primary display, so an app activation must not change our fallback.
+        let screens = NSScreen.screens
+        let id = DockDisplayPolicy.selectedDisplayID(
+            settings: settings, currentDisplayID: currentDisplayID,
+            availableDisplayIDs: screens.compactMap { displayID(for: $0) },
+            screensHaveSeparateSpaces: NSScreen.screensHaveSeparateSpaces
+        )
+        return screens.first { displayID(for: $0) == id } ?? screens.first
     }
 
     static func availableDisplays() -> [DisplaySummary] {
@@ -122,12 +119,6 @@ enum ScreenPlacementService {
     private static func screenContaining(_ rect: NSRect) -> NSScreen? {
         NSScreen.screens.first { screen in
             screen.frame.intersects(rect) || screen.visibleFrame.intersects(rect)
-        }
-    }
-
-    private static func screenContainingPoint(_ point: NSPoint) -> NSScreen? {
-        NSScreen.screens.first { screen in
-            screen.frame.contains(point)
         }
     }
 

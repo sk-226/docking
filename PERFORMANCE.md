@@ -15,8 +15,8 @@ not interacting with the dock.
   repeated every few seconds.
 - Settings changes should not write continuously while sliders or segmented
   controls are being adjusted.
-- Auto-hide should rely on edge trigger windows and scheduled hides, not a
-  continuous mouse-position polling loop.
+- Edge summoning and Auto-hide should use event monitors and one-shot delays,
+  not a continuous mouse-position polling loop.
 
 ## Design Choices
 
@@ -24,9 +24,11 @@ not interacting with the dock.
   notifications. The app does one initial scan and then reacts to system events.
 - App icons are cached by bundle identifier or app path. SwiftUI body refreshes
   reuse decoded `NSImage` instances instead of decoding icons every frame.
-- Auto-hide uses small edge trigger panels with AppKit tracking areas and a
-  bounded hide delay. This is intentionally chosen over high-frequency mouse
-  polling because Docking may run all day.
+- Edge summoning uses local/global mouse monitors and click-through panels for
+  target geometry and Space membership. No tracking view intercepts input. A
+  deliberate outward push arms one reveal delay; clicks, drags, scrolling and
+  lateral motion cancel it. A continuous contact is consumed after one reveal.
+  Auto-hide retains its separate bounded hide delay. Neither path polls.
 - Calendar refresh happens on launch, panel open, EventKit store change, or
   after a conservative stale interval.
 - Weather refresh uses the configured interval, defaulting to 45 minutes. Failed
@@ -125,16 +127,34 @@ should not start a repeating recovery loop after wake.
 
 ## Spaces and Displays
 
-1. Enable "Show on all Spaces" and "Show on full-screen spaces".
-2. Move between Spaces and a full-screen app.
-3. Confirm the panel appears without stealing focus.
-4. In Control Center > General, switch Placement display between "Main display"
-   and "Follow pointer".
-5. If more than one display is connected, choose a specific display.
-6. Disconnect that display and confirm Docking falls back to the main display.
+1. Enable "Available on every desktop" and "Available over full-screen apps".
+   Switch Spaces and enter/exit a full-screen app; confirm no focus stealing.
+   Disable these options and confirm edge monitors cannot summon into a Space
+   where their target panel is unavailable.
+2. In General > Placement display, select Automatic. With separate Spaces and
+   two displays, test Auto-hide and Always visible. Crossing displays alone or
+   resting at a bottom edge must not move/reveal the Dock. Continue pushing down
+   after touching the edge to summon it; repeat all bottom alignments.
+3. Select Fixed display and change its target while a reveal is pending. Only
+   the selected display may reveal. Disconnect it: fall back to primary, not
+   the keyboard-focused screen. Reconnect: Fixed returns; Automatic retains
+   its fallback until the next valid summon.
+4. Test the effective macOS "Displays have separate Spaces" setting both ways,
+   applying any system-required session change. Automatic uses primary only
+   when disabled. Fixed remains authoritative.
+5. Click and drag bottom-edge controls, scroll there, and slide along the edge
+   on noncurrent displays and over Docking's own windows. Input must pass through
+   and cancel pending reveals. Test Default, Fast and Instant Edge response.
+6. Keep pushing after one reveal, then leave the pointer stationary at the edge
+   for 30 seconds. There must be no repeated reveal/layout cycle. Move away and
+   repeat the idle CPU/memory sample in both visibility modes after multiple
+   display switches and connect/disconnect cycles. Monitors must not accumulate.
+7. Repeat icon/widget resizing, app launch/quit, Show Dock and sleep/wake: preserve
+   the current eligible display. Compare side edges, stacked displays and
+   full-screen second pushes with Apple's Dock before claiming native parity.
 
-These checks matter because a dock panel can look cheap if it drifts outside the
-visible frame or steals focus while the user changes Spaces.
+Record results in QA.md. Policy tests and a successful build do not prove input
+passthrough, physical edge-motion delivery, idle performance or native parity.
 
 ## Calendar Source Selection
 

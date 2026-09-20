@@ -37,20 +37,20 @@ struct GeneralControlCenterSection: View {
                             .frame(width: 240, alignment: .leading)
                         }
 
-                        if model.settings.dockVisibility == .autoHide {
-                            GridRow {
-                                Text("Dock response")
-                                    .frame(width: 150, alignment: .leading)
-                                Picker("Dock response", selection: $model.settings.dockAutoHideResponsePreset) {
-                                    ForEach(DockAutoHideResponsePreset.allCases) { preset in
-                                        Text(preset.label).tag(preset)
-                                    }
+                        GridRow {
+                            Text("Edge response")
+                                .frame(width: 150, alignment: .leading)
+                            Picker("Edge response", selection: $model.settings.dockAutoHideResponsePreset) {
+                                ForEach(DockAutoHideResponsePreset.allCases) { preset in
+                                    Text(preset.label).tag(preset)
                                 }
-                                .labelsHidden()
-                                .pickerStyle(.segmented)
-                                .frame(width: 240, alignment: .leading)
                             }
+                            .labelsHidden()
+                            .pickerStyle(.segmented)
+                            .frame(width: 240, alignment: .leading)
+                        }
 
+                        if model.settings.dockVisibility == .autoHide {
                             GridRow {
                                 Text("Hide delay")
                                     .frame(width: 150, alignment: .leading)
@@ -113,12 +113,13 @@ struct GeneralControlCenterSection: View {
                         GridRow {
                             Text("Placement display")
                                 .frame(width: 150, alignment: .leading)
-                            Picker("Placement display", selection: $model.settings.displayMode) {
+                            Picker("Placement display", selection: displayMode) {
                                 ForEach(DockDisplayMode.allCases) { mode in
                                     Text(mode.label).tag(mode)
                                 }
                             }
                             .labelsHidden()
+                            .pickerStyle(.segmented)
                             .frame(width: 240, alignment: .leading)
                         }
                     }
@@ -131,6 +132,13 @@ struct GeneralControlCenterSection: View {
                                 set: { model.settings.dockDisplayID = $0 == 0 ? nil : $0 }
                             )
                         ) {
+                            if let selectedID = model.settings.dockDisplayID,
+                               !model.availableDisplays.contains(where: { $0.id == selectedID }) {
+                                Text("Disconnected display — using primary").tag(selectedID)
+                            }
+                            if model.availableDisplays.isEmpty, model.settings.dockDisplayID == nil {
+                                Text("No connected displays").tag(UInt32(0))
+                            }
                             ForEach(model.availableDisplays) { display in
                                 Text("\(display.name) · \(display.frameDescription)").tag(display.id)
                             }
@@ -171,12 +179,7 @@ struct GeneralControlCenterSection: View {
         Binding(
             get: { DockEdgeChoice(position: model.settings.dockPosition) },
             set: { edge in
-                // The renderer still wants one concrete DockPosition, but users
-                // reason about this as two separate questions: which screen edge
-                // owns the dock, and how a bottom dock is aligned. Splitting the
-                // controls avoids a misleading "Position" menu where "Bottom
-                // center" appears to decide multi-display behavior even though
-                // bottom auto-hide intentionally reveals from every display.
+                // Edge and bottom alignment are independent of display selection.
                 switch edge {
                 case .bottom:
                     model.settings.dockPosition = bottomAlignment.wrappedValue.position
@@ -198,16 +201,31 @@ struct GeneralControlCenterSection: View {
         )
     }
 
+    private var displayMode: Binding<DockDisplayMode> {
+        Binding(
+            get: { model.settings.displayMode },
+            set: { mode in
+                var settings = model.settings
+                settings.displayMode = mode
+                if mode == .specific, settings.dockDisplayID == nil {
+                    settings.dockDisplayID = model.availableDisplays.first?.id
+                }
+                model.settings = settings
+            }
+        )
+    }
+
     private var placementHelpText: String {
-        if model.settings.dockPosition.isBottom, model.settings.dockVisibility == .autoHide {
-            return "Bottom auto-hide can be revealed from the bottom edge of every display. Placement display sets the default anchor before a reveal and for manual Show Dock."
+        if model.settings.displayMode == .specific {
+            return "Stays on the selected display, including with Auto-hide. If it disconnects, Docking uses the primary display until the selected display reconnects."
         }
-
-        if model.settings.dockPosition.isBottom {
-            return "Placement display sets where the always-visible bottom dock stays."
+        if !NSScreen.screensHaveSeparateSpaces {
+            return "macOS is using shared Spaces, so Docking stays on the primary display. To summon it on other displays, enable Displays have separate Spaces in System Settings."
         }
-
-        return "Side docks stay on one display so their edge trigger does not intercept gestures on every monitor."
+        if model.settings.dockPosition.isVertical {
+            return "Side docks stay on their current display. Choose Fixed display to place the dock on a different display."
+        }
+        return "Summon Docking at another display's bottom edge, with Auto-hide or Always visible. Moving the pointer between displays alone does not move the dock."
     }
 }
 

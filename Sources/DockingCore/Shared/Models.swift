@@ -260,20 +260,17 @@ enum DockingAccentColor: String, CaseIterable, Identifiable {
 }
 
 enum DockDisplayMode: String, CaseIterable, Codable, Identifiable {
-    case main
-    case pointer
+    case automatic
     case specific
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .main:
-            return "Main display"
-        case .pointer:
-            return "Follow pointer"
+        case .automatic:
+            return "Automatic"
         case .specific:
-            return "Chosen display"
+            return "Fixed display"
         }
     }
 }
@@ -582,7 +579,7 @@ struct DockingSettings: Codable, Equatable {
         autoHideDelay: 0.7,
         showOnAllSpaces: true,
         showOnFullScreenSpaces: true,
-        displayMode: .main,
+        displayMode: .automatic,
         dockDisplayID: nil,
         dockPosition: .bottomCenter,
         iconSize: 36,
@@ -667,7 +664,8 @@ extension DockingSettings {
         autoHideDelay = try container.decodeIfPresent(Double.self, forKey: .autoHideDelay) ?? defaults.autoHideDelay
         showOnAllSpaces = try container.decodeIfPresent(Bool.self, forKey: .showOnAllSpaces) ?? defaults.showOnAllSpaces
         showOnFullScreenSpaces = try container.decodeIfPresent(Bool.self, forKey: .showOnFullScreenSpaces) ?? defaults.showOnFullScreenSpaces
-        displayMode = try container.decodeIfPresent(DockDisplayMode.self, forKey: .displayMode) ?? defaults.displayMode
+        // An unknown display choice resets only placement, not unrelated settings.
+        displayMode = (try container.decodeIfPresent(String.self, forKey: .displayMode)).flatMap(DockDisplayMode.init(rawValue:)) ?? defaults.displayMode
         dockDisplayID = try container.decodeIfPresent(UInt32.self, forKey: .dockDisplayID) ?? defaults.dockDisplayID
         dockPosition = try container.decodeIfPresent(DockPosition.self, forKey: .dockPosition) ?? defaults.dockPosition
         iconSize = min(max(try container.decodeIfPresent(Double.self, forKey: .iconSize) ?? defaults.iconSize, DockingSettingLimits.iconSize.lowerBound), DockingSettingLimits.iconSize.upperBound)

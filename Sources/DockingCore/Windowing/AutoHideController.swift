@@ -6,13 +6,17 @@ final class AutoHideController {
     private var edgePanels: [String: NSPanel] = [:]
     private var edgePanelScreens: [String: NSScreen] = [:]
     private var edgePanelScreenFrames: [String: NSRect] = [:]
-    private var globalMouseMovedMonitor: Any?
+    private var triggerConfiguration: DockEdgeConfiguration?
+    private var triggerEnvironment: [String: [NSRect]] = [:]
+    private var globalEventMonitor: Any?
+    private var localEventMonitor: Any?
     private var onEnter: ((NSScreen?) -> Void)?
     private var onTriggerContact: ((NSPoint) -> Void)?
     private var onPointerOutsideTrigger: ((NSPoint) -> Void)?
     private var pendingRevealTask: Task<Void, Never>?
     private var pendingRevealKey: String?
     private var revealGate = AutoHideRevealGate()
+    private var edgeIntent = DockEdgeIntent()
     private var dockAutoHideResponsePreset: DockAutoHideResponsePreset = .standard
     private var dockPosition: DockPosition = .bottomCenter
 
@@ -24,20 +28,41 @@ final class AutoHideController {
         onTriggerContact: @escaping (NSPoint) -> Void,
         onPointerOutsideTrigger: @escaping (NSPoint) -> Void
     ) {
+        let separateSpaces = NSScreen.screensHaveSeparateSpaces
+        let screens = Self.triggerScreens(
+            for: settings, selectedScreen: screen, availableScreens: NSScreen.screens,
+            screensHaveSeparateSpaces: separateSpaces
+        )
+        guard !screens.isEmpty else {
+            close()
+            return
+        }
+
+        let configuration = DockEdgeConfiguration(
+            settings: settings,
+            currentDisplayID: screen.flatMap { ScreenPlacementService.displayID(for: $0) },
+            separateSpaces: separateSpaces
+        )
+        let environment = Dictionary(uniqueKeysWithValues: screens.map {
+            (screenKey($0), [$0.frame, $0.visibleFrame])
+        })
+        if triggerConfiguration != configuration || triggerEnvironment != environment {
+            // Settings, display removal and Space transitions invalidate queued
+            // gestures; an ordinary app-icon refresh must not do so.
+            cancelPendingReveal()
+            revealGate.reset()
+            edgeIntent.reset()
+        }
+        triggerConfiguration = configuration
+        triggerEnvironment = environment
         self.onEnter = onEnter
         self.onTriggerContact = onTriggerContact
         self.onPointerOutsideTrigger = onPointerOutsideTrigger
         dockAutoHideResponsePreset = settings.dockAutoHideResponsePreset
         dockPosition = settings.dockPosition
 
-        guard settings.dockVisibility == .autoHide else {
-            close()
-            return
-        }
+        installEventMonitorsIfNeeded()
 
-        installMouseMovedMonitorsIfNeeded()
-
-        let screens = Self.triggerScreens(for: settings, selectedScreen: screen, availableScreens: NSScreen.screens)
         let wantedKeys = Set(screens.map(screenKey))
         for (key, panel) in edgePanels where !wantedKeys.contains(key) {
             panel.close()
@@ -56,7 +81,7 @@ final class AutoHideController {
                 on: triggerScreen,
                 spansFullBottomEdge: settings.dockPosition.isBottom
             )
-            let panel = edgePanels[key] ?? makeEdgePanel()
+            let panel = edgePanels[key] ?? Self.makeEdgePanel()
             panel.setFrame(frame, display: true)
             panel.collectionBehavior = DockingWindowBehavior.collectionBehavior(for: settings)
             panel.orderFrontRegardless()
@@ -68,20 +93,23 @@ final class AutoHideController {
 
     func close() {
         cancelPendingReveal()
-        removeMouseMovedMonitors()
+        removeEventMonitors()
         for panel in edgePanels.values {
             panel.close()
         }
         edgePanels = [:]
         edgePanelScreens = [:]
         edgePanelScreenFrames = [:]
+        triggerConfiguration = nil
+        triggerEnvironment = [:]
         revealGate.reset()
+        edgeIntent.reset()
         onEnter = nil
         onTriggerContact = nil
         onPointerOutsideTrigger = nil
     }
 
-    private func makeEdgePanel() -> NSPanel {
+    static func makeEdgePanel() -> NSPanel {
         let panel = NSPanel(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -91,75 +119,83 @@ final class AutoHideController {
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false
-        panel.ignoresMouseEvents = false
-        // The edge strip is a transparent, non-activating panel, and some
-        // pointer paths only deliver movement inside the strip rather than a
-        // clean entered/exited transition. Accepting moved events keeps reveal
-        // tied to real edge interaction without falling back to a timer polling
-        // loop, which would be worse for idle battery life in a resident dock
-        // app.
-        panel.acceptsMouseMovedEvents = true
+        // These windows only locate targets and track their Space membership.
+        // Input belongs to the underlying app, in both visibility modes.
+        panel.ignoresMouseEvents = true
+        panel.hidesOnDeactivate = false
         panel.level = .statusBar
-        // Tiny edge trigger panels avoid timer-based mouse polling. Bottom
-        // docks get one trigger per display so the Docking dock can appear on
-        // whichever screen edge the user pushes into, matching the expectation
-        // set by Apple's Dock on multi-display systems.
-        panel.contentView = EdgeTriggerView { [weak self] in
-            let location = NSEvent.mouseLocation
-            Task { @MainActor in
-                self?.handlePointerActivity(at: location)
-            }
-        }
+        panel.contentView = NSView()
         return panel
     }
 
-    nonisolated static func triggerScreens(for settings: DockingSettings, selectedScreen: NSScreen?, availableScreens: [NSScreen]) -> [NSScreen] {
-        if settings.dockPosition.isBottom {
-            // Bottom auto-hide is the one mode where selected-display behavior
-            // is intentionally overridden. Apple's Dock can be revealed from
-            // the bottom edge of any attached display, and users expect the
-            // same muscle memory here. A single selected-screen trigger looked
-            // simpler, but it made the Docking dock feel broken as soon as the
-            // pointer was on another monitor. Non-bottom docks stay scoped to
-            // one display because full-height left/right trigger strips on
-            // every monitor would be much more likely to intercept unrelated
-            // edge gestures.
-            return availableScreens.isEmpty ? selectedScreen.map { [$0] } ?? [] : availableScreens
+    // The injected flag describes the topology, independently of the test
+    // machine's settings. Runtime callers pass NSScreen.screensHaveSeparateSpaces.
+    nonisolated static func triggerScreens(
+        for settings: DockingSettings,
+        selectedScreen: NSScreen?,
+        availableScreens: [NSScreen],
+        screensHaveSeparateSpaces: Bool = true
+    ) -> [NSScreen] {
+        let screens = availableScreens.isEmpty ? selectedScreen.map { [$0] } ?? [] : availableScreens
+        let ids = DockDisplayPolicy.triggerDisplayIDs(
+            settings: settings,
+            currentDisplayID: selectedScreen.flatMap { ScreenPlacementService.displayID(for: $0) },
+            availableDisplayIDs: screens.compactMap { ScreenPlacementService.displayID(for: $0) },
+            screensHaveSeparateSpaces: screensHaveSeparateSpaces
+        )
+        return screens.filter { screen in
+            ScreenPlacementService.displayID(for: screen).map { ids.contains($0) } ?? false
         }
-        return selectedScreen.map { [$0] } ?? availableScreens.prefix(1).map { $0 }
     }
 
-    private func installMouseMovedMonitorsIfNeeded() {
-        guard globalMouseMovedMonitor == nil else {
-            return
-        }
+    static let observedEvents: NSEvent.EventTypeMask = [
+        .mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown,
+        .leftMouseUp, .rightMouseUp, .otherMouseUp,
+        .leftMouseDragged, .rightMouseDragged, .otherMouseDragged, .scrollWheel
+    ]
 
-        // The transparent trigger panel is still the primary hit target, but
-        // WindowServer/AppKit can miss tracking-area transitions on some edge
-        // paths while another app owns the frontmost event stream. A global
-        // monitor gives us that second event-driven path without adding a timer
-        // or duplicating events already delivered to `EdgeTriggerView`. We keep
-        // the work intentionally tiny: compare the current location against the
-        // existing edge-panel frames, then reveal on the matching display.
-        globalMouseMovedMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] _ in
-            let location = NSEvent.mouseLocation
-            Task { @MainActor in
-                self?.handlePointerActivity(at: location)
+    private func installEventMonitorsIfNeeded() {
+        // Global monitors exclude our own windows; local monitors return the
+        // original event so neither path consumes clicks, drags or scrolling.
+        if globalEventMonitor == nil {
+            globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: Self.observedEvents) { [weak self] event in
+                MainActor.assumeIsolated { self?.handlePointerEvent(event) }
+            }
+        }
+        if localEventMonitor == nil {
+            localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: Self.observedEvents) { [weak self] event in
+                MainActor.assumeIsolated { self?.handlePointerEvent(event) }
+                return event
             }
         }
     }
 
-    private func removeMouseMovedMonitors() {
-        if let globalMouseMovedMonitor {
-            NSEvent.removeMonitor(globalMouseMovedMonitor)
-        }
-        globalMouseMovedMonitor = nil
+    private func removeEventMonitors() {
+        if let globalEventMonitor { NSEvent.removeMonitor(globalEventMonitor) }
+        if let localEventMonitor { NSEvent.removeMonitor(localEventMonitor) }
+        globalEventMonitor = nil
+        localEventMonitor = nil
     }
 
-    private func handlePointerActivity(at location: NSPoint) {
+    private func handlePointerEvent(_ event: NSEvent) {
+        let location = NSEvent.mouseLocation
+        guard event.type == .mouseMoved, NSEvent.pressedMouseButtons == 0 else {
+            cancelPendingReveal()
+            edgeIntent.reset()
+            revealGate.reset()
+            onPointerOutsideTrigger?(location)
+            return
+        }
         guard let target = triggerTarget(containing: location) else {
             cancelPendingReveal()
-            revealGate.update(targetKey: nil, requiresSecondPush: false, now: ProcessInfo.processInfo.systemUptime)
+            edgeIntent.reset()
+            revealGate.update(targetKey: nil, requiresSecondPush: false, now: event.timestamp)
+            onPointerOutsideTrigger?(location)
+            return
+        }
+        guard edgeIntent.update(targetKey: target.key, position: dockPosition, location: location,
+                                delta: CGSize(width: event.deltaX, height: event.deltaY), now: event.timestamp) else {
+            cancelPendingReveal()
             onPointerOutsideTrigger?(location)
             return
         }
@@ -168,7 +204,7 @@ final class AutoHideController {
         let decision = revealGate.update(
             targetKey: target.key,
             requiresSecondPush: target.requiresSecondPush,
-            now: ProcessInfo.processInfo.systemUptime
+            now: event.timestamp
         )
         guard let decision else {
             return
@@ -198,7 +234,9 @@ final class AutoHideController {
             guard let self else {
                 return
             }
-            guard pendingRevealKey == target.key,
+            guard !Task.isCancelled, NSEvent.pressedMouseButtons == 0,
+                  pendingRevealKey == target.key,
+                  edgeIntent.canReveal(targetKey: target.key, position: dockPosition, location: NSEvent.mouseLocation),
                   triggerTarget(containing: NSEvent.mouseLocation)?.key == target.key,
                   revealGate.currentTargetCanReveal(target.key) else {
                 cancelPendingReveal()
@@ -208,6 +246,7 @@ final class AutoHideController {
             pendingRevealKey = nil
             pendingRevealTask = nil
             onEnter?(target.screen)
+            edgeIntent.didReveal(targetKey: target.key)
         }
     }
 
@@ -219,7 +258,8 @@ final class AutoHideController {
 
     private func triggerTarget(containing location: NSPoint) -> EdgeTriggerTarget? {
         for (key, panel) in edgePanels {
-            guard let screen = edgePanelScreens[key] else {
+            guard panel.isVisible, panel.isOnActiveSpace,
+                  let screen = edgePanelScreens[key] else {
                 continue
             }
             let screenFrame = edgePanelScreenFrames[key] ?? screen.frame
@@ -366,46 +406,5 @@ struct AutoHideRevealGate {
     private func isSecondPush(for key: String, now: TimeInterval) -> Bool {
         lastExitKey == key
             && lastExitTime.map { now - $0 <= Self.secondPushWindow } == true
-    }
-}
-
-private final class EdgeTriggerView: NSView {
-    private let onPointerActivity: () -> Void
-
-    init(onPointerActivity: @escaping () -> Void) {
-        self.onPointerActivity = onPointerActivity
-        super.init(frame: .zero)
-    }
-
-    required init?(coder: NSCoder) {
-        nil
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        for area in trackingAreas {
-            removeTrackingArea(area)
-        }
-
-        addTrackingArea(
-            NSTrackingArea(
-                rect: bounds,
-                options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
-                owner: self,
-                userInfo: nil
-            )
-        )
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        onPointerActivity()
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        onPointerActivity()
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        onPointerActivity()
     }
 }
