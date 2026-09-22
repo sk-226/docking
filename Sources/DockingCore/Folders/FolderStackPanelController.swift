@@ -8,6 +8,7 @@ final class FolderStackPanelController {
     private var globalMonitor: Any?
     private var visibleItemID: UUID?
     private var onClose: (() -> Void)?
+    private var anchorFrame: NSRect?
     private static let animationDuration: TimeInterval = 0.12
 
     var isVisible: Bool {
@@ -31,6 +32,7 @@ final class FolderStackPanelController {
         close(animated: false, notifyClose: false)
         visibleItemID = item.id
         self.onClose = onClose
+        self.anchorFrame = anchorFrame
 
         let entries = FolderStackService.entries(for: item)
         let size = FolderStackPresentation.panelSize(for: item, entryCount: entries.count)
@@ -46,8 +48,13 @@ final class FolderStackPanelController {
         panel.orderFrontRegardless()
         self.panel = panel
 
-        installDismissMonitors(panel: panel, anchorFrame: anchorFrame)
+        installDismissMonitors(panel: panel)
         showPanel(panel, targetAlpha: 1)
+    }
+
+    func updateAnchorFrame(_ frame: NSRect, itemID: UUID) {
+        guard visibleItemID == itemID else { return }
+        anchorFrame = frame
     }
 
     func close() {
@@ -64,6 +71,7 @@ final class FolderStackPanelController {
         localMonitor = nil
         globalMonitor = nil
         visibleItemID = nil
+        anchorFrame = nil
 
         let panelToClose = panel
         panel = nil
@@ -132,7 +140,7 @@ final class FolderStackPanelController {
         return panel
     }
 
-    private func installDismissMonitors(panel: NSPanel, anchorFrame: NSRect?) {
+    private func installDismissMonitors(panel: NSPanel) {
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown]) { [weak self, weak panel] event in
             if event.type == .keyDown, event.keyCode == 53 {
                 self?.close(animated: true, notifyClose: true)
@@ -143,7 +151,7 @@ final class FolderStackPanelController {
                Self.shouldDismissPointerEvent(
                    pointerLocation: NSEvent.mouseLocation,
                    panelFrame: panel.frame,
-                   anchorFrame: anchorFrame
+                   anchorFrame: self?.anchorFrame
                ) {
                 self?.close(animated: true, notifyClose: true)
             }
@@ -155,7 +163,7 @@ final class FolderStackPanelController {
                Self.shouldDismissPointerEvent(
                    pointerLocation: NSEvent.mouseLocation,
                    panelFrame: panel.frame,
-                   anchorFrame: anchorFrame
+                   anchorFrame: self?.anchorFrame
                ) {
                 self?.close(animated: true, notifyClose: true)
             }

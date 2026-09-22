@@ -63,8 +63,8 @@ enum AppleDockPreferences {
     static func persistentDockItems(from dockDefaults: UserDefaults? = UserDefaults(suiteName: "com.apple.dock")) -> [DockItem] {
         var seenKeys: Set<String> = []
         let appItems = persistentAppItems(from: dockDefaults, seenKeys: &seenKeys)
-        let folderItems = persistentFolderItems(from: dockDefaults, seenKeys: &seenKeys)
-        return appItems + folderItems
+        let otherItems = persistentOtherItems(from: dockDefaults, seenKeys: &seenKeys)
+        return appItems + otherItems
     }
 
     private static func persistentAppItems(from dockDefaults: UserDefaults?, seenKeys: inout Set<String>) -> [DockItem] {
@@ -100,16 +100,18 @@ enum AppleDockPreferences {
         } ?? []
     }
 
-    private static func persistentFolderItems(from dockDefaults: UserDefaults?, seenKeys: inout Set<String>) -> [DockItem] {
+    private static func persistentOtherItems(from dockDefaults: UserDefaults?, seenKeys: inout Set<String>) -> [DockItem] {
         dockDefaults?.array(forKey: "persistent-others")?.compactMap { rawItem in
-            guard let tileData = tileData(from: rawItem, tileType: "directory-tile"),
+            guard let rawItem = rawItem as? [String: Any],
+                  let type = rawItem["tile-type"] as? String, ["directory-tile", "file-tile"].contains(type),
+                  let tileData = rawItem["tile-data"] as? [String: Any],
                   let fileData = tileData["file-data"] as? [String: Any],
                   let url = (fileData["_CFURLString"] as? String).flatMap(URL.init(string:))?.standardizedFileURL,
-                  isReadableFolder(url) else {
+                  url.isFileURL, let item = AppCatalogService.dockItemIfSupported(for: url), !item.isApplication else {
                 return nil
             }
 
-            let stableKey = "folder:\(url.path)"
+            let stableKey = item.identityKey
             guard !seenKeys.contains(stableKey) else {
                 return nil
             }
@@ -118,14 +120,14 @@ enum AppleDockPreferences {
             let title = (tileData["file-label"] as? String)?.nilIfBlank
                 ?? AppCatalogService.localizedDisplayName(for: url)
 
-            var folderItem = AppCatalogService.folderDockItem(
-                for: url,
-                displayMode: folderDisplayMode(from: tileData["displayas"]),
-                viewMode: folderViewMode(from: tileData["showas"]),
-                sortMode: folderSortMode(from: tileData["arrangement"])
-            )
-            folderItem.title = title
-            return folderItem
+            var imported = item
+            imported.title = title
+            if imported.isFolder {
+                imported.folderDisplayMode = folderDisplayMode(from: tileData["displayas"])
+                imported.folderViewMode = folderViewMode(from: tileData["showas"])
+                imported.folderSortMode = folderSortMode(from: tileData["arrangement"])
+            }
+            return imported
         } ?? []
     }
 
@@ -136,19 +138,6 @@ enum AppleDockPreferences {
             return nil
         }
         return tileData
-    }
-
-    private static func isReadableFolder(_ url: URL) -> Bool {
-        let values = try? url.resourceValues(forKeys: [.contentTypeKey, .isDirectoryKey])
-        guard values?.isDirectory == true else {
-            return false
-        }
-
-        // Keep application packages in persistent-apps. The Apple Dock can put
-        // unusual file tiles in persistent-others, but this pre-1.0 build should
-        // not grow a document-launcher abstraction until the UI intentionally
-        // supports it.
-        return values?.contentType?.conforms(to: .applicationBundle) != true
     }
 
     private static func folderDisplayMode(from rawValue: Any?) -> DockFolderDisplayMode {

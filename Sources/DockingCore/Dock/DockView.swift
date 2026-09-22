@@ -12,6 +12,7 @@ struct DockPresentationLayout: Equatable {
     var metrics = DockLayout.metrics(itemCount: 0, settings: .default)
     var origin = CGPoint.zero
     var canvasSize = CGSize.zero
+    var launchProgress: [UUID: Double] = [:]
 }
 
 struct DockView: View {
@@ -21,6 +22,9 @@ struct DockView: View {
     var body: some View {
         let settings = model.settings
         let metrics = presentation.metrics
+        let items = model.visibleDockItems
+        let documentStart = DockItemOrdering.documentStart(in: items)
+        let runningSectionStart = items.firstIndex { !$0.isPinned }
         let surfaceFrame = DockSurfaceGeometry.frame(
             in: CGRect(origin: presentation.layout.origin, size: metrics.scaledPanelSize),
             size: CGSize(width: metrics.surfaceSize.width * metrics.scale, height: metrics.surfaceSize.height * metrics.scale),
@@ -32,19 +36,13 @@ struct DockView: View {
             ? AnyLayout(VStackLayout(alignment: settings.dockPosition == .left ? .leading : .trailing, spacing: settings.spacing))
             : AnyLayout(HStackLayout(alignment: .bottom, spacing: settings.spacing))
 
-        layout {
-            ForEach(Array(model.displayDockItems.enumerated()), id: \.element.id) { index, item in
-                dockItem(item, index: index)
-                    .onDrag { NSItemProvider(object: item.id.uuidString as NSString) }
-                    .onDrop(of: [.text, .fileURL], delegate: DockItemDropDelegate(target: item, model: model))
+        return layout {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                if index == documentStart || index == runningSectionStart { dockDivider }
+                dockItem(item, index: index, transient: !item.isPinned)
+                    .onDrop(of: [.fileURL], delegate: DockItemDropDelegate(target: item, model: model))
             }
-            if !model.unpinnedRunningItems.isEmpty {
-                dockDivider
-                ForEach(Array(model.unpinnedRunningItems.enumerated()), id: \.element.id) { index, item in
-                    dockItem(item, index: model.displayDockItems.count + index, transient: true)
-                }
-            }
-            if model.enabledWidgetCount > 0 && model.visibleAppItemCount > 0 { dockDivider }
+            if model.enabledWidgetCount > 0 && !items.isEmpty { dockDivider }
             if settings.calendarEnabled {
                 CalendarWidgetView().padding(edge, widgetInset)
             }
@@ -60,8 +58,8 @@ struct DockView: View {
             }
             .buttonStyle(.plain)
             .padding(edge, (settings.effectiveDockThickness - DockLayout.addButtonSize) / 2)
-            .dockTooltip("Add app or folder")
-            .accessibilityLabel("Add app or folder")
+            .dockTooltip("Add app, file or folder")
+            .accessibilityLabel("Add app, file or folder")
         }
         .padding(vertical ? .vertical : .horizontal, metrics.padding)
         .frame(width: metrics.surfaceSize.width, height: metrics.surfaceSize.height, alignment: alignment)
@@ -98,8 +96,10 @@ struct DockView: View {
 
     private func dockItem(_ item: DockItem, index: Int, transient: Bool = false) -> some View {
         let sizes = presentation.metrics.iconSizes
-        return DockItemView(item: item, iconSize: sizes.indices.contains(index) ? sizes[index] : model.settings.iconSize, isTransientRunningItem: transient)
+        return DockItemView(item: item, iconSize: sizes.indices.contains(index) ? sizes[index] : model.settings.iconSize, isTransientRunningItem: transient, launchProgress: presentation.layout.launchProgress[item.id] ?? 0)
             .padding(edge, 3)
+            .padding(model.settings.dockPosition.isVertical ? .top : .leading,
+                     presentation.metrics.iconLeadingInsets.indices.contains(index) ? presentation.metrics.iconLeadingInsets[index] : 0)
     }
 
     private var dockDivider: some View {
@@ -140,32 +140,6 @@ private struct DockItemDropDelegate: DropDelegate {
         return true
     }
 
-    func dropEntered(info: DropInfo) {
-        guard let provider = info.itemProviders(for: [.text]).first else {
-            return
-        }
-
-        provider.loadItem(forTypeIdentifier: "public.text", options: nil) { item, _ in
-            let rawValue: String?
-            if let data = item as? Data {
-                rawValue = String(data: data, encoding: .utf8)
-            } else {
-                rawValue = item as? String
-            }
-
-            guard let rawValue,
-                  let id = UUID(uuidString: rawValue) else {
-                return
-            }
-
-            Task { @MainActor in
-                guard let source = model.dockItems.first(where: { $0.id == id }) else {
-                    return
-                }
-                model.moveDockItem(source, before: target)
-            }
-        }
-    }
 }
 
 private struct DockExternalAppDropDelegate: DropDelegate {

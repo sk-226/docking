@@ -10,6 +10,7 @@ final class WidgetDetailPanelController {
     private var recentlyDismissedKind: DockWidgetKind?
     private var recentlyDismissedAt: TimeInterval = 0
     private var onClose: (() -> Void)?
+    private var anchorFrame: NSRect?
     private static let animationDuration: TimeInterval = 0.12
     private nonisolated static let retoggleSuppressionInterval: TimeInterval = 0.35
 
@@ -42,6 +43,7 @@ final class WidgetDetailPanelController {
         visibleKind = kind
         recentlyDismissedKind = nil
         self.onClose = onClose
+        self.anchorFrame = anchorFrame
 
         let size = CGSize(width: 380, height: kind == .calendar ? 430 : 380)
         let panel = makePanel(kind: kind, model: model)
@@ -56,8 +58,13 @@ final class WidgetDetailPanelController {
         panel.orderFrontRegardless()
         self.panel = panel
 
-        installDismissMonitors(panel: panel, anchorFrame: anchorFrame)
+        installDismissMonitors(panel: panel)
         showPanel(panel, targetAlpha: 1)
+    }
+
+    func updateAnchorFrame(_ frame: NSRect, kind: DockWidgetKind) {
+        guard visibleKind == kind else { return }
+        anchorFrame = frame
     }
 
     func close() {
@@ -81,6 +88,7 @@ final class WidgetDetailPanelController {
         localMonitor = nil
         globalMonitor = nil
         visibleKind = nil
+        anchorFrame = nil
         let panelToClose = panel
         panel = nil
         let closeHandler = notifyClose ? onClose : nil
@@ -156,7 +164,7 @@ final class WidgetDetailPanelController {
         return panel
     }
 
-    private func installDismissMonitors(panel: NSPanel, anchorFrame: NSRect?) {
+    private func installDismissMonitors(panel: NSPanel) {
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown]) { [weak self, weak panel] event in
             if event.type == .keyDown, event.keyCode == 53 {
                 self?.close(animated: true, rememberForRetoggleSuppression: false, notifyClose: true)
@@ -167,7 +175,7 @@ final class WidgetDetailPanelController {
                Self.shouldDismissPointerEvent(
                    pointerLocation: NSEvent.mouseLocation,
                    panelFrame: panel.frame,
-                   anchorFrame: anchorFrame
+                   anchorFrame: self?.anchorFrame
                ) {
                 self?.close(animated: true, rememberForRetoggleSuppression: true, notifyClose: true)
             }
@@ -179,7 +187,7 @@ final class WidgetDetailPanelController {
                Self.shouldDismissPointerEvent(
                    pointerLocation: NSEvent.mouseLocation,
                    panelFrame: panel.frame,
-                   anchorFrame: anchorFrame
+                   anchorFrame: self?.anchorFrame
                ) {
                 self?.close(animated: true, rememberForRetoggleSuppression: true, notifyClose: true)
             }

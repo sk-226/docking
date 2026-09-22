@@ -11,6 +11,7 @@ final class RunningAppObserver {
     }
 
     var onChange: ((Snapshot) -> Void)?
+    var onLaunchStateChange: ((NSRunningApplication, Bool) -> Void)?
     private var tokens: [NSObjectProtocol] = []
     private var itemIDsByKey: [String: UUID] = [:]
     private var singleDockTileByAppKey: [String: Bool] = [:]
@@ -21,15 +22,23 @@ final class RunningAppObserver {
 
         let center = NSWorkspace.shared.notificationCenter
         let names: [Notification.Name] = [
+            NSWorkspace.willLaunchApplicationNotification,
             NSWorkspace.didLaunchApplicationNotification,
             NSWorkspace.didTerminateApplicationNotification,
             NSWorkspace.didActivateApplicationNotification
         ]
 
         tokens = names.map { name in
-            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
+                let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
                 Task { @MainActor in
                     self?.publishCurrentSnapshot()
+                    if name == NSWorkspace.willLaunchApplicationNotification, let application {
+                        self?.onLaunchStateChange?(application, true)
+                    } else if name == NSWorkspace.didLaunchApplicationNotification || name == NSWorkspace.didTerminateApplicationNotification,
+                              let application {
+                        self?.onLaunchStateChange?(application, false)
+                    }
                 }
             }
         }

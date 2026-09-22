@@ -12,7 +12,7 @@ final class AppCatalogService {
         panel.canChooseFiles = true
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.applicationBundle, .folder]
+        panel.allowedContentTypes = [.item]
 
         prepareForUserDrivenModalSelection()
         guard panel.runModal() == .OK, let url = panel.url else {
@@ -46,6 +46,7 @@ final class AppCatalogService {
     }
 
     static func dockItemIfSupported(for url: URL) -> DockItem? {
+        guard url.isFileURL else { return nil }
         let standardizedURL = url.standardizedFileURL
 
         if isApplicationBundle(standardizedURL) {
@@ -56,7 +57,14 @@ final class AppCatalogService {
             return folderDockItem(for: standardizedURL)
         }
 
-        return nil
+        guard FileManager.default.fileExists(atPath: standardizedURL.path) else { return nil }
+        return documentDockItem(for: standardizedURL)
+    }
+
+    static func documentDockItem(for url: URL) -> DockItem {
+        let url = url.standardizedFileURL
+        return DockItem(kind: .document, title: localizedDisplayName(for: url), bundleIdentifier: nil,
+                        url: url, iconCacheKey: "document:\(url.path)")
     }
 
     static func applicationDockItem(for url: URL) -> DockItem {

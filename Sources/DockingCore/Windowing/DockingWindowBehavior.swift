@@ -9,7 +9,7 @@ enum DockingWindowBehavior {
         // where the dock panel itself is not allowed to appear. Keeping this in
         // one helper avoids that drift without creating a larger windowing
         // abstraction than the pre-1.0 app needs.
-        var behavior: NSWindow.CollectionBehavior = [.transient, .ignoresCycle]
+        var behavior: NSWindow.CollectionBehavior = [.stationary, .ignoresCycle]
         if settings.showOnAllSpaces {
             behavior.insert(.canJoinAllSpaces)
         }

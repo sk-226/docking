@@ -3,9 +3,11 @@ import Foundation
 
 @MainActor
 final class AppLauncherService {
-    func open(_ item: DockItem) {
+    private let appExposeService = AppExposeService()
+    func open(_ item: DockItem, hidingOthers: Bool = false, completion: (@MainActor (Bool) -> Void)? = nil) {
         guard let url = resolvedURL(for: item) else {
             DockingLog.dock.error("Could not resolve URL for \(item.title)")
+            completion?(false)
             return
         }
 
@@ -14,15 +16,18 @@ final class AppLauncherService {
             // Context-menu Open should use Finder, matching the Apple Dock's
             // separation between "show me the stack contents" and "open this
             // folder as a normal Finder location."
-            NSWorkspace.shared.open(url)
+            let opened = NSWorkspace.shared.open(url)
+            completion?(opened)
             return
         }
 
         let configuration = NSWorkspace.OpenConfiguration()
+        configuration.hidesOthers = hidingOthers
         // NSWorkspace handles activation, app reuse, and bundle semantics better
         // than shelling out to `open`. Avoiding shell commands also keeps launch
         // behavior testable and avoids surprising quoting/path edge cases.
         NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, error in
+            Task { @MainActor in completion?(error == nil) }
             if let error {
                 DockingLog.dock.error("Failed to launch \(item.title): \(error.localizedDescription)")
             }
@@ -43,11 +48,6 @@ final class AppLauncherService {
         }
 
         let configuration = NSWorkspace.OpenConfiguration()
-        // This is the public Dock-equivalent path for "drag a document onto an
-        // app icon". We deliberately do not turn the document into a Docking
-        // item: apps/folders are Dock contents, while ordinary files dropped on
-        // an app are inputs for that app. Letting NSWorkspace broker the open
-        // keeps LaunchServices' type checks, activation, and app reuse intact.
         NSWorkspace.shared.open([fileURL], withApplicationAt: applicationURL, configuration: configuration) { _, error in
             if let error {
                 DockingLog.dock.error("Failed to open \(fileURL.lastPathComponent) with \(item.title): \(error.localizedDescription)")
@@ -61,19 +61,16 @@ final class AppLauncherService {
             return
         }
 
-        // Apple's Dock can expose "Show All Windows". Public AppKit does not
-        // give third-party apps the same window-picker UI, so the closest safe
-        // behavior is to activate the app and ask macOS to bring all of its
-        // windows forward. This preserves the core task-switching intent without
-        // private Mission Control or Dock APIs.
-        // We intentionally do not force frontmost activation here. On the
-        // Tahoe-only baseline, `activateAllWindows` is the public behavior that
-        // maps to the Dock action without pretending we can recreate Mission
-        // Control's private window picker.
-        let options: NSApplication.ActivationOptions = [.activateAllWindows]
-        if !application.activate(options: options) {
-            DockingLog.dock.error("Could not show windows for \(item.title).")
-        }
+        appExposeService.showWindows(of: application)
+    }
+
+    func isHidden(_ item: DockItem) -> Bool {
+        runningApplication(for: item)?.isHidden == true
+    }
+
+    func hideIfActive(_ item: DockItem) -> Bool {
+        guard let application = runningApplication(for: item), application.isActive else { return false }
+        return application.hide()
     }
 
     func hide(_ item: DockItem) {
@@ -92,6 +89,7 @@ final class AppLauncherService {
 
     @discardableResult
     func quit(_ item: DockItem) -> [pid_t] {
+        guard item.bundleIdentifier != "com.apple.finder" else { return [] }
         let applications = runningApplications(for: item, selectionPolicy: .termination)
         guard !applications.isEmpty else {
             DockingLog.dock.notice("Quit ignored because \(item.title) is not running.")
@@ -136,6 +134,7 @@ final class AppLauncherService {
 
     @discardableResult
     func forceQuit(_ item: DockItem) -> [pid_t] {
+        guard item.bundleIdentifier != "com.apple.finder" else { return [] }
         let applications = runningApplications(for: item, selectionPolicy: .termination)
         guard !applications.isEmpty else {
             DockingLog.dock.notice("Force Quit ignored because \(item.title) is not running.")

@@ -90,29 +90,29 @@ func validateDockLayout() throws {
     var noWidgetSettings = settings
     noWidgetSettings.calendarEnabled = false
     noWidgetSettings.weatherEnabled = false
-    let withoutRunningDivider = DockLayout.panelSize(
+    let withoutDocumentDivider = DockLayout.panelSize(
         itemCount: 4,
         settings: noWidgetSettings,
-        hasSeparatedRunningItems: false
+        hasDocuments: false
     )
-    let withRunningDivider = DockLayout.panelSize(
+    let withDocumentDivider = DockLayout.panelSize(
         itemCount: 4,
         settings: noWidgetSettings,
-        hasSeparatedRunningItems: true
+        hasDocuments: true
     )
     try expect(
-        withRunningDivider.width > withoutRunningDivider.width,
-        "panel size should include the divider before unpinned running apps even when widgets are disabled"
+        withDocumentDivider.width > withoutDocumentDivider.width,
+        "panel size should include the divider before files and folders even when widgets are disabled"
     )
 
-    let withWidgetsAndRunningDivider = DockLayout.panelSize(
+    let withWidgetsAndDocumentDivider = DockLayout.panelSize(
         itemCount: 4,
         settings: settings,
-        hasSeparatedRunningItems: true
+        hasDocuments: true
     )
     try expect(
-        withWidgetsAndRunningDivider.width > withWidgets.width,
-        "panel size should include both widget and unpinned-running dividers when both sections are visible"
+        withWidgetsAndDocumentDivider.width > withWidgets.width,
+        "panel size should include both widget and document dividers when both sections are visible"
     )
 }
 
@@ -125,25 +125,24 @@ func validateDockMagnificationMotion() throws {
     }
     let left = target(3)
     let right = target(12)
-    var moving = left
     for destination in [right, left, right, left] {
-        for _ in 0..<12 {
-            moving = moving.approaching(destination, elapsed: 1.0 / 60)
-            try expect(abs(moving.originShift - left.originShift) < 0.0001,
-                       "crossing or reversing through interior icons must not throw the entire dock sideways")
-            try expect(abs(moving.panelSize.width - left.panelSize.width) < 0.0001,
-                       "transferring magnification between interior icons must preserve total dock width")
-        }
+        try expect(abs(destination.originShift - left.originShift) < 0.0001,
+                   "crossing or reversing through interior icons must not throw the entire dock sideways")
+        try expect(abs(destination.panelSize.width - left.panelSize.width) < 0.0001,
+                   "transferring magnification between interior icons must preserve total dock width")
     }
-    var sixtyHz = resting
-    var oneTwentyHz = resting
-    for _ in 0..<6 { sixtyHz = sixtyHz.approaching(left, elapsed: 1.0 / 60) }
-    for _ in 0..<12 { oneTwentyHz = oneTwentyHz.approaching(left, elapsed: 1.0 / 120) }
-    try expect(zip(sixtyHz.iconSizes, oneTwentyHz.iconSizes).allSatisfy { abs($0 - $1) < 0.0001 }
-               && abs(sixtyHz.originShift - oneTwentyHz.originShift) < 0.0001,
+    var sixtyHz = DockMagnificationAnimation()
+    var oneTwentyHz = DockMagnificationAnimation()
+    sixtyHz.setActive(true, maximumGrowth: 84)
+    oneTwentyHz.setActive(true, maximumGrowth: 84)
+    for _ in 0..<6 { sixtyHz.advance(by: 1.0 / 60) }
+    for _ in 0..<12 { oneTwentyHz.advance(by: 1.0 / 120) }
+    try expect(abs(sixtyHz.value - oneTwentyHz.value) < 0.0001,
                "magnification timing must follow elapsed time instead of display refresh rate")
-    for _ in 0..<60 { moving = moving.approaching(resting, elapsed: 1.0 / 60) }
-    try expect(moving == resting, "pointer exit must settle completely and allow rendering to pause")
+    sixtyHz.setActive(false, maximumGrowth: 84)
+    sixtyHz.advance(by: 1)
+    try expect(sixtyHz.value == 0 && !sixtyHz.isAnimating,
+               "pointer exit must settle completely and allow rendering to pause")
 
     let limits = NSRect(x: 10, y: 10, width: 1000, height: 760)
     for position in DockPosition.allCases {
@@ -160,11 +159,10 @@ func validateDockMagnificationMotion() throws {
             default: baseFrame.origin.y = limits.minY
             }
             let canvas = DockPanelGeometry.canvasFrame(baseFrame: baseFrame, resting: base, settings: settings, limits: limits)
-            var current = base
             let offsets = Array(stride(from: -30.0, through: length / base.scale + 30, by: 7))
-            for offset in offsets + offsets.reversed() {
-                let next = DockLayout.metrics(itemCount: count, settings: settings, maximumLength: length, pointerOffset: offset)
-                current = current.approaching(next, elapsed: 1.0 / 60)
+            for (sample, offset) in (offsets + offsets.reversed()).enumerated() {
+                let current = DockLayout.metrics(itemCount: count, settings: settings, maximumLength: length,
+                                                 pointerOffset: offset, magnificationProgress: Double(sample % 11) / 10)
                 let frame = DockPanelGeometry.contentFrame(baseFrame: baseFrame, metrics: current, position: position, limits: limits)
                 try expect(canvas.insetBy(dx: -0.001, dy: -0.001).contains(frame),
                            "a continuous pointer sweep must fit the same window on every Dock edge")
@@ -182,16 +180,16 @@ func validateDockMagnificationAndDensity() throws {
     var settings = DockingSettings.default
     settings.calendarEnabled = false
     settings.weatherEnabled = false
-    let base = DockLayout.metrics(itemCount: 7, settings: settings)
-    let enlarged = DockLayout.metrics(itemCount: 7, settings: settings, pointerOffset: base.iconCenters[3])
-    try expect(enlarged.iconSizes[3] == 72, "the icon under the pointer should reach the configured maximum")
-    try expect(enlarged.iconSizes[0] == 36 && enlarged.iconSizes[6] == 36, "distant icons should stay at their original size")
-    try expect(abs(enlarged.iconSizes[2] - enlarged.iconSizes[4]) < 0.0001, "magnification should spread symmetrically to neighboring icons")
+    let base = DockLayout.metrics(itemCount: 9, settings: settings)
+    let enlarged = DockLayout.metrics(itemCount: 9, settings: settings, pointerOffset: base.iconCenters[4])
+    try expect(abs(enlarged.iconSizes[4] - 72) < 0.0001, "the icon under the pointer should reach the configured maximum")
+    try expect(enlarged.iconSizes[0] == 36 && enlarged.iconSizes[8] == 36, "distant icons should stay at their original size")
+    try expect(abs(enlarged.iconSizes[3] - enlarged.iconSizes[5]) < 0.0001, "magnification should spread symmetrically to neighboring icons")
     try expect(enlarged.panelSize.width > base.panelSize.width, "magnification needs real layout space so icons do not overlap")
-    try expect(enlarged.panelSize.height == 84, "the window should fit enlarged icons above the surface")
+    try expect(abs(enlarged.panelSize.height - 84) < 0.0001, "the window should fit enlarged icons above the surface")
     try expect(enlarged.surfaceSize.height == base.surfaceSize.height, "magnification should not inflate the glass or widgets")
     settings.magnificationEnabled = false
-    try expect(DockLayout.metrics(itemCount: 7, settings: settings, pointerOffset: base.iconCenters[3]) == base, "disabled magnification should leave geometry unchanged")
+    try expect(DockLayout.metrics(itemCount: 9, settings: settings, pointerOffset: base.iconCenters[4]) == base, "disabled magnification should leave geometry unchanged")
     settings.magnificationEnabled = true
     for position in DockPosition.allCases {
         settings.dockPosition = position
@@ -501,7 +499,7 @@ func validateDockPanelHitGeometry() throws {
 }
 
 func validateDockContextMenuPolicy() throws {
-    let appMenu = NSMenu()
+    let appMenu = NSMenu(title: DockContextMenuPolicy.menuTitle)
     appMenu.addItem(withTitle: "Open", action: nil, keyEquivalent: "")
     appMenu.addItem(withTitle: "Show All Windows", action: nil, keyEquivalent: "")
     appMenu.addItem(withTitle: "Hide", action: nil, keyEquivalent: "")
@@ -511,7 +509,7 @@ func validateDockContextMenuPolicy() throws {
     appMenu.addItem(NSMenuItem.separator())
     appMenu.addItem(withTitle: "Docking", action: nil, keyEquivalent: "")
 
-    let dormantAppMenu = NSMenu()
+    let dormantAppMenu = NSMenu(title: DockContextMenuPolicy.menuTitle)
     dormantAppMenu.addItem(withTitle: "Open", action: nil, keyEquivalent: "")
     dormantAppMenu.addItem(NSMenuItem.separator())
     dormantAppMenu.addItem(withTitle: "Options", action: nil, keyEquivalent: "")
@@ -592,7 +590,7 @@ func validateAutoHideTriggerScreens() throws {
 
 func validateDockingWindowCollectionBehavior() throws {
     let defaultBehavior = DockingWindowBehavior.collectionBehavior(for: .default)
-    try expect(defaultBehavior.contains(.transient), "dock panels should be transient system-style surfaces")
+    try expect(defaultBehavior.contains(.stationary) && !defaultBehavior.contains(.transient), "dock panels should remain visible during Show Desktop and Expose")
     try expect(defaultBehavior.contains(.ignoresCycle), "dock panels should stay out of normal window cycling")
     try expect(defaultBehavior.contains(.canJoinAllSpaces), "default dock panels should be available on every Space")
     try expect(defaultBehavior.contains(.fullScreenAuxiliary), "default dock panels should be available in full-screen Spaces")
@@ -605,7 +603,7 @@ func validateDockingWindowCollectionBehavior() throws {
     // These toggles are user-facing escape hatches. If a workflow needs Docking
     // to stay scoped to the current desktop, turning them off must remove the
     // cross-Space flags while preserving the non-document panel semantics.
-    try expect(scopedBehavior.contains(.transient), "scoped dock panels should remain transient")
+    try expect(scopedBehavior.contains(.stationary), "scoped dock panels should remain stationary during Expose")
     try expect(scopedBehavior.contains(.ignoresCycle), "scoped dock panels should still stay out of window cycling")
     try expect(!scopedBehavior.contains(.canJoinAllSpaces), "turning off all-Spaces should remove canJoinAllSpaces")
     try expect(!scopedBehavior.contains(.fullScreenAuxiliary), "turning off full-screen Spaces should remove fullScreenAuxiliary")
@@ -737,7 +735,7 @@ func validateAppCatalogRecognizesApplicationsAndFolders() throws {
     try expect(folderItem?.kind == .folder, "plain directory drops should create folder stack items")
     try expect(folderItem?.title == "Projects", "folder drops should use folder display names")
     try expect(folderItem?.bundleIdentifier == nil, "folder stack items should not pretend to be applications")
-    try expect(AppCatalogService.dockItemIfSupported(for: plainFileURL) == nil, "plain file drops should not create dock items yet")
+    try expect(AppCatalogService.dockItemIfSupported(for: plainFileURL)?.kind == .document, "plain files should create document items")
 }
 
 func validateFolderStackPresentation() throws {
@@ -1690,17 +1688,23 @@ func validateExplicitAppReorderControls() async throws {
     model.dockItems = [first, second, third]
 
     model.moveDockItem(second, by: -1)
-    try expect(model.dockItems.map(\.title) == ["Second", "First", "Third"], "Control Center move-up should move exactly one row")
+    try expect(model.dockItems.map(\.title) == ["Finder", "Second", "First", "Third"], "Control Center move-up should move exactly one row")
 
     model.moveDockItem(first, by: 1)
-    try expect(model.dockItems.map(\.title) == ["Second", "Third", "First"], "Control Center move-down should move exactly one row")
+    try expect(model.dockItems.map(\.title) == ["Finder", "Second", "Third", "First"], "Control Center move-down should move exactly one row")
 
     // Boundary moves are no-ops by design: disabled buttons should already
     // prevent them in the UI, but the model still guards direct calls so a
     // future settings surface cannot accidentally rotate the app list.
     model.moveDockItem(second, by: -1)
     model.moveDockItem(first, by: 1)
-    try expect(model.dockItems.map(\.title) == ["Second", "Third", "First"], "Control Center reorder should not wrap at list boundaries")
+    try expect(model.dockItems.map(\.title) == ["Finder", "Second", "Third", "First"], "Control Center reorder should not wrap at list boundaries")
+    let finder = model.dockItems[0]
+    model.moveDockItem(finder, by: 1)
+    model.moveDockItem(finder, before: third)
+    model.moveDockItem(from: IndexSet(integer: 0), to: model.dockItems.count)
+    model.remove(finder)
+    try expect(model.dockItems.first == finder, "Finder identity and first position must survive every list action")
 }
 
 func validateDockWindowLevelToggle() throws {
@@ -1851,7 +1855,7 @@ func validateDefaultSettingsFitEditableRanges() throws {
 
     try expect(settings.dockAutoHideResponsePreset == .standard, "default Docking Dock response should preserve existing reveal timing")
     try expect(DockingSettingLimits.autoHideDelay.contains(settings.autoHideDelay), "default auto-hide delay should be editable in Control Center")
-    try expect(abs(DockingSettingLimits.autoHideDelay.lowerBound - 0.05) < 0.000_001, "auto-hide delay should allow near-instant hiding for users who prefer a faster dock")
+    try expect(abs(DockingSettingLimits.autoHideDelay.lowerBound) < 0.000_001, "auto-hide delay should allow the native immediate exit response")
     try expect(abs(DockingSettingLimits.autoHideDelayStep - 0.05) < 0.000_001, "auto-hide delay should expose fine-grained subsecond adjustment")
     try expect(DockingSettingLimits.iconSize.contains(settings.iconSize), "default icon size should be editable in Control Center")
     try expect(WidgetSizePreset.allCases.contains(settings.calendarWidgetSizePreset), "default calendar widget size should be selectable in Control Center")

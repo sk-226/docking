@@ -1,8 +1,82 @@
 # Dock appearance and magnification checkpoint
 
-Status: target-coordinate mapping verified in the existing Tart macOS VM,
-including native tests, app launch, motion replay, and selected UI checks.
-Comparison with the Apple Dock reference recording remains open.
+Status: the magnification coordinate transform and entry/exit animation now
+use arithmetic recovered from the Apple Dock in Tart. Implementation details,
+binary provenance, reference values and limits are in `NATIVE_MAGNIFICATION.md`.
+Full behavioral parity with Apple Dock remains unverified.
+
+## Basic Dock interaction checkpoint (2026-09-22)
+
+The accepted scope is basic Dock operations and interaction feel, including
+in-Dock reordering and behavior with many items. It does not require replicating
+every Apple Dock integration. `NATIVE_DOCK_BEHAVIOR.md` records implementation,
+native evidence, current Tart observations and remaining verification limits.
+
+Review branch: `feature/native-dock`, based on `3800661`.
+Tart builds an exact source snapshot at `/private/tmp/docking-native-parity`.
+The current crowded fixture has 33 pinned applications,
+two folders and both detailed widgets. It exposed missing magnification when
+screen-fitting, repeated saves during reordering, Show Desktop hiding the dock,
+and lost quick drags. Those paths are now addressed. Bottom, left and right
+reordering were exercised with the real apps and persisted order was checked.
+
+The smoothness follow-up adds retained icon layers, coalesced frame reporting,
+a short display-link input grace period, a stale-target clock correction, and
+270 ms reorder transitions. The final candidate passed 105 XCTest cases and
+60 validation checks. Temporary layout measurements improved from roughly
+5.6 ms to 3.9 ms in individual entry samples; this is not proof of identical
+native frame pacing. The native comparison and its limits are recorded in
+`NATIVE_DOCK_BEHAVIOR.md`.
+
+The later review fixes refresh click geometry when the Dock window moves and
+when an open panel's source icon moves. Icon pixels now cover the configured
+maximum magnification and display backing scale while retaining the image across
+animation frames. The current source passed 108 XCTest cases, 60 validation
+checks and debug launch smoke in Tart, plus a live folder open/re-click close
+check. The earlier release ZIP has not been refreshed for these fixes.
+
+## Historical native arithmetic review build (2026-09-21)
+
+The following 73-test checkpoint predates the broader changes above. Its
+pointer-inverse statement and verification results describe that earlier
+snapshot, not the current implementation.
+
+Branch: `feature/native-dock`, based on `3800661`.
+
+The coordinate warp expands both icon widths and their intervening gaps.
+Entry/exit animates one magnification value with the native logarithmic duration
+and cosine easing; cursor movement does not restart that animation. The
+deterministic pointer inverse, screen constraints, widgets and compact surface
+anchor remain Docking policies. The native dragging timing branch is not
+implemented.
+
+In the existing `docking-dev` VM, macOS 26.6.2, Xcode 26.2 / Swift 6.2.3:
+
+- All 73 XCTest cases and all 60 `DockingValidation` checks passed.
+- The normal app built, launched and passed `script/launch_smoke_check.sh`.
+- `script/release_check.sh` passed, including the release build, local signature,
+  source hygiene, production mock boundary, zip/DMG contents and checksums.
+  The guest source snapshot has no Git metadata; branch and base commit above
+  describe the host worktree, whose changes remain uncommitted for review.
+- Live checks covered bottom, left and right placement. Magnified icons were
+  visible beyond the compact glass; clicking that outer part of System Settings
+  opened the application in all three placements.
+- The review session returned to bottom placement. Test/build source was
+  transferred as a tar snapshot to `/private/tmp/docking-native-magnification`;
+  the normal application is its `dist/Docking.app`.
+
+The previous motion-replay cadence and zero short-axis range measurements below
+belong to earlier builds. They were not remeasured for this curve. Automated
+tests cover geometry, timing and settlement; static UI checks do not establish
+frame pacing or full native motion parity. Physical auto-hide gestures,
+multi-display/full-screen behavior and accessibility preference changes were
+not manually retested.
+
+## Earlier checkpoints
+
+The remaining evidence describes the earlier custom curve and its fixes.
+Its radius, expansion figures and whole-layout interpolation are superseded by
+the native arithmetic section above; retain it as regression history.
 
 ## Short-axis jitter correction (2026-09-20)
 
