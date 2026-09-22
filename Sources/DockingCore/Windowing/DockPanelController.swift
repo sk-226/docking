@@ -226,9 +226,23 @@ final class DockPanelController: NSObject {
         }
     }
 
-    private func pointerMoved() {
-        guard let panel, panel.isVisible, !isMenuTracking, !isItemDragging else { return }
-        let location = NSEvent.mouseLocation
+    func trackDrag(at location: CGPoint) {
+        pointerMoved(at: location)
+        guard !isMenuTracking, let update = magnificationFrameState.takeTargetUpdate() else { return }
+        if let offset = update.pointerOffset { magnificationPointer = offset }
+        magnificationAnimation.setActive(update.pointerOffset != nil,
+                                         maximumGrowth: layoutSettings.magnificationSize - layoutSettings.iconSize)
+        let bounds = DockPanelGeometry.magnificationBounds(baseFrame: baseFrame, position: dockPosition,
+                                                          limits: screenLimits, scale: presentation.metrics.scale)
+        applyGeometry(layoutMetrics(pointer: magnificationPointer, progress: magnificationAnimation.value, bounds: bounds))
+    }
+
+    func itemFrames(for items: [DockItem]) -> [UUID: CGRect] {
+        DockDragGeometry.frames(items: items, metrics: presentation.metrics, contentFrame: contentFrame, settings: layoutSettings)
+    }
+
+    private func pointerMoved(at location: CGPoint = NSEvent.mouseLocation) {
+        guard let panel, panel.isVisible, !isMenuTracking else { return }
         let inside = residenceFrame.contains(location)
         let offset = dockPosition.isVertical ? baseFrame.maxY - location.y : location.x - baseFrame.minX
         let magnifies = layoutSettings.magnificationEnabled && layoutItemCount > 0
@@ -254,7 +268,7 @@ final class DockPanelController: NSObject {
             return
         }
         pointerMoved()
-        let holdsMagnification = isMenuTracking || isItemDragging
+        let holdsMagnification = isMenuTracking
         let hasInput = !holdsMagnification && magnificationFrameState.hasPendingTarget
         let needsGeometry = hasInput || (!holdsMagnification && magnificationAnimation.isAnimating)
             || visibilityAnimation.isAnimating || !launchAnimations.isEmpty
@@ -405,7 +419,7 @@ final class DockPanelController: NSObject {
             if inside { model?.pointerEnteredDock() }
             else { model?.pointerExitedDock() }
         }
-        let hostingView = NSHostingView(rootView: DockView(presentation: presentation).environmentObject(model))
+        let hostingView = DockHostingView(rootView: DockView(presentation: presentation).environmentObject(model), model: model)
         hostingView.sizingOptions = []
         panel.contentView = hostingView
         panel.acceptsMouseMovedEvents = true

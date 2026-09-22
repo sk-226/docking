@@ -4,6 +4,25 @@ This checklist tracks evidence that cannot be fully proven by SwiftPM builds or
 the framework-free validation executable. Keep it current before cutting a
 GitHub branch or pull request for a user-facing milestone.
 
+## Drop target follow-up (2026-09-22)
+
+- XCTest covers app/folder centers versus insertion edges and gaps in all Dock
+  positions, a 70-app reordered list without stationary oscillation, and the
+  screen frames of magnified SwiftUI icons with 33 apps at bottom/left/right.
+- An AppKit destination test supplies a real file-URL pasteboard and controlled
+  dragging info to the Dock hosting view. Gap drops register a folder between
+  existing folders without moving it; center drops place a disposable document
+  inside the target folder. Internal UUID drops are accepted across gaps,
+  persisted on completion, and restored on cancellation.
+- In the crowded Tart desktop (33 pinned apps, three folders, both widgets),
+  long internal moves toward both ends persisted. CUA can coalesce these events
+  into the mouse-up completion path, so native session tracking still requires
+  physical-input verification.
+- Finder CUA drags did not generate a Dock destination entry notification.
+  Therefore Finder-to-Docking insertion, app-open delivery and visual insertion
+  feedback remain manual checks, not claimed passes. Use disposable folders
+  when comparing icon-center delivery with registration beside the icon.
+
 ## Automated gates
 
 See [GitHub Releases](https://github.com/sk-226/docking/releases) for published

@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 @MainActor
 final class DockPresentation: ObservableObject {
@@ -40,7 +39,6 @@ struct DockView: View {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                 if index == documentStart || index == runningSectionStart { dockDivider }
                 dockItem(item, index: index, transient: !item.isPinned)
-                    .onDrop(of: [.fileURL], delegate: DockItemDropDelegate(target: item, model: model))
             }
             if model.enabledWidgetCount > 0 && !items.isEmpty { dockDivider }
             if settings.calendarEnabled {
@@ -77,7 +75,6 @@ struct DockView: View {
         .frame(width: presentation.layout.canvasSize.width, height: presentation.layout.canvasSize.height, alignment: .topLeading)
         .preferredColorScheme(settings.theme.colorScheme)
         .tint(settings.accentColor)
-        .onDrop(of: [.fileURL], delegate: DockExternalAppDropDelegate(model: model))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Docking Dock")
     }
@@ -120,61 +117,5 @@ private struct DockSurfaceShape: Shape {
     func path(in rect: CGRect) -> Path {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             .path(in: DockSurfaceGeometry.frame(in: rect, size: surfaceSize, position: position))
-    }
-}
-
-private struct DockItemDropDelegate: DropDelegate {
-    let target: DockItem
-    let model: DockingAppModel
-
-    func performDrop(info: DropInfo) -> Bool {
-        guard let provider = info.itemProviders(for: [.fileURL]).first else {
-            return true
-        }
-
-        loadFileURL(from: provider) { url in
-            Task { @MainActor in
-                model.dropFile(url, onto: target)
-            }
-        }
-        return true
-    }
-
-}
-
-private struct DockExternalAppDropDelegate: DropDelegate {
-    let model: DockingAppModel
-
-    func performDrop(info: DropInfo) -> Bool {
-        guard let provider = info.itemProviders(for: [.fileURL]).first else {
-            return false
-        }
-
-        loadFileURL(from: provider) { url in
-            Task { @MainActor in
-                model.addDockItem(fromDroppedURL: url)
-            }
-        }
-        return true
-    }
-}
-
-private func loadFileURL(from provider: NSItemProvider, completion: @escaping (URL) -> Void) {
-    provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-        let url: URL?
-        if let itemURL = item as? URL {
-            url = itemURL
-        } else if let data = item as? Data {
-            url = URL(dataRepresentation: data, relativeTo: nil)
-        } else if let string = item as? String {
-            url = URL(string: string)
-        } else {
-            url = nil
-        }
-
-        guard let url else {
-            return
-        }
-        completion(url)
     }
 }

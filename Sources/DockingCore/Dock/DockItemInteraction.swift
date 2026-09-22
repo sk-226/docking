@@ -146,7 +146,6 @@ final class DockItemInteractionView: DockFrameReportingView, NSDraggingSource {
         indicatorLayer.cornerRadius = 1.5
         layer?.addSublayer(iconLayer)
         layer?.addSublayer(indicatorLayer)
-        registerForDraggedTypes([.string])
     }
 
     @available(*, unavailable)
@@ -245,28 +244,6 @@ final class DockItemInteractionView: DockFrameReportingView, NSDraggingSource {
         indicatorLayer.frame = indicatorFrame
     }
 
-    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        updateDragDestination(sender)
-    }
-
-    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        updateDragDestination(sender)
-    }
-
-    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        internalDragID(sender) != nil
-    }
-
-    private func internalDragID(_ sender: NSDraggingInfo) -> UUID? {
-        guard let text = sender.draggingPasteboard.string(forType: .string),
-              let id = UUID(uuidString: text), model?.draggedDockItem?.id == id else { return nil }
-        return id
-    }
-
-    private func updateDragDestination(_ sender: NSDraggingInfo) -> NSDragOperation {
-        internalDragID(sender) == nil ? [] : .move
-    }
-
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func rightMouseDown(with event: NSEvent) { presentMenu(for: event) }
@@ -307,7 +284,9 @@ final class DockItemInteractionView: DockFrameReportingView, NSDraggingSource {
             if event.keyCode == 53 { MainActor.assumeIsolated { self?.dragCanceled = true } }
             return event
         }
-        let drag = NSDraggingItem(pasteboardWriter: item.id.uuidString as NSString)
+        let pasteboardItem = NSPasteboardItem()
+        pasteboardItem.setString(item.id.uuidString, forType: .dockingItem)
+        let drag = NSDraggingItem(pasteboardWriter: pasteboardItem)
         let size = min(bounds.width, bounds.height)
         drag.setDraggingFrame(CGRect(x: bounds.midX - size / 2, y: bounds.midY - size / 2, width: size, height: size),
                               contents: model.icon(for: item))
@@ -328,7 +307,7 @@ final class DockItemInteractionView: DockFrameReportingView, NSDraggingSource {
     }
 
     func draggingSession(_ session: NSDraggingSession, movedTo screenPoint: NSPoint) {
-        updateDragFeedback(session, at: screenPoint)
+        updateDragFeedback(session, at: NSEvent.mouseLocation)
     }
 
     private func updateDragFeedback(_ session: NSDraggingSession, at screenPoint: NSPoint) {
@@ -343,6 +322,7 @@ final class DockItemInteractionView: DockFrameReportingView, NSDraggingSource {
         removalTimer = nil
         if let cancellationMonitor { NSEvent.removeMonitor(cancellationMonitor) }
         cancellationMonitor = nil
+        let screenPoint = NSEvent.mouseLocation
         let canceled = dragCanceled || NSEvent.pressedMouseButtons != 0
         let reordered = !canceled && model?.updateDockItemDrag(at: screenPoint) == true
         let remove = !canceled && !reordered && removalReady && canRemove(at: screenPoint)

@@ -4,6 +4,11 @@ enum DockDragReordering {
     static func items(_ original: [DockItem], moving item: DockItem, to point: CGPoint,
                       frames: [UUID: CGRect], position: DockPosition) -> [DockItem] {
         guard item.bundleIdentifier != "com.apple.finder" else { return original }
+        if let frame = frames[item.id], original.contains(where: { $0.id == item.id }) {
+            let coordinate = position.isVertical ? point.y : point.x
+            let range = position.isVertical ? frame.minY...frame.maxY : frame.minX...frame.maxX
+            if range.contains(coordinate) { return original }
+        }
         var remaining = original.filter { $0.id != item.id }
         if remaining.contains(where: { $0.identityKey == item.identityKey }) { return original }
         let sectionIndices = remaining.indices.filter { remaining[$0].isApplication == item.isApplication && remaining[$0].bundleIdentifier != "com.apple.finder" }

@@ -108,7 +108,7 @@ public final class DockingAppModel: ObservableObject {
     private var isDockContextMenuVisible = false
     @Published private(set) var draggedDockItem: DockItem?
     private var dockItemsBeforeDrag: [DockItem]?
-    private var itemFramesBeforeDrag: [UUID: CGRect] = [:]
+    private var isExternalDockDrag = false
     private var dockFrameBeforeDrag = CGRect.zero
     private var launchingItemsByPID: [pid_t: UUID] = [:]
     private var dockReentryGate = AutoHideDockReentryGate()
@@ -380,6 +380,7 @@ public final class DockingAppModel: ObservableObject {
               dockPanelController.isVisible,
               !holdsDockAfterExplicitShow,
               draggedDockItem == nil,
+              !isExternalDockDrag,
               !isDockOwnedSurfaceVisible else {
             return false
         }
@@ -666,6 +667,52 @@ public final class DockingAppModel: ObservableObject {
         insertDockItemIfNeeded(item, before: target)
     }
 
+    func externalDockDragTarget(at point: CGPoint, insertingApplication: Bool) -> DockDropTarget? {
+        isExternalDockDrag = true
+        dockPanelController.cancelScheduledAutoHide()
+        dockPanelController.trackDrag(at: point)
+        guard dockPanelController.containsPointer(at: point) else { return nil }
+        return DockDropTarget.resolve(at: point, insertingApplication: insertingApplication, items: visibleDockItems,
+                                      frames: dockPanelController.itemFrames(for: visibleDockItems), position: settings.dockPosition)
+    }
+
+    func endExternalDockDrag() {
+        isExternalDockDrag = false
+        scheduleAutoHideIfNeeded(pointerLocation: NSEvent.mouseLocation)
+    }
+
+    func performExternalDockDrop(_ urls: [URL], target: DockDropTarget) {
+        switch target {
+        case let .insert(before: id):
+            var identities = Set(dockItems.map(\.identityKey))
+            let additions = urls.compactMap { AppCatalogService.dockItemIfSupported(for: $0) }
+                .filter { identities.insert($0.identityKey).inserted }
+            guard !additions.isEmpty else { return }
+            let index = dockItems.firstIndex { $0.id == id } ?? dockItems.endIndex
+            dockItems.insert(contentsOf: additions, at: index)
+        case let .openApplication(id), let .folder(id):
+            guard let item = visibleDockItems.first(where: { $0.id == id }) else { return }
+            for url in urls { dropFile(url, onto: item) }
+        }
+    }
+
+    func externalDockDropFeedback(_ target: DockDropTarget) -> CGRect? {
+        let items = visibleDockItems
+        let frames = dockPanelController.itemFrames(for: items)
+        switch target {
+        case let .openApplication(id), let .folder(id): return frames[id]
+        case let .insert(before: id):
+            let vertical = settings.dockPosition.isVertical
+            if let id, let frame = frames[id] {
+                return vertical ? CGRect(x: frame.minX, y: frame.maxY + 1, width: frame.width, height: 2)
+                    : CGRect(x: frame.minX - 3, y: frame.minY, width: 2, height: frame.height)
+            }
+            guard let last = items.last, let frame = frames[last.id] else { return nil }
+            return vertical ? CGRect(x: frame.minX, y: frame.minY - 3, width: frame.width, height: 2)
+                : CGRect(x: frame.maxX + 1, y: frame.minY, width: 2, height: frame.height)
+        }
+    }
+
     func dropFile(_ url: URL, onto item: DockItem) {
         if item.isFolder {
             dropFile(url, ontoFolder: item)
@@ -676,11 +723,7 @@ public final class DockingAppModel: ObservableObject {
             return
         }
 
-        if AppCatalogService.dockItemIfSupported(for: url)?.isApplication == true {
-            addDockItem(fromDroppedURL: url, before: item)
-        } else {
-            appLauncherService.openFile(url, with: item)
-        }
+        appLauncherService.openFile(url, with: item)
     }
 
     func dropFile(_ url: URL, ontoFolder item: DockItem) {
@@ -703,7 +746,6 @@ public final class DockingAppModel: ObservableObject {
         guard item.bundleIdentifier != "com.apple.finder", let frame = dockPanelController.frame else { return nil }
         draggedDockItem = item
         dockItemsBeforeDrag = dockItems
-        itemFramesBeforeDrag = dockItemFrames
         dockFrameBeforeDrag = frame
         dockPanelController.setItemDragging(true)
         dockPanelController.cancelScheduledAutoHide()
@@ -712,10 +754,12 @@ public final class DockingAppModel: ObservableObject {
 
     @discardableResult
     func updateDockItemDrag(at point: CGPoint) -> Bool {
-        guard let item = draggedDockItem, let original = dockItemsBeforeDrag,
-              let frame = dockPanelController.frame, dockFrameBeforeDrag.union(frame).contains(point) else { return false }
-        let reordered = DockDragReordering.items(original, moving: item, to: point,
-                                                frames: itemFramesBeforeDrag, position: settings.dockPosition)
+        guard let item = draggedDockItem, dockItemsBeforeDrag != nil else { return false }
+        dockPanelController.trackDrag(at: point)
+        guard let frame = dockPanelController.frame, dockFrameBeforeDrag.union(frame).contains(point) else { return false }
+        let frames = dockPanelController.itemFrames(for: visibleDockItems)
+        let reordered = DockDragReordering.items(dockItems, moving: item, to: point,
+                                                frames: frames, position: settings.dockPosition)
         if dockItems != reordered {
             withAnimation(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil : .easeInOut(duration: 0.27)) {
                 dockItems = reordered
@@ -730,7 +774,6 @@ public final class DockingAppModel: ObservableObject {
         else if shouldRemove, let item = draggedDockItem { remove(item) }
         draggedDockItem = nil
         dockItemsBeforeDrag = nil
-        itemFramesBeforeDrag = [:]
         if let original, original != dockItems { appListStore.save(dockItems) }
         applySettingsToWindows()
         dockPanelController.setItemDragging(false)

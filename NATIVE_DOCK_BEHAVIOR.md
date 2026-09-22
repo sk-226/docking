@@ -25,8 +25,9 @@ Actual app bundles are used, rather than mock icons.
 - In-Dock reordering updates visible state immediately and writes its final
   order once. Cancel restores the original list without writing intermediate
   permutations. Full window configuration is no longer reapplied at every slot.
-- Drag and menu tracking freeze magnification geometry. The dragged tile leaves
-  an empty slot while AppKit presents its drag image.
+- Menu tracking freezes magnification geometry. Item dragging continues to track
+  the pointer; insertion uses the current layout rather than the starting lens.
+  The dragged tile leaves an empty slot while AppKit presents its drag image.
 - A mouse-up beyond the five-point threshold completes a Dock-internal reorder
   even when coalesced events arrive after the button is already released. A new
   AppKit dragging session is started only while the left button is still down.
@@ -72,6 +73,30 @@ also temporarily populated with the same 33 apps and two folders; the original
 VM preferences were restored after comparison. CUA screenshots were roughly
 24 Hz and actions can coalesce, so they cannot certify identical continuous
 60 Hz physical-pointer motion. This remains a hands-on acceptance check.
+
+## Drop target and drag follow-up (2026-09-22)
+
+The Dock hosting view receives both internal item drags and external file URLs,
+including gaps between icons. App and folder centers accept open/drop operations;
+the outer quarters along the Dock axis and inter-item gaps accept registration.
+Applications remain in the application section, while files and folders stay in
+the following section. An insertion marker distinguishes registration from the
+outline around an app or folder receiving files. Multiple registrations preserve
+pasteboard order and save once.
+
+Internal reordering uses current slot geometry and keeps the existing slot while
+the pointer remains inside it. Drag input updates lens geometry before resolving
+the destination, including the last event of a fast drag. Cancel still restores
+the pre-drag list and only a committed order is saved.
+
+Tart tests cover semantic targets at every edge, 70-app movement and stationary
+stability, magnified rendered geometry with 33 apps, multiple-folder insertion
+without filesystem moves, and AppKit destination callbacks for gap insertion,
+folder-center delivery, internal acceptance, deferred save and cancel rollback.
+The crowded Tart desktop also accepted long internal moves in both directions.
+These automated mouse-up gestures do not certify continuous physical dragging.
+Finder-originated CUA gestures did not produce a destination entry notification;
+actual Finder-to-Docking delivery and insertion feedback still need hands-on QA.
 
 ## Reference and method
 
