@@ -37,6 +37,8 @@ final class CalendarWidgetViewModel: ObservableObject {
     private var sourceGeneration = 0
     private var eventStoreChangeToken: NSObjectProtocol?
     private var currentSettings: DockingSettings = .default
+    private var inFlightRequestKey: CalendarRequestKey?
+    private var lastRequestKey: CalendarRequestKey?
 
     init(provider: CalendarProviding) {
         self.provider = provider
@@ -115,7 +117,8 @@ final class CalendarWidgetViewModel: ObservableObject {
             return
         }
 
-        guard refreshTask == nil else {
+        let requestKey = settings.calendarRequestKey
+        if refreshTask != nil, inFlightRequestKey == requestKey {
             return
         }
 
@@ -124,7 +127,7 @@ final class CalendarWidgetViewModel: ObservableObject {
             return
         }
 
-        if let lastRefresh, Date().timeIntervalSince(lastRefresh) < 5 * 60 {
+        if lastRequestKey == requestKey, let lastRefresh, Date().timeIntervalSince(lastRefresh) < 5 * 60 {
             return
         }
 
@@ -145,6 +148,7 @@ final class CalendarWidgetViewModel: ObservableObject {
         refreshGeneration += 1
         let generation = refreshGeneration
         refreshTask?.cancel()
+        let requestKey = settings.calendarRequestKey
         let task = Task { [provider] in
             do {
                 let loaded = try await provider.upcomingEvents(
@@ -158,6 +162,7 @@ final class CalendarWidgetViewModel: ObservableObject {
                 await MainActor.run {
                     self.events = loaded
                     self.lastRefresh = Date()
+                    self.lastRequestKey = requestKey
                     self.state = loaded.isEmpty ? .empty : .loaded
                 }
             } catch CalendarProviderError.notDetermined {
@@ -189,6 +194,7 @@ final class CalendarWidgetViewModel: ObservableObject {
         }
 
         refreshTask = task
+        inFlightRequestKey = requestKey
         state = .loading
         _ = await task.result
         clearRefreshTask(generation: generation)
@@ -198,6 +204,7 @@ final class CalendarWidgetViewModel: ObservableObject {
         refreshGeneration += 1
         refreshTask?.cancel()
         refreshTask = nil
+        inFlightRequestKey = nil
         if state == .loading {
             state = events.isEmpty ? .idle : .loaded
         }
@@ -321,6 +328,7 @@ final class CalendarWidgetViewModel: ObservableObject {
             return
         }
         refreshTask = nil
+        inFlightRequestKey = nil
     }
 
     private func clearSourceTask(generation: Int) {

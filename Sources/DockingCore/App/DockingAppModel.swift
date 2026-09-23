@@ -87,6 +87,7 @@ public final class DockingAppModel: ObservableObject {
     private var hasStarted = false
     private var environmentObserverTokens: [(NotificationCenter, NSObjectProtocol)] = []
     private var pendingSettingsSaveTask: Task<Void, Never>?
+    private var pendingWeatherSettingsRefreshTask: Task<Void, Never>?
     private var terminationReconciliationTasks: [String: Task<Void, Never>] = [:]
     private var terminationPendingKeysByItemID: [UUID: Set<String>] = [:]
     private var widgetFrames: [DockWidgetKind: NSRect] = [:]
@@ -113,6 +114,7 @@ public final class DockingAppModel: ObservableObject {
     private var launchingItemsByPID: [pid_t: UUID] = [:]
     private var dockReentryGate = AutoHideDockReentryGate()
     private static let settingsSaveDelayNanoseconds: UInt64 = 350_000_000
+    private static let weatherSettingsRefreshDelayNanoseconds: UInt64 = 800_000_000
     private static let terminationObservationDelayNanoseconds: UInt64 = 750_000_000
     private static let terminationReconciliationDelayNanoseconds: UInt64 = 2_500_000_000
 
@@ -1156,12 +1158,28 @@ public final class DockingAppModel: ObservableObject {
         // weather provider. Those services can involve permission prompts,
         // network work, or synchronous framework calls, so only settings that
         // change the data request are allowed to trigger a refresh.
-        Task {
-            if calendar {
+        if calendar {
+            Task {
                 await calendarViewModel.refreshIfNeeded(settings: settings)
             }
-            if weather {
-                await weatherViewModel.refreshIfNeeded(settings: settings)
+        }
+        if weather {
+            // The manual city field writes settings on every keystroke, and a
+            // changed request key now bypasses the fresh cache. Waiting for the
+            // edit to settle keeps partial names like "Tok" from each costing a
+            // geocode and forecast request.
+            pendingWeatherSettingsRefreshTask?.cancel()
+            pendingWeatherSettingsRefreshTask = Task { @MainActor [weak self] in
+                do {
+                    try await Task.sleep(nanoseconds: Self.weatherSettingsRefreshDelayNanoseconds)
+                } catch {
+                    return
+                }
+                guard let self else {
+                    return
+                }
+                self.pendingWeatherSettingsRefreshTask = nil
+                await self.weatherViewModel.refreshIfNeeded(settings: self.settings)
             }
         }
     }
@@ -1172,6 +1190,8 @@ public final class DockingAppModel: ObservableObject {
             widgetDetailPanelController.close(kind: .calendar)
         }
         if !settings.weatherEnabled {
+            pendingWeatherSettingsRefreshTask?.cancel()
+            pendingWeatherSettingsRefreshTask = nil
             weatherViewModel.cancelRefresh()
             widgetDetailPanelController.close(kind: .weather)
         }

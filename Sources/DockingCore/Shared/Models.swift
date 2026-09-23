@@ -725,6 +725,18 @@ struct WeatherRefreshKey: Equatable {
     var refreshIntervalMinutes: Int
 }
 
+struct CalendarRequestKey: Equatable {
+    var lookaheadDays: Int
+    var maxEventCount: Int
+    var selectedCalendarIDs: [String]
+}
+
+struct WeatherRequestKey: Codable, Equatable {
+    var usesCurrentLocation: Bool
+    var manualLocation: String
+    var unit: TemperatureUnit
+}
+
 extension DockingSettings {
     var effectiveDockThickness: Double { iconSize + 12 }
 
@@ -781,6 +793,22 @@ extension DockingSettings {
             manualLocation: weatherManualLocation,
             unit: weatherUnit,
             refreshIntervalMinutes: weatherRefreshIntervalMinutes
+        )
+    }
+
+    var calendarRequestKey: CalendarRequestKey {
+        CalendarRequestKey(
+            lookaheadDays: calendarLookaheadDays,
+            maxEventCount: calendarMaxEventCount,
+            selectedCalendarIDs: calendarSelectedCalendarIDs
+        )
+    }
+
+    var weatherRequestKey: WeatherRequestKey {
+        WeatherRequestKey(
+            usesCurrentLocation: weatherUsesCurrentLocation,
+            manualLocation: weatherManualLocation.trimmingCharacters(in: .whitespacesAndNewlines),
+            unit: weatherUnit
         )
     }
 }
@@ -866,6 +894,11 @@ struct WeatherSnapshot: Codable, Equatable {
     // still pre-1.0, so a cache without this field is simply stale data to
     // discard, not a format we need to preserve.
     var dataSource: WeatherDataSource
+    // The settings that produced this snapshot, not the provider request that
+    // succeeded: a manual-city fallback under "Use current location" is still
+    // the answer to the current-location settings. Caches written before this
+    // field existed decode as nil and therefore refetch once.
+    var requestKey: WeatherRequestKey? = nil
 }
 
 enum DockWidgetKind: String, Identifiable {

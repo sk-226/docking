@@ -36,3 +36,20 @@ final class WeatherCache {
         now.timeIntervalSince(snapshot.fetchedAt) < Double(max(15, intervalMinutes)) * 60
     }
 }
+
+enum WidgetRefreshDecision: Equatable {
+    case useCache
+    case refetch
+
+    static func weather(
+        snapshot: WeatherSnapshot?,
+        currentKey: WeatherRequestKey,
+        intervalMinutes: Int,
+        now: Date
+    ) -> WidgetRefreshDecision {
+        guard let snapshot, snapshot.requestKey == currentKey else {
+            return .refetch
+        }
+        return WeatherCache.isFresh(snapshot, intervalMinutes: intervalMinutes, now: now) ? .useCache : .refetch
+    }
+}

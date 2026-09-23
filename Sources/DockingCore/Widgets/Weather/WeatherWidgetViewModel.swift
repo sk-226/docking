@@ -62,7 +62,7 @@ final class WeatherWidgetViewModel: ObservableObject {
             return
         }
 
-        if let snapshot, WeatherCache.isFresh(snapshot, intervalMinutes: settings.weatherRefreshIntervalMinutes) {
+        if cacheDecision(settings: settings) == .useCache {
             state = .loaded
             return
         }
@@ -80,9 +80,7 @@ final class WeatherWidgetViewModel: ObservableObject {
             return
         }
 
-        if !force,
-           let snapshot,
-           WeatherCache.isFresh(snapshot, intervalMinutes: settings.weatherRefreshIntervalMinutes) {
+        if !force, cacheDecision(settings: settings) == .useCache {
             state = .loaded
             return
         }
@@ -113,9 +111,13 @@ final class WeatherWidgetViewModel: ObservableObject {
             unit: settings.weatherUnit
         )
         let manualFallbackConfiguration = Self.manualFallbackConfiguration(from: settings)
+        let requestKey = settings.weatherRequestKey
 
         let task = Task { [provider, cache, manualFallbackConfiguration] in
-            func publish(_ loaded: WeatherSnapshot) async {
+            func publish(_ fetched: WeatherSnapshot) async {
+                var keyed = fetched
+                keyed.requestKey = requestKey
+                let loaded = keyed
                 await MainActor.run {
                     self.snapshot = loaded
                     self.state = .loaded
@@ -205,6 +207,15 @@ final class WeatherWidgetViewModel: ObservableObject {
         if state == .loading {
             state = snapshot == nil ? .idle : .stale("Showing cached weather until the next refresh succeeds.")
         }
+    }
+
+    private func cacheDecision(settings: DockingSettings) -> WidgetRefreshDecision {
+        WidgetRefreshDecision.weather(
+            snapshot: snapshot,
+            currentKey: settings.weatherRequestKey,
+            intervalMinutes: settings.weatherRefreshIntervalMinutes,
+            now: Date()
+        )
     }
 
     private func clearRefreshTask(generation: Int) {
