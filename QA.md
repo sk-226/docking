@@ -229,6 +229,7 @@ and edge summoning.
 | Sleep/wake | Put the Mac to sleep and wake it with Docking running. | Dock repositions, running app state refreshes, widgets remain responsive. | Partially covered 2026-06-28 by implementation review: Docking observes `NSWorkspace.didWakeNotification`, reapplies window settings, refreshes the running-app snapshot once, and calls calendar/weather `refreshIfNeeded`. Actual machine sleep/wake is still not yet manually verified. |
 | Restore safety | Open Control Center > Restore, inspect primary mode, match-original-layout, restore, disable, and reload controls. Do not confirm reload unless intentionally testing Apple Dock restart. | Primary mode explains snapshot/restore behavior; match-original-layout imports readable Apple Dock layout into Docking; enable, disable, restore, and reload all show confirmation before changing Apple Dock preferences or restarting Dock; restore/disable do not crash. | Partially passed 2026-06-29 via implementation review and Computer Use: Restore displayed snapshot time, restore/manual instructions, reload button, and Quit; dangerous Apple Dock actions now use confirmation dialogs. `killall Dock` confirmation/reload was not executed. |
 | Idle performance | Leave pointer away from the dock for several minutes in Activity Monitor. | CPU stays close to 0% and memory remains stable. | Partially covered by short `ps` sampling of the live `Docking` process. 2026-06-29 sample after `./script/build_and_run.sh --verify`: startup-adjacent CPU was 1.3% with RSS 165,536 KB, then settled to 0.0% CPU with RSS about 158,900 KB across a 30-second idle window. Longer Activity Monitor observation is still not yet manually verified. |
+| Widget refresh without interaction | Follow PERFORMANCE.md > Widget Refresh Without Interaction. | Widgets load after launch without interaction, city and calendar selection changes reach the dock tile without opening a panel, city typing produces one fetch, ended events drop off by themselves, and idle CPU is unchanged. | Partially covered 2026-09-23 by validation and unit tests: request-key refetch, in-flight calendar replacement, timer arming/cancellation, and schedule calculation. Live launch, typing, event-end, and idle CPU checks are not yet manually verified. |
 | Network cadence | Open Weather once and observe logs/network. | Refreshes do not repeat every few seconds. | Partially covered 2026-06-28 by validation: fresh cached weather suppresses passive `refreshIfNeeded` and non-forced refresh provider calls, while forced manual refresh still works. Live log/network observation is still not yet manually verified. |
 
 ## Git/GitHub readiness
@@ -252,6 +253,7 @@ the user's machine or deliberately accepted as known limitations:
 - Actual sleep/wake behavior.
 - Longer Activity Monitor idle CPU/memory observation.
 - Live network cadence observation after opening Weather.
+- Live widget refresh without interaction (launch, city typing, event end).
 
 For future release handoffs, start only after:
 

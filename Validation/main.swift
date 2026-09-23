@@ -2260,6 +2260,74 @@ func validateCalendarRequestKeyChangeReplacesInFlightRefresh() async throws {
 }
 
 @MainActor
+func validateCalendarScheduledRefresh() async throws {
+    let provider = CountingCalendarProvider()
+    let sleeper = ManualRefreshSleeper()
+    let viewModel = CalendarWidgetViewModel(provider: provider, sleep: { try await sleeper.sleep(until: $0) })
+
+    await viewModel.refreshIfNeeded(settings: .default)
+    try await sleeper.settle()
+    try expect(provider.upcomingEventRequestCount == 1, "calendar launch refresh should fetch once")
+    try expect(sleeper.deadlines.count == 1, "a completed calendar fetch should arm the next refresh")
+
+    try await sleeper.fireAll()
+    try expect(provider.upcomingEventRequestCount == 2, "the calendar timer should refetch even inside the recent-refresh window")
+    try expect(sleeper.deadlines.count == 2, "the scheduled calendar refresh should arm the following one")
+
+    var disabled = DockingSettings.default
+    disabled.calendarEnabled = false
+    viewModel.disable(settings: disabled)
+    try await sleeper.fireAll()
+    try expect(provider.upcomingEventRequestCount == 2, "disabling Calendar should stop its pending timer")
+}
+
+@MainActor
+func validateWeatherScheduledRefresh() async throws {
+    let provider = CountingWeatherProvider()
+    let sleeper = ManualRefreshSleeper()
+    let clock = ValidationClock(now: Date())
+    let cacheURL = FileManager.default.temporaryDirectory.appendingPathComponent("WeatherScheduleValidation-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: cacheURL) }
+
+    var settings = DockingSettings.default
+    settings.weatherUsesCurrentLocation = false
+    settings.weatherManualLocation = "Tokyo"
+    let cache = WeatherCache(fileURL: cacheURL)
+    var cachedSnapshot = validationWeatherSnapshot(locationName: "Fresh Cache", fetchedAt: clock.now)
+    cachedSnapshot.requestKey = settings.weatherRequestKey
+    cache.save(cachedSnapshot)
+
+    let viewModel = WeatherWidgetViewModel(
+        provider: provider,
+        cache: cache,
+        now: { clock.now },
+        sleep: { try await sleeper.sleep(until: $0) }
+    )
+
+    await viewModel.refreshIfNeeded(settings: settings)
+    try await sleeper.settle()
+    try expect(provider.requestCount == 0, "fresh cached weather should not fetch at launch")
+    try expect(
+        sleeper.deadlines == [cachedSnapshot.fetchedAt.addingTimeInterval(Double(settings.weatherRefreshIntervalMinutes) * 60)],
+        "fresh cached weather should still arm a refresh for when the cache expires"
+    )
+
+    clock.now = clock.now.addingTimeInterval(Double(settings.weatherRefreshIntervalMinutes) * 60)
+    try await sleeper.fireAll()
+    try expect(provider.requestCount == 1, "the weather timer should refetch once the refresh interval has elapsed")
+    try expect(sleeper.deadlines.count == 2, "a completed weather fetch should arm the next refresh")
+
+    viewModel.cancelRefresh()
+    try await sleeper.fireAll()
+    try expect(provider.requestCount == 1, "disabling Weather should stop its pending timer")
+
+    settings.weatherManualLocation = ""
+    await viewModel.refreshIfNeeded(settings: settings)
+    try await sleeper.settle()
+    try expect(sleeper.deadlines.count == 2, "weather without a city should not arm a timer")
+}
+
+@MainActor
 func validateCalendarLaunchDoesNotRequestPermission() async throws {
     let provider = CountingCalendarProvider(authorizationState: .notDetermined)
     let viewModel = CalendarWidgetViewModel(provider: provider)
@@ -2880,6 +2948,40 @@ private final class RecordingDelayedCalendarProvider: CalendarProviding {
     }
 }
 
+@MainActor
+private final class ManualRefreshSleeper {
+    private(set) var deadlines: [Date] = []
+    private var waiters: [CheckedContinuation<Void, Error>] = []
+
+    func sleep(until deadline: Date) async throws {
+        deadlines.append(deadline)
+        try await withCheckedThrowingContinuation { waiters.append($0) }
+    }
+
+    // Resumes every armed timer, including ones the ViewModel already
+    // cancelled, so tests observe whether cancellation is honored.
+    func fireAll() async throws {
+        let firing = waiters
+        waiters = []
+        firing.forEach { $0.resume() }
+        try await settle()
+    }
+
+    // Timer tasks record their deadline only once they start running.
+    func settle() async throws {
+        try await Task.sleep(nanoseconds: 50_000_000)
+    }
+}
+
+@MainActor
+private final class ValidationClock {
+    var now: Date
+
+    init(now: Date) {
+        self.now = now
+    }
+}
+
 private struct DelayedWeatherProvider: WeatherProvider {
     func fetchWeather(configuration: WeatherRequestConfiguration) async throws -> WeatherSnapshot {
         try await Task.sleep(nanoseconds: 500_000_000)
@@ -3075,6 +3177,8 @@ let asyncValidations: [(String, () async throws -> Void)] = [
     ("weather request key change refetches", { try await validateWeatherRequestKeyChangeRefetchesFreshData() }),
     ("calendar request key change refetches", { try await validateCalendarRequestKeyChangeRefetchesRecentData() }),
     ("calendar request key change replaces in-flight refresh", { try await validateCalendarRequestKeyChangeReplacesInFlightRefresh() }),
+    ("calendar scheduled refresh", { try await validateCalendarScheduledRefresh() }),
+    ("weather scheduled refresh", { try await validateWeatherScheduledRefresh() }),
     ("weather provider fallback", validateCompositeWeatherFallback),
     ("weather provider permission boundary", validateCompositeWeatherDoesNotHideLocationDenial),
     ("weather manual location missing stays local", { try await validateWeatherManualLocationMissingStaysLocal() }),

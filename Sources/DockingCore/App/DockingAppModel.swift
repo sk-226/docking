@@ -1239,6 +1239,14 @@ public final class DockingAppModel: ObservableObject {
         observe(NotificationCenter.default, name: NSApplication.didChangeScreenParametersNotification) { [weak self] in
             self?.handleDisplayEnvironmentChanged(shouldRestoreVisibleDock: true)
         }
+        // Widget timers sleep toward wall-clock deadlines such as local
+        // midnight, so day, clock, and time zone changes move those deadlines.
+        // Re-evaluating re-arms them.
+        for name in [Notification.Name.NSCalendarDayChanged, .NSSystemClockDidChange, .NSSystemTimeZoneDidChange] {
+            observe(NotificationCenter.default, name: name) { [weak self] in
+                self?.refreshWidgetsIfNeeded()
+            }
+        }
     }
 
     private func observe(_ center: NotificationCenter, name: Notification.Name, handler: @escaping @MainActor () -> Void) {
@@ -1252,6 +1260,10 @@ public final class DockingAppModel: ObservableObject {
 
     private func handleWake() {
         handleDisplayEnvironmentChanged(shouldRestoreVisibleDock: true)
+        refreshWidgetsIfNeeded()
+    }
+
+    private func refreshWidgetsIfNeeded() {
         Task {
             await calendarViewModel.refreshIfNeeded(settings: settings)
             await weatherViewModel.refreshIfNeeded(settings: settings)
