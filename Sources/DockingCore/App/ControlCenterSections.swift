@@ -895,6 +895,12 @@ private struct AppsControlCenterContent: View {
 
             List {
                 ForEach(Array(model.dockItems.enumerated()), id: \.element.id) { index, item in
+                    let isFinder = item.bundleIdentifier == "com.apple.finder"
+                    let canMoveUp = !isFinder && index > 0
+                        && model.dockItems[index - 1].bundleIdentifier != "com.apple.finder"
+                        && model.dockItems[index - 1].isApplication == item.isApplication
+                    let canMoveDown = !isFinder && index + 1 < model.dockItems.count
+                        && model.dockItems[index + 1].isApplication == item.isApplication
                     HStack {
                         Image(nsImage: model.icon(for: item))
                             .resizable()
@@ -920,7 +926,7 @@ private struct AppsControlCenterContent: View {
                                 Image(systemName: "chevron.up")
                             }
                             .buttonStyle(.borderless)
-                            .disabled(index == 0)
+                            .disabled(!canMoveUp)
                             .dockTooltip("Move up")
 
                             Button {
@@ -929,7 +935,7 @@ private struct AppsControlCenterContent: View {
                                 Image(systemName: "chevron.down")
                             }
                             .buttonStyle(.borderless)
-                            .disabled(index == model.dockItems.count - 1)
+                            .disabled(!canMoveDown)
                             .dockTooltip("Move down")
                         }
                         .accessibilityElement(children: .contain)
@@ -940,7 +946,9 @@ private struct AppsControlCenterContent: View {
                         }
                         .buttonStyle(.borderless)
                         .dockTooltip("Remove")
+                        .disabled(isFinder)
                     }
+                    .moveDisabled(isFinder)
                 }
                 .onMove(perform: model.moveDockItem)
             }

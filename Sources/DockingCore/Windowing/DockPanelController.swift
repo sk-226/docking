@@ -8,17 +8,27 @@ final class DockPanelController: NSObject {
     private let presentation = DockPresentation()
     private var layoutSettings = DockingSettings.default
     private var layoutItemCount = 0
-    private var separatedRunningStart: Int?
+    private var documentStart: Int?
+    private var runningSectionStart: Int?
     private var baseFrame = NSRect.zero
+    private var canvasFrame = NSRect.zero
+    private var visibilityAnimation = DockAutoHideAnimation()
     private var maximumLength = Double.infinity
     private var contentFrame = NSRect.zero
+    private var residenceFrame = NSRect.zero
     private var screenLimits = NSRect.zero
     private var pointerIsInside = false
+    private var isMenuTracking = false
+    private var isItemDragging = false
+    private let windowEventRegion = DockWindowEventRegion()
+    private var hasWindowEventRegion = false
     private var onPointerPresenceChange: ((Bool) -> Void)?
     private var pointerMonitors: [Any] = []
     private var displayLink: CADisplayLink?
     private var magnificationFrameState = DockMagnificationFrameState()
-    private var targetMetrics = DockLayout.metrics(itemCount: 0, settings: .default)
+    private var magnificationAnimation = DockMagnificationAnimation()
+    private var magnificationPointer: Double?
+    private var launchAnimations: [UUID: DockLaunchAnimation] = [:]
     private let autoHideController = AutoHideController()
     private var currentDisplayID: UInt32?
     private var autoHideGeneration = 0
@@ -37,6 +47,7 @@ final class DockPanelController: NSObject {
         cancelScheduledAutoHide()
         let panel = panel ?? makePanel(model: model)
         self.panel = panel
+        visibilityAnimation = DockAutoHideAnimation()
         applySettings(model: model)
         panel.orderFrontRegardless()
         pointerMoved()
@@ -45,12 +56,35 @@ final class DockPanelController: NSObject {
     func hide() {
         cancelScheduledAutoHide()
         panel?.orderOut(nil)
+        visibilityAnimation = DockAutoHideAnimation(hidden: true)
+        pointerIsInside = false
+        launchAnimations.removeAll()
         resetMagnification()
     }
 
     func orderFront() {
         cancelScheduledAutoHide()
+        visibilityAnimation = DockAutoHideAnimation()
+        applyGeometry(presentation.metrics)
         panel?.orderFrontRegardless()
+        pointerMoved()
+    }
+
+    func startLaunchAnimation(for itemID: UUID) {
+        guard isVisible, launchAnimations[itemID] == nil,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        launchAnimations[itemID] = DockLaunchAnimation()
+        resumeDisplayLink()
+    }
+
+    func finishLaunchAnimation(for itemID: UUID) {
+        launchAnimations[itemID]?.finish()
+    }
+
+    private func resumeDisplayLink() {
+        guard displayLink?.isPaused == true else { return }
+        magnificationFrameState.resetClock()
+        displayLink?.isPaused = false
     }
 
     func close() {
@@ -121,7 +155,12 @@ final class DockPanelController: NSObject {
         currentDisplayID = id
         applySettings(model: model)
         cancelScheduledAutoHide()
-        if !panel.isVisible { panel.orderFrontRegardless() }
+        if !panel.isVisible {
+            visibilityAnimation = DockAutoHideAnimation(hidden: true)
+            applyGeometry(presentation.metrics)
+            panel.orderFrontRegardless()
+        }
+        animateVisibility(hidden: false)
         pointerMoved()
     }
 
@@ -132,11 +171,12 @@ final class DockPanelController: NSObject {
         let screenChanged = screenLimits != newScreenLimits
         screenLimits = newScreenLimits
         let length = settings.dockPosition.isVertical ? screenLimits.height : screenLimits.width
-        let runningStart = model.hasSeparatedRunningItems ? model.displayDockItems.count : nil
-        let changed = screenChanged || layoutSettings != settings || layoutItemCount != model.visibleAppItemCount || separatedRunningStart != runningStart || maximumLength != length
+        let documentStart = model.documentStart
+        let changed = screenChanged || layoutSettings != settings || layoutItemCount != model.visibleDockItems.count || self.documentStart != documentStart || runningSectionStart != model.runningSectionStart || maximumLength != length
         layoutSettings = settings
-        layoutItemCount = model.visibleAppItemCount
-        separatedRunningStart = runningStart
+        layoutItemCount = model.visibleDockItems.count
+        self.documentStart = documentStart
+        runningSectionStart = model.runningSectionStart
         maximumLength = length
         let frameRate = Float(screen?.maximumFramesPerSecond ?? 60)
         displayLink?.preferredFrameRateRange = CAFrameRateRange(minimum: min(60, frameRate), maximum: frameRate, preferred: frameRate)
@@ -144,9 +184,7 @@ final class DockPanelController: NSObject {
         baseFrame = ScreenPlacementService.dockFrame(size: resting.scaledPanelSize, on: screen, position: settings.dockPosition)
         let canvas = DockPanelGeometry.canvasFrame(baseFrame: baseFrame, resting: resting,
                                                   settings: settings, limits: screenLimits)
-        if let panel, !Self.framesApproximatelyEqual(panel.frame, canvas) {
-            panel.setFrame(canvas, display: true, animate: false)
-        }
+        canvasFrame = canvas
         if changed || presentation.metrics.iconSizes.count != layoutItemCount {
             resetMagnification()
         } else {
@@ -154,31 +192,64 @@ final class DockPanelController: NSObject {
         }
     }
 
-    private func layoutMetrics(pointer: Double? = nil, bounds: DockMagnificationBounds = DockMagnificationBounds()) -> DockLayoutMetrics {
+    private func layoutMetrics(pointer: Double? = nil, progress: Double = 1,
+                               bounds: DockMagnificationBounds = DockMagnificationBounds()) -> DockLayoutMetrics {
         var settings = layoutSettings
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { settings.magnificationEnabled = false }
         return DockLayout.metrics(itemCount: layoutItemCount, settings: settings,
-                                  separatedRunningStart: separatedRunningStart, maximumLength: maximumLength,
-                                  pointerOffset: pointer, magnificationBounds: bounds)
+                                  documentStart: documentStart, runningSectionStart: runningSectionStart, maximumLength: maximumLength,
+                                  pointerOffset: pointer, magnificationProgress: progress, magnificationBounds: bounds)
     }
 
     private func resetMagnification() {
         displayLink?.isPaused = true
         magnificationFrameState = DockMagnificationFrameState()
-        targetMetrics = layoutMetrics()
-        applyGeometry(targetMetrics)
+        magnificationAnimation = DockMagnificationAnimation()
+        magnificationPointer = nil
+        applyGeometry(layoutMetrics())
+        if visibilityAnimation.isAnimating || !launchAnimations.isEmpty { resumeDisplayLink() }
     }
 
-    private func pointerMoved() {
-        guard let panel, panel.isVisible else { return }
-        let location = NSEvent.mouseLocation
-        let inside = DockPanelHitGeometry.contains(location, panelFrame: contentFrame, position: dockPosition)
+    func setMenuTracking(_ tracking: Bool) {
+        isMenuTracking = tracking
+        if !tracking {
+            pointerMoved()
+            if magnificationAnimation.isAnimating || magnificationFrameState.hasPendingTarget { resumeDisplayLink() }
+        }
+    }
+
+    func setItemDragging(_ dragging: Bool) {
+        isItemDragging = dragging
+        if !dragging {
+            pointerMoved()
+            if magnificationAnimation.isAnimating || magnificationFrameState.hasPendingTarget { resumeDisplayLink() }
+        }
+    }
+
+    func trackDrag(at location: CGPoint) {
+        pointerMoved(at: location)
+        guard !isMenuTracking, let update = magnificationFrameState.takeTargetUpdate() else { return }
+        if let offset = update.pointerOffset { magnificationPointer = offset }
+        magnificationAnimation.setActive(update.pointerOffset != nil,
+                                         maximumGrowth: layoutSettings.magnificationSize - layoutSettings.iconSize)
+        let bounds = DockPanelGeometry.magnificationBounds(baseFrame: baseFrame, position: dockPosition,
+                                                          limits: screenLimits, scale: presentation.metrics.scale)
+        applyGeometry(layoutMetrics(pointer: magnificationPointer, progress: magnificationAnimation.value, bounds: bounds))
+    }
+
+    func itemFrames(for items: [DockItem]) -> [UUID: CGRect] {
+        DockDragGeometry.frames(items: items, metrics: presentation.metrics, contentFrame: contentFrame, settings: layoutSettings)
+    }
+
+    private func pointerMoved(at location: CGPoint = NSEvent.mouseLocation) {
+        guard let panel, panel.isVisible, !isMenuTracking else { return }
+        let inside = residenceFrame.contains(location)
         let offset = dockPosition.isVertical ? baseFrame.maxY - location.y : location.x - baseFrame.minX
         let magnifies = layoutSettings.magnificationEnabled && layoutItemCount > 0
             && layoutSettings.magnificationSize > layoutSettings.iconSize
             && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let requestedOffset = inside && magnifies ? offset / presentation.metrics.scale : nil
-        let targetChanged = magnificationFrameState.request(pointerOffset: requestedOffset)
+        let targetChanged = magnificationFrameState.request(pointerOffset: requestedOffset, at: CACurrentMediaTime())
         updateMousePassthrough(at: location)
         if targetChanged, displayLink?.isPaused == true {
             magnificationFrameState.resetClock()
@@ -197,22 +268,41 @@ final class DockPanelController: NSObject {
             return
         }
         pointerMoved()
-        if let update = magnificationFrameState.takeTargetUpdate() {
-            let bounds = DockPanelGeometry.magnificationBounds(baseFrame: baseFrame, position: dockPosition,
-                                                              limits: screenLimits, scale: presentation.metrics.scale)
-            targetMetrics = layoutMetrics(pointer: update.pointerOffset, bounds: bounds)
+        let holdsMagnification = isMenuTracking
+        let hasInput = !holdsMagnification && magnificationFrameState.hasPendingTarget
+        let needsGeometry = hasInput || (!holdsMagnification && magnificationAnimation.isAnimating)
+            || visibilityAnimation.isAnimating || !launchAnimations.isEmpty
+        if !holdsMagnification, let update = magnificationFrameState.takeTargetUpdate() {
+            if let offset = update.pointerOffset { magnificationPointer = offset }
+            magnificationAnimation.setActive(update.pointerOffset != nil,
+                                             maximumGrowth: layoutSettings.magnificationSize - layoutSettings.iconSize)
         }
-        let elapsed = magnificationFrameState.elapsedTime(timestamp: link.timestamp, targetTimestamp: link.targetTimestamp)
-        applyGeometry(presentation.metrics.approaching(targetMetrics, elapsed: elapsed))
-        if presentation.metrics == targetMetrics {
+        let elapsed = magnificationFrameState.elapsedTime(timestamp: link.timestamp, targetTimestamp: link.targetTimestamp, currentTime: CACurrentMediaTime())
+        let progress = holdsMagnification ? magnificationAnimation.value : magnificationAnimation.advance(by: elapsed)
+        visibilityAnimation.advance(by: elapsed)
+        for itemID in launchAnimations.keys { launchAnimations[itemID]?.advance(by: elapsed) }
+        launchAnimations = launchAnimations.filter { $0.value.isAnimating }
+        let bounds = DockPanelGeometry.magnificationBounds(baseFrame: baseFrame, position: dockPosition,
+                                                          limits: screenLimits, scale: presentation.metrics.scale)
+        if needsGeometry {
+            applyGeometry(holdsMagnification ? presentation.metrics : layoutMetrics(pointer: magnificationPointer, progress: progress, bounds: bounds))
+        }
+        if visibilityAnimation.fraction == 1 && !visibilityAnimation.isAnimating {
+            hide()
+            return
+        }
+        pointerMoved()
+        let magnificationNeedsFrames = !holdsMagnification && (magnificationAnimation.isAnimating
+            || magnificationFrameState.hasPendingTarget || magnificationFrameState.isTrackingInput(at: link.targetTimestamp))
+        if !magnificationNeedsFrames && !visibilityAnimation.isAnimating && launchAnimations.isEmpty {
             link.isPaused = true
             magnificationFrameState.resetClock()
         }
     }
 
     private func updateMousePassthrough(at location: NSPoint) {
-        guard let panel else { return }
-        let ignoresMouseEvents = !contentFrame.contains(location)
+        guard let panel, !isMenuTracking, !isItemDragging else { return }
+        let ignoresMouseEvents = !hasWindowEventRegion && !contentFrame.contains(location)
         if panel.ignoresMouseEvents != ignoresMouseEvents {
             panel.ignoresMouseEvents = ignoresMouseEvents
         }
@@ -220,14 +310,24 @@ final class DockPanelController: NSObject {
 
     private func applyGeometry(_ metrics: DockLayoutMetrics) {
         guard let panel else { return }
+        let translation = visibilityAnimation.offset(distance: visibilityTravel, position: dockPosition)
+        let windowFrame = canvasFrame.offsetBy(dx: translation.width, dy: translation.height)
+        if !Self.framesApproximatelyEqual(panel.frame, windowFrame) {
+            panel.setFrame(windowFrame, display: true, animate: false)
+        }
         contentFrame = DockPanelGeometry.contentFrame(baseFrame: baseFrame, metrics: metrics,
                                                       position: dockPosition, limits: screenLimits)
+            .offsetBy(dx: translation.width, dy: translation.height)
+        residenceFrame = DockPanelHitGeometry.residenceFrame(for: contentFrame, position: dockPosition,
+                                                              thickness: metrics.residenceThickness * metrics.scale)
         let layout = DockPresentationLayout(
             metrics: metrics,
             origin: CGPoint(x: contentFrame.minX - panel.frame.minX, y: panel.frame.maxY - contentFrame.maxY),
-            canvasSize: panel.frame.size
+            canvasSize: panel.frame.size,
+            launchProgress: launchAnimations.mapValues(\.value)
         )
         if presentation.layout != layout { presentation.layout = layout }
+        hasWindowEventRegion = windowEventRegion?.update(window: panel, contentFrame: contentFrame) == true
         updateMousePassthrough(at: NSEvent.mouseLocation)
     }
 
@@ -251,11 +351,39 @@ final class DockPanelController: NSObject {
                   model.shouldScheduleAutoHide(pointerLocation: NSEvent.mouseLocation) else {
                 return
             }
-            self.hide()
+            self.animateVisibility(hidden: true)
+        }
+    }
+
+    private var visibilityTravel: Double {
+        (dockPosition.isVertical ? baseFrame.width : baseFrame.height) + ScreenPlacementService.dockScreenMargin
+    }
+
+    private func animateVisibility(hidden: Bool) {
+        guard let panel else { return }
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            if hidden { hide() }
+            else {
+                visibilityAnimation = DockAutoHideAnimation()
+                applyGeometry(presentation.metrics)
+                panel.orderFrontRegardless()
+            }
+            return
+        }
+        let restThickness = dockPosition.isVertical ? baseFrame.width : baseFrame.height
+        let currentGrowth = (layoutSettings.magnificationSize - layoutSettings.iconSize)
+            * magnificationAnimation.value * presentation.metrics.scale
+        let visibleExtent = restThickness + currentGrowth - visibilityTravel * visibilityAnimation.fraction
+        let desiredExtent = hidden ? 0 : layoutSettings.iconSize * presentation.metrics.scale
+        visibilityAnimation.setHidden(hidden, distance: desiredExtent - visibleExtent)
+        if visibilityAnimation.isAnimating && displayLink?.isPaused == true {
+            magnificationFrameState.resetClock()
+            displayLink?.isPaused = false
         }
     }
 
     func cancelScheduledAutoHide() {
+        if visibilityAnimation.target == 1 && panel?.isVisible == true { animateVisibility(hidden: false) }
         guard isAutoHideScheduled else {
             return
         }
@@ -267,7 +395,7 @@ final class DockPanelController: NSObject {
         guard let panel, panel.isVisible else {
             return false
         }
-        return DockPanelHitGeometry.contains(location, panelFrame: contentFrame, position: dockPosition)
+        return residenceFrame.contains(location)
     }
 
     private func makePanel(model: DockingAppModel) -> NSPanel {
@@ -291,7 +419,7 @@ final class DockPanelController: NSObject {
             if inside { model?.pointerEnteredDock() }
             else { model?.pointerExitedDock() }
         }
-        let hostingView = NSHostingView(rootView: DockView(presentation: presentation).environmentObject(model))
+        let hostingView = DockHostingView(rootView: DockView(presentation: presentation).environmentObject(model), model: model)
         hostingView.sizingOptions = []
         panel.contentView = hostingView
         panel.acceptsMouseMovedEvents = true
@@ -299,7 +427,7 @@ final class DockPanelController: NSObject {
         link.isPaused = true
         link.add(to: .main, forMode: .common)
         displayLink = link
-        let events: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .leftMouseDown, .rightMouseDown]
+        let events: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .leftMouseDown, .rightMouseDown, .scrollWheel]
         if let monitor = NSEvent.addLocalMonitorForEvents(matching: events, handler: { [weak self] event in
             MainActor.assumeIsolated { self?.pointerMoved() }
             return event
@@ -348,15 +476,16 @@ enum DockPanelGeometry {
     static func canvasFrame(baseFrame: NSRect, resting: DockLayoutMetrics, settings: DockingSettings, limits: NSRect) -> NSRect {
         let extra = settings.magnificationEnabled && !resting.iconSizes.isEmpty
             ? max(0, settings.magnificationSize - settings.iconSize) * resting.scale : 0
-        let growth = Double(min(resting.iconSizes.count, 4)) * extra
+        let growth = DockMagnificationLens.maximumExpansion(for: extra)
+        let inwardExpansion = extra + DockLaunchAnimation.height(iconSize: settings.iconSize + extra / resting.scale) * resting.scale
         var frame = baseFrame
         if settings.dockPosition.isVertical {
             frame = frame.insetBy(dx: 0, dy: -growth)
-            frame.size.width += extra
-            if settings.dockPosition == .right { frame.origin.x -= extra }
+            frame.size.width += inwardExpansion
+            if settings.dockPosition == .right { frame.origin.x -= inwardExpansion }
         } else {
             frame = frame.insetBy(dx: -growth, dy: 0)
-            frame.size.height += extra
+            frame.size.height += inwardExpansion
         }
         return frame.intersection(limits)
     }
@@ -367,8 +496,17 @@ enum DockPanelHitGeometry {
         residenceFrame(for: panelFrame, position: position).contains(location)
     }
 
-    private static func residenceFrame(for panelFrame: NSRect, position: DockPosition) -> NSRect {
+    static func residenceFrame(for panelFrame: NSRect, position: DockPosition, thickness: Double? = nil) -> NSRect {
         var frame = panelFrame
+        if let thickness {
+            switch position {
+            case .bottomCenter, .bottomLeft, .bottomRight: frame.size.height = thickness
+            case .left: frame.size.width = thickness
+            case .right:
+                frame.origin.x = panelFrame.maxX - thickness
+                frame.size.width = thickness
+            }
+        }
         switch position {
         case .bottomCenter, .bottomLeft, .bottomRight:
             frame.origin.y -= ScreenPlacementService.dockScreenMargin

@@ -155,4 +155,44 @@ final class DockMagnificationFrameStateTests: XCTestCase {
         XCTAssertFalse(state.request(pointerOffset: -.infinity))
         XCTAssertFalse(state.request(pointerOffset: .nan))
     }
+    func testExitDetectedAfterLayoutRemainsPendingForNextFrame() {
+        var state = DockMagnificationFrameState()
+        state.request(pointerOffset: 300)
+        XCTAssertNotNil(state.takeTargetUpdate())
+        XCTAssertFalse(state.hasPendingTarget)
+        XCTAssertTrue(state.request(pointerOffset: nil))
+        XCTAssertTrue(state.hasPendingTarget)
+        XCTAssertEqual(state.takeTargetUpdate(), .init(pointerOffset: nil))
+        XCTAssertFalse(state.hasPendingTarget)
+    }
+
+    func testPointerTrackingSpansSeveralFramesAndSettlesWithoutMoreLayout() {
+        var state = DockMagnificationFrameState()
+        state.request(pointerOffset: 120, at: 10)
+        _ = state.takeTargetUpdate()
+        for hz in [60.0, 120, 240] {
+            XCTAssertTrue(state.isTrackingInput(at: 10 + 1 / hz))
+        }
+        XCTAssertFalse(state.hasPendingTarget)
+        XCTAssertFalse(state.request(pointerOffset: 120, at: 10.09))
+        XCTAssertFalse(state.isTrackingInput(at: 10.11))
+        XCTAssertTrue(state.request(pointerOffset: 121, at: 10.12))
+        XCTAssertTrue(state.isTrackingInput(at: 10.15))
+        XCTAssertTrue(state.request(pointerOffset: nil, at: 10.16))
+        XCTAssertFalse(state.isTrackingInput(at: 10.17))
+        XCTAssertEqual(state.takeTargetUpdate(), .init(pointerOffset: nil))
+    }
+
+    func testLateFirstCallbackDoesNotCountThePauseAsAnimationTime() {
+        var state = DockMagnificationFrameState()
+        let period = 1.0 / 60
+        XCTAssertEqual(state.elapsedTime(timestamp: 10, targetTimestamp: 10 + period,
+                                         currentTime: 10.15), period, accuracy: 1e-10)
+        XCTAssertEqual(state.elapsedTime(timestamp: 10.18, targetTimestamp: 10.18 + period,
+                                         currentTime: 10.18), 0.03 + period, accuracy: 1e-10)
+        state.resetClock()
+        XCTAssertEqual(state.elapsedTime(timestamp: 20, targetTimestamp: 20 + period,
+                                         currentTime: 20.15), period, accuracy: 1e-10)
+    }
+
 }

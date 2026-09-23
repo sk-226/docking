@@ -16,15 +16,63 @@ final class DockMagnificationTests: XCTestCase {
                       bounds: DockMagnificationBounds = DockMagnificationBounds(),
                       available: Double = .infinity) -> DockMagnificationLens {
         DockMagnificationLens(centers: base.iconCenters, baseSize: settings.iconSize,
-                              radius: (settings.iconSize + settings.spacing) * 2,
                               maximumGrowth: max(0, settings.magnificationSize - settings.iconSize),
                               availableGrowth: min(available, bounds.leading + bounds.trailing), bounds: bounds)
     }
 
     private func presentedCenter(_ index: Int, _ metrics: DockLayoutMetrics, baseSize: Double) -> Double {
-        metrics.iconCenters[index] - metrics.originShift
+        metrics.iconCenters[index] + metrics.iconLeadingInsets.prefix(index + 1).reduce(0, +)
             + metrics.iconSizes.prefix(index).reduce(0) { $0 + $1 - baseSize }
-            + (metrics.iconSizes[index] - baseSize) / 2
+            + (metrics.iconSizes[index] - baseSize) / 2 - metrics.originShift
+    }
+
+    func testNativeCoordinateWarpReferenceWidths() {
+        let centers = [-144.0, -108, -72, -36, 0, 36, 72, 108, 144]
+        let lens = DockMagnificationLens(centers: centers, baseSize: 36, maximumGrowth: 92,
+                                         availableGrowth: .infinity, bounds: .init())
+        let expected = [36.0, 42.056013048760974, 81.99999767821596, 115.67433647792706, 128,
+                        115.67433647792706, 81.99999767821596, 42.056013048760974, 36]
+        for (actual, reference) in zip(lens.geometry(at: 0).sizes, expected) {
+            XCTAssertEqual(actual, reference, accuracy: 1e-6)
+        }
+    }
+
+    func testGapExpansionAccountsForTheWholeCoordinateWarp() {
+        let settings = settings()
+        let base = DockLayout.metrics(itemCount: 16, settings: settings, documentStart: 8)
+        let target = DockLayout.metrics(itemCount: 16, settings: settings, documentStart: 8,
+                                        pointerOffset: base.iconCenters[7])
+        XCTAssertGreaterThan(target.iconLeadingInsets.reduce(0, +), 0)
+        let iconGrowth = target.iconSizes.reduce(0) { $0 + $1 - settings.iconSize }
+        let gapGrowth = target.iconLeadingInsets.reduce(0, +)
+        XCTAssertEqual(iconGrowth + gapGrowth, target.panelSize.width - base.panelSize.width, accuracy: 1e-9)
+        XCTAssertEqual(target.panelSize.width - base.panelSize.width, 355.46069440980796, accuracy: 1e-6)
+    }
+
+    func testNativeFocusUsesPointerAndClampsToBarEdges() {
+        let base = DockLayout.metrics(itemCount: 16, settings: settings())
+        let lens = lens(base, settings: settings())
+        XCTAssertEqual(lens.focus(for: -100), base.iconCenters[0] - 18)
+        XCTAssertEqual(lens.focus(for: 10_000), base.iconCenters[15] + 18)
+        for pointer in stride(from: base.iconCenters[0], through: base.iconCenters[15], by: 0.5) {
+            XCTAssertEqual(lens.focus(for: pointer), pointer)
+        }
+    }
+
+    func testNativeEndIconKeepsItsRestingCenterDuringEntry() {
+        let settings = settings()
+        let base = DockLayout.metrics(itemCount: 16, settings: settings)
+        for index in [0, 1, 6, 14, 15] {
+            for progress in [0.1, 0.25, 0.5, 0.75, 1] {
+                let target = DockLayout.metrics(itemCount: 16, settings: settings,
+                                                pointerOffset: base.iconCenters[index], magnificationProgress: progress)
+                XCTAssertEqual(presentedCenter(index, target, baseSize: 36), base.iconCenters[index], accuracy: 1e-6)
+                XCTAssertEqual(target.iconSizes[index], 36 + 92 * progress, accuracy: 1e-6)
+            }
+        }
+        let first = DockLayout.metrics(itemCount: 16, settings: settings, pointerOffset: base.iconCenters[0])
+        XCTAssertEqual(first.originShift, 46, accuracy: 1e-6)
+        XCTAssertEqual(first.panelSize.width - base.panelSize.width, 223.73034720490398, accuracy: 1e-6)
     }
 
     func testSubIconSweepKeepsInteriorOriginAndWidthConstant() {
@@ -36,105 +84,36 @@ final class DockMagnificationTests: XCTestCase {
             let offsets = (0...400).map {
                 base.iconCenters[6] + Double($0) / 400 * (base.iconCenters[7] - base.iconCenters[6])
             }
-            var moving = DockLayout.metrics(itemCount: 16, settings: settings, pointerOffset: offsets[0])
             for pointer in offsets + offsets.reversed() {
                 let target = DockLayout.metrics(itemCount: 16, settings: settings, pointerOffset: pointer)
-                // Exact reproduction from MAGNIFICATION_HANDOFF.md: 16 icons,
-                // size 36 -> 128. Old targets oscillated by nearly 12 points.
-                XCTAssertEqual(target.originShift, 92, accuracy: 0.000_001)
+                XCTAssertEqual(target.originShift, 177.73034720490398, accuracy: 0.000_001)
                 let length = position.isVertical ? target.panelSize.height : target.panelSize.width
-                XCTAssertEqual(length - baseLength, 184, accuracy: 0.000_001)
-                moving = moving.approaching(target, elapsed: 1.0 / 120)
-                XCTAssertEqual(moving.originShift, 92, accuracy: 0.000_001)
+                XCTAssertEqual(length - baseLength, 355.46069440980796, accuracy: 0.000_001)
             }
         }
     }
 
-    func testEveryIconCenterIsTargetableIncludingEndsAndDivider() {
-        let boundsCases = [DockMagnificationBounds(), DockMagnificationBounds(leading: 0, trailing: 1000),
-                           DockMagnificationBounds(leading: 1000, trailing: 0),
-                           DockMagnificationBounds(leading: 9, trailing: 120),
-                           DockMagnificationBounds(leading: 40, trailing: 17)]
-        for size in [24.0, 36, 72] {
-            let settings = settings(size: size)
-            for count in [1, 2, 3, 16] {
-                let divider = count > 1 ? count / 2 : nil
-                let base = DockLayout.metrics(itemCount: count, settings: settings, separatedRunningStart: divider)
-                for bounds in boundsCases {
-                    let lens = lens(base, settings: settings, bounds: bounds)
-                    for index in base.iconCenters.indices {
-                        let expectedSizes = lens.sizes(at: base.iconCenters[index])
-                        let pointer = lens.screenOffset(at: base.iconCenters[index], sizes: expectedSizes)
-                        let target = DockLayout.metrics(itemCount: count, settings: settings, separatedRunningStart: divider,
-                                                        pointerOffset: pointer, magnificationBounds: bounds)
-                        XCTAssertEqual(presentedCenter(index, target, baseSize: size), pointer, accuracy: 0.000_001)
-                        for (actual, expected) in zip(target.iconSizes, expectedSizes) {
-                            XCTAssertEqual(actual, expected, accuracy: 0.000_001)
-                        }
-                    }
-                }
-            }
+    func testNativeFocusHasNoHistoryOrInverseCorrection() {
+        let settings = settings()
+        let base = DockLayout.metrics(itemCount: 16, settings: settings, documentStart: 8)
+        for pointer in stride(from: base.iconCenters[0], through: base.iconCenters[15], by: 0.5) {
+            let expected = lens(base, settings: settings).geometry(at: pointer)
+            let actual = DockLayout.metrics(itemCount: 16, settings: settings, documentStart: 8,
+                                           pointerOffset: pointer)
+            XCTAssertEqual(actual.iconSizes, expected.sizes)
+            XCTAssertEqual(actual.originShift, expected.originShift)
         }
     }
 
-    func testCenterMappingIsMonotoneAcrossSupportedSizesAndClamps() {
-        let boundsCases = [DockMagnificationBounds(), DockMagnificationBounds(leading: 0, trailing: 1000),
-                           DockMagnificationBounds(leading: 1000, trailing: 0),
-                           DockMagnificationBounds(leading: 8, trailing: 90)]
-        for size in stride(from: 24.0, through: 72.0, by: 4) {
-            let settings = settings(size: size)
-            for count in [2, 3, 16] {
-                for divider in [nil, Optional(1), Optional(count / 2)] {
-                    let base = DockLayout.metrics(itemCount: count, settings: settings, separatedRunningStart: divider)
-                    for bounds in boundsCases {
-                        for available in [15.0, 100.0, Double.infinity] {
-                            let lens = lens(base, settings: settings, bounds: bounds, available: available)
-                            var previous = -Double.infinity
-                            for sample in 0...300 {
-                                let focus = base.iconCenters[0]
-                                    + (base.iconCenters[count - 1] - base.iconCenters[0]) * Double(sample) / 300
-                                let screen = lens.screenOffset(at: focus, sizes: lens.sizes(at: focus))
-                                XCTAssertGreaterThan(screen, previous, "center mapping must not fold at size \(size)")
-                                previous = screen
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    func testInverseRoundTripAndDirectionIndependence() {
-        let settings = settings(size: 24)
-        let base = DockLayout.metrics(itemCount: 16, settings: settings, separatedRunningStart: 8)
-        let bounds = DockMagnificationBounds(leading: 3, trailing: 200)
-        let lens = lens(base, settings: settings, bounds: bounds)
-        let focusOffsets = (0...600).map {
-            base.iconCenters[0] + (base.iconCenters[15] - base.iconCenters[0]) * Double($0) / 600
-        }
-        for focus in focusOffsets + focusOffsets.reversed() {
-            let pointer = lens.screenOffset(at: focus, sizes: lens.sizes(at: focus))
-            XCTAssertEqual(lens.focus(for: pointer), focus, accuracy: 0.000_002)
-        }
-    }
-
-    func testEndExtensionsAreContinuousAndFadeInsteadOfPinningLastIcon() {
-        for count in [1, 16] {
-            let settings = settings(size: 24)
-            let base = DockLayout.metrics(itemCount: count, settings: settings)
-            let lens = lens(base, settings: settings)
-            for (index, direction) in [(0, -1.0), (count - 1, 1.0)] {
-                let focus = base.iconCenters[index]
-                let pointer = lens.screenOffset(at: focus, sizes: lens.sizes(at: focus))
-                let before = DockLayout.metrics(itemCount: count, settings: settings, pointerOffset: pointer - 0.000_01)
-                let after = DockLayout.metrics(itemCount: count, settings: settings, pointerOffset: pointer + 0.000_01)
-                for (left, right) in zip(before.iconSizes, after.iconSizes) {
-                    XCTAssertEqual(left, right, accuracy: 0.000_1)
-                }
-                let outside = pointer + direction * lens.radius * 1.01
-                XCTAssertEqual(DockLayout.metrics(itemCount: count, settings: settings, pointerOffset: outside), base)
-            }
-        }
+    func testResidenceDepthDoesNotCollapseBetweenIcons() {
+        let settings = settings()
+        let base = DockLayout.metrics(itemCount: 16, settings: settings)
+        let centered = DockLayout.metrics(itemCount: 16, settings: settings, pointerOffset: base.iconCenters[6])
+        let between = DockLayout.metrics(itemCount: 16, settings: settings,
+                                         pointerOffset: (base.iconCenters[6] + base.iconCenters[7]) / 2)
+        XCTAssertLessThan(between.panelSize.height, centered.panelSize.height)
+        XCTAssertEqual(between.residenceThickness, centered.residenceThickness)
+        XCTAssertEqual(centered.residenceThickness, 144)
     }
 
     func testClampedScreenGeometryAndFixedCanvasOnEveryEdge() {
@@ -146,7 +125,7 @@ final class DockMagnificationTests: XCTestCase {
             settings.dockPosition = position
             settings.calendarEnabled = true
             settings.weatherEnabled = true
-            for count in [0, 1, 16, 70] {
+            for count in [0, 1, 2, 16, 70] {
                 let length = position.isVertical ? limits.height : limits.width
                 let base = DockLayout.metrics(itemCount: count, settings: settings, maximumLength: length)
                 var baseFrame = CGRect(x: limits.midX - base.scaledPanelSize.width / 2,
@@ -162,17 +141,16 @@ final class DockMagnificationTests: XCTestCase {
                 let bounds = DockPanelGeometry.magnificationBounds(baseFrame: baseFrame, position: position,
                                                                    limits: limits, scale: base.scale)
                 let canvas = DockPanelGeometry.canvasFrame(baseFrame: baseFrame, resting: base, settings: settings, limits: limits)
-                var moving = base
                 let offsets = Array(stride(from: -150.0, through: length / base.scale + 150, by: 7))
-                for pointer in offsets + offsets.reversed() {
+                for (sample, pointer) in (offsets + offsets.reversed()).enumerated() {
+                    let progress = Double(sample % 11) / 10
                     let target = DockLayout.metrics(itemCount: count, settings: settings, maximumLength: length,
-                                                    pointerOffset: pointer, magnificationBounds: bounds)
+                                                    pointerOffset: pointer, magnificationProgress: progress, magnificationBounds: bounds)
                     let targetFrame = DockPanelGeometry.contentFrame(baseFrame: baseFrame, metrics: target, position: position, limits: limits)
                     let actualShift = position.isVertical ? targetFrame.maxY - baseFrame.maxY : baseFrame.minX - targetFrame.minX
                     XCTAssertEqual(actualShift, target.originShift * base.scale, accuracy: 0.000_001,
                                    "post-layout clamping must not shift the hover target")
-                    moving = moving.approaching(target, elapsed: 1.0 / 120)
-                    let frame = DockPanelGeometry.contentFrame(baseFrame: baseFrame, metrics: moving, position: position, limits: limits)
+                    let frame = DockPanelGeometry.contentFrame(baseFrame: baseFrame, metrics: target, position: position, limits: limits)
                     for container in [canvas, limits] {
                         XCTAssertGreaterThanOrEqual(frame.minX, container.minX - 0.001)
                         XCTAssertGreaterThanOrEqual(frame.minY, container.minY - 0.001)
@@ -180,8 +158,8 @@ final class DockMagnificationTests: XCTestCase {
                         XCTAssertLessThanOrEqual(frame.maxY, container.maxY + 0.001)
                     }
                 }
-                for _ in 0..<120 { moving = moving.approaching(base, elapsed: 1.0 / 120) }
-                XCTAssertEqual(moving, base)
+                XCTAssertEqual(DockLayout.metrics(itemCount: count, settings: settings, maximumLength: length,
+                                                  pointerOffset: 100, magnificationProgress: 0, magnificationBounds: bounds), base)
                 let outside = CGPoint(x: canvas.minX + 1, y: canvas.maxY - 1)
                 if !baseFrame.contains(outside) {
                     XCTAssertFalse(DockPanelHitGeometry.contains(outside, panelFrame: baseFrame, position: position))
@@ -204,28 +182,23 @@ final class DockMagnificationTests: XCTestCase {
     func testTimingReversalAndExactIdleSettlement() {
         let settings = settings()
         let base = DockLayout.metrics(itemCount: 16, settings: settings)
-        let left = DockLayout.metrics(itemCount: 16, settings: settings, pointerOffset: base.iconCenters[3] + 9)
-        let right = DockLayout.metrics(itemCount: 16, settings: settings, pointerOffset: base.iconCenters[12] - 7)
-        var moving = left
-        for target in [right, left, right, left] {
-            for _ in 0..<12 {
-                moving = moving.approaching(target, elapsed: 1.0 / 60)
-                XCTAssertEqual(moving.originShift, 92, accuracy: 0.000_001)
-                XCTAssertEqual(moving.panelSize.width, left.panelSize.width, accuracy: 0.000_001)
-            }
-        }
-        var sixtyHz = base
-        var oneTwentyHz = base
-        var twoFortyHz = base
-        for _ in 0..<6 { sixtyHz = sixtyHz.approaching(left, elapsed: 1.0 / 60) }
-        for _ in 0..<12 { oneTwentyHz = oneTwentyHz.approaching(left, elapsed: 1.0 / 120) }
-        for _ in 0..<24 { twoFortyHz = twoFortyHz.approaching(left, elapsed: 1.0 / 240) }
-        for other in [oneTwentyHz, twoFortyHz] {
-            for (a, b) in zip(sixtyHz.iconSizes, other.iconSizes) { XCTAssertEqual(a, b, accuracy: 0.000_001) }
-            XCTAssertEqual(sixtyHz.originShift, other.originShift, accuracy: 0.000_001)
-        }
-        for _ in 0..<60 { moving = moving.approaching(base, elapsed: 1.0 / 60) }
-        XCTAssertEqual(moving, base, "exact equality lets the display link pause")
+        var animation = DockMagnificationAnimation()
+        animation.setActive(true, maximumGrowth: 92)
+        animation.advance(by: 0.08)
+        let midEntry = animation.value
+        animation.setActive(false, maximumGrowth: 92)
+        XCTAssertEqual(animation.value, midEntry)
+        animation.advance(by: 0.03)
+        XCTAssertLessThan(animation.value, midEntry)
+        animation.setActive(true, maximumGrowth: 92)
+        animation.advance(by: 1)
+        XCTAssertEqual(animation.value, 1)
+        animation.setActive(false, maximumGrowth: 92)
+        animation.advance(by: 1)
+        XCTAssertFalse(animation.isAnimating)
+        let settled = DockLayout.metrics(itemCount: 16, settings: settings, pointerOffset: base.iconCenters[6],
+                                         magnificationProgress: animation.value)
+        XCTAssertEqual(settled, base)
     }
 
     func testNoMagnificationForDisabledEmptyOrNoRoom() {
@@ -243,11 +216,32 @@ final class DockMagnificationTests: XCTestCase {
         XCTAssertEqual(DockLayout.metrics(itemCount: 16, settings: settings, pointerOffset: 300), base)
         let empty = DockLayout.metrics(itemCount: 0, settings: settings)
         XCTAssertEqual(DockLayout.metrics(itemCount: 0, settings: settings, pointerOffset: 300), empty)
+    }
+
+    func testCrowdedDockReservesMagnificationWithoutChangingScaleDuringTracking() {
         for position in DockPosition.allCases {
+            var settings = settings()
             settings.dockPosition = position
-            settings.magnificationSize = 128
-            let crowded = DockLayout.metrics(itemCount: 70, settings: settings, maximumLength: 760)
-            XCTAssertEqual(DockLayout.metrics(itemCount: 70, settings: settings, maximumLength: 760, pointerOffset: 300), crowded)
+            settings.calendarEnabled = true
+            settings.weatherEnabled = true
+            for count in [32, 70] {
+                let limit = position.isVertical ? 760.0 : 1280.0
+                let base = DockLayout.metrics(itemCount: count, settings: settings, documentStart: count - 2,
+                                             runningSectionStart: count - 3, maximumLength: limit)
+                let length = position.isVertical ? base.scaledPanelSize.height : base.scaledPanelSize.width
+                XCTAssertLessThan(length, limit)
+                XCTAssertLessThan(base.scale, 1)
+                for index in [0, count / 2, count - 1] {
+                    let hovered = DockLayout.metrics(itemCount: count, settings: settings, documentStart: count - 2,
+                                                     runningSectionStart: count - 3, maximumLength: limit,
+                                                     pointerOffset: base.iconCenters[index])
+                    XCTAssertEqual(hovered.iconSizes[index], settings.magnificationSize, accuracy: 1e-6)
+                    XCTAssertEqual(hovered.scale, base.scale)
+                    let expandedLength = position.isVertical ? hovered.scaledPanelSize.height : hovered.scaledPanelSize.width
+                    XCTAssertLessThanOrEqual(expandedLength, limit + 1e-6)
+                    XCTAssertGreaterThan(expandedLength, length)
+                }
+            }
         }
     }
 
@@ -257,12 +251,12 @@ final class DockMagnificationTests: XCTestCase {
             settings.dockPosition = position
             settings.calendarEnabled = true
             settings.weatherEnabled = true
-            let base = DockLayout.metrics(itemCount: 7, settings: settings)
-            let target = DockLayout.metrics(itemCount: 7, settings: settings, pointerOffset: base.iconCenters[3])
-            XCTAssertEqual(target.iconSizes[3], 128)
+            let base = DockLayout.metrics(itemCount: 9, settings: settings)
+            let target = DockLayout.metrics(itemCount: 9, settings: settings, pointerOffset: base.iconCenters[4])
+            XCTAssertEqual(target.iconSizes[4], 128, accuracy: 0.000_001)
             XCTAssertEqual(target.iconSizes[0], settings.iconSize)
-            XCTAssertEqual(target.iconSizes[6], settings.iconSize)
-            XCTAssertEqual(target.iconSizes[2], target.iconSizes[4], accuracy: 0.000_001)
+            XCTAssertEqual(target.iconSizes[8], settings.iconSize)
+            XCTAssertEqual(target.iconSizes[3], target.iconSizes[5], accuracy: 0.000_001)
             XCTAssertEqual(position.isVertical ? base.surfaceSize.width : base.surfaceSize.height,
                            position.isVertical ? target.surfaceSize.width : target.surfaceSize.height)
         }

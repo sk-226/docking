@@ -21,8 +21,15 @@ public final class DockingAppModel: ObservableObject {
 
     @Published var dockItems: [DockItem] {
         didSet {
-            appListStore.save(dockItems)
-            applySettingsToWindows()
+            let ordered = DockItemOrdering.normalized(dockItems)
+            if ordered != dockItems { dockItems = ordered }
+            guard oldValue != dockItems else { return }
+            if dockItemsBeforeDrag == nil {
+                appListStore.save(dockItems)
+                applySettingsToWindows()
+            } else if oldValue.count != dockItems.count {
+                dockPanelController.applySettings(model: self)
+            }
         }
     }
 
@@ -99,6 +106,11 @@ public final class DockingAppModel: ObservableObject {
     // dock region, returning control to the normal auto-hide lifecycle.
     private var holdsDockAfterExplicitShow = false
     private var isDockContextMenuVisible = false
+    @Published private(set) var draggedDockItem: DockItem?
+    private var dockItemsBeforeDrag: [DockItem]?
+    private var isExternalDockDrag = false
+    private var dockFrameBeforeDrag = CGRect.zero
+    private var launchingItemsByPID: [pid_t: UUID] = [:]
     private var dockReentryGate = AutoHideDockReentryGate()
     private static let settingsSaveDelayNanoseconds: UInt64 = 350_000_000
     private static let terminationObservationDelayNanoseconds: UInt64 = 750_000_000
@@ -137,12 +149,16 @@ public final class DockingAppModel: ObservableObject {
         )
     }
 
-    var visibleAppItemCount: Int {
-        dockItems.count + unpinnedRunningItems.count
+    var visibleDockItems: [DockItem] {
+        DockItemOrdering.visibleItems(pinned: dockItems, running: runningAppItems, visibility: settings.unpinnedRunningAppVisibility)
     }
 
-    var hasSeparatedRunningItems: Bool {
-        !unpinnedRunningItems.isEmpty
+    var runningSectionStart: Int? {
+        unpinnedRunningItems.isEmpty ? nil : displayDockItems.filter(\.isApplication).count
+    }
+
+    var documentStart: Int? {
+        DockItemOrdering.documentStart(in: visibleDockItems)
     }
 
     private var isDockAnchoredPanelVisible: Bool {
@@ -190,7 +206,7 @@ public final class DockingAppModel: ObservableObject {
         self.settingsStore = settingsStore
         self.appListStore = appListStore
         self.settings = settingsStore.load()
-        self.dockItems = appListStore.load()
+        self.dockItems = DockItemOrdering.normalized(appListStore.load())
         // The widget view models are MainActor-bound because they publish
         // SwiftUI state. Creating the defaults inside the initializer, instead
         // of as default argument expressions, keeps Swift's concurrency model
@@ -232,17 +248,26 @@ public final class DockingAppModel: ObservableObject {
             self.activeBundleID = snapshot.activeBundleID
             self.activeProcessIdentifier = snapshot.activeProcessIdentifier
         }
+        runningObserver.onLaunchStateChange = { [weak self] application, launching in
+            guard let self else { return }
+            if !launching {
+                if let itemID = self.launchingItemsByPID.removeValue(forKey: application.processIdentifier) {
+                    self.dockPanelController.finishLaunchAnimation(for: itemID)
+                }
+                return
+            }
+            guard let itemID = DockLaunchTarget.itemID(for: RunningApplicationSnapshot(application: application),
+                                                       candidates: self.displayDockItems + self.unpinnedRunningItems) else { return }
+            self.launchingItemsByPID[application.processIdentifier] = itemID
+            self.dockPanelController.startLaunchAnimation(for: itemID)
+        }
         runningObserver.start()
         dockContextMenuTracker.start(
             onOpen: { [weak self] in
-                Task { @MainActor in
-                    self?.dockContextMenuOpened()
-                }
+                MainActor.assumeIsolated { self?.dockContextMenuOpened() }
             },
             onClose: { [weak self] in
-                Task { @MainActor in
-                    self?.dockContextMenuClosed()
-                }
+                MainActor.assumeIsolated { self?.dockContextMenuClosed() }
             }
         )
         installEnvironmentObservers()
@@ -306,7 +331,7 @@ public final class DockingAppModel: ObservableObject {
             dockVisibility: settings.dockVisibility,
             pointerIsInsideDock: pointerIsInsideDock
         )
-        dockPanelController.show(model: self)
+        dockPanelController.cancelScheduledAutoHide()
     }
 
     func pointerExitedDock() {
@@ -329,6 +354,7 @@ public final class DockingAppModel: ObservableObject {
             return
         }
         isDockContextMenuVisible = true
+        dockPanelController.setMenuTracking(true)
         dockReentryGate.reset()
         dockPanelController.cancelScheduledAutoHide()
     }
@@ -338,6 +364,7 @@ public final class DockingAppModel: ObservableObject {
             return
         }
         isDockContextMenuVisible = false
+        dockPanelController.setMenuTracking(false)
         scheduleAutoHideIfNeeded(pointerLocation: NSEvent.mouseLocation)
     }
 
@@ -352,6 +379,8 @@ public final class DockingAppModel: ObservableObject {
         guard settings.dockVisibility == .autoHide,
               dockPanelController.isVisible,
               !holdsDockAfterExplicitShow,
+              draggedDockItem == nil,
+              !isExternalDockDrag,
               !isDockOwnedSurfaceVisible else {
             return false
         }
@@ -378,7 +407,19 @@ public final class DockingAppModel: ObservableObject {
         iconCache.icon(for: item)
     }
 
-    func launch(_ item: DockItem) {
+    func performPrimaryClick(_ item: DockItem, modifiers: NSEvent.ModifierFlags) {
+        switch DockPrimaryClickAction.resolve(isApplication: item.isApplication, modifiers: modifiers) {
+        case .showInFinder: showInFinder(item)
+        case .openHidingOthers: launch(item, hidingOthers: true)
+        case .toggleApplication:
+            if !appLauncherService.hideIfActive(item) { launch(item) }
+        case .open:
+            if item.isFolder { toggleFolderStack(item) }
+            else { launch(item) }
+        }
+    }
+
+    func launch(_ item: DockItem, hidingOthers: Bool = false) {
         guard !isTerminationPending(item) else {
             // Quit is asynchronous and some resident apps briefly relaunch or
             // keep helper-driven state alive after accepting the request. A
@@ -392,7 +433,10 @@ public final class DockingAppModel: ObservableObject {
             return
         }
 
-        appLauncherService.open(item)
+        if item.isApplication && !isRunning(item) { dockPanelController.startLaunchAnimation(for: item.id) }
+        appLauncherService.open(item, hidingOthers: hidingOthers) { [weak self] _ in
+            self?.dockPanelController.finishLaunchAnimation(for: item.id)
+        }
     }
 
     func isRunning(_ item: DockItem) -> Bool {
@@ -455,6 +499,10 @@ public final class DockingAppModel: ObservableObject {
 
     func showAllWindows(_ item: DockItem) {
         appLauncherService.showAllWindows(item)
+    }
+
+    func isHidden(_ item: DockItem) -> Bool {
+        appLauncherService.isHidden(item)
     }
 
     func hideApplication(_ item: DockItem) {
@@ -619,6 +667,52 @@ public final class DockingAppModel: ObservableObject {
         insertDockItemIfNeeded(item, before: target)
     }
 
+    func externalDockDragTarget(at point: CGPoint, insertingApplication: Bool) -> DockDropTarget? {
+        isExternalDockDrag = true
+        dockPanelController.cancelScheduledAutoHide()
+        dockPanelController.trackDrag(at: point)
+        guard dockPanelController.containsPointer(at: point) else { return nil }
+        return DockDropTarget.resolve(at: point, insertingApplication: insertingApplication, items: visibleDockItems,
+                                      frames: dockPanelController.itemFrames(for: visibleDockItems), position: settings.dockPosition)
+    }
+
+    func endExternalDockDrag() {
+        isExternalDockDrag = false
+        scheduleAutoHideIfNeeded(pointerLocation: NSEvent.mouseLocation)
+    }
+
+    func performExternalDockDrop(_ urls: [URL], target: DockDropTarget) {
+        switch target {
+        case let .insert(before: id):
+            var identities = Set(dockItems.map(\.identityKey))
+            let additions = urls.compactMap { AppCatalogService.dockItemIfSupported(for: $0) }
+                .filter { identities.insert($0.identityKey).inserted }
+            guard !additions.isEmpty else { return }
+            let index = dockItems.firstIndex { $0.id == id } ?? dockItems.endIndex
+            dockItems.insert(contentsOf: additions, at: index)
+        case let .openApplication(id), let .folder(id):
+            guard let item = visibleDockItems.first(where: { $0.id == id }) else { return }
+            for url in urls { dropFile(url, onto: item) }
+        }
+    }
+
+    func externalDockDropFeedback(_ target: DockDropTarget) -> CGRect? {
+        let items = visibleDockItems
+        let frames = dockPanelController.itemFrames(for: items)
+        switch target {
+        case let .openApplication(id), let .folder(id): return frames[id]
+        case let .insert(before: id):
+            let vertical = settings.dockPosition.isVertical
+            if let id, let frame = frames[id] {
+                return vertical ? CGRect(x: frame.minX, y: frame.maxY + 1, width: frame.width, height: 2)
+                    : CGRect(x: frame.minX - 3, y: frame.minY, width: 2, height: frame.height)
+            }
+            guard let last = items.last, let frame = frames[last.id] else { return nil }
+            return vertical ? CGRect(x: frame.minX, y: frame.minY - 3, width: frame.width, height: 2)
+                : CGRect(x: frame.maxX + 1, y: frame.minY, width: 2, height: frame.height)
+        }
+    }
+
     func dropFile(_ url: URL, onto item: DockItem) {
         if item.isFolder {
             dropFile(url, ontoFolder: item)
@@ -629,19 +723,7 @@ public final class DockingAppModel: ObservableObject {
             return
         }
 
-        if AppCatalogService.dockItemIfSupported(for: url) != nil {
-            // A dragged app bundle or directory is still a Docking item being
-            // placed near another item. Treating every file URL on an app icon
-            // as an app input would make adding folders/apps by drag feel
-            // unpredictable and would diverge from the existing Docking model.
-            addDockItem(fromDroppedURL: url, before: item)
-        } else {
-            // Ordinary documents dropped onto an app icon follow the macOS Dock
-            // contract: open this document with that app. This path is separate
-            // from `addDockItem` because Docking intentionally does not keep
-            // arbitrary documents as permanent dock items yet.
-            appLauncherService.openFile(url, with: item)
-        }
+        appLauncherService.openFile(url, with: item)
     }
 
     func dropFile(_ url: URL, ontoFolder item: DockItem) {
@@ -660,7 +742,46 @@ public final class DockingAppModel: ObservableObject {
         }
     }
 
+    func beginDockItemDrag(_ item: DockItem) -> CGRect? {
+        guard item.bundleIdentifier != "com.apple.finder", let frame = dockPanelController.frame else { return nil }
+        draggedDockItem = item
+        dockItemsBeforeDrag = dockItems
+        dockFrameBeforeDrag = frame
+        dockPanelController.setItemDragging(true)
+        dockPanelController.cancelScheduledAutoHide()
+        return frame
+    }
+
+    @discardableResult
+    func updateDockItemDrag(at point: CGPoint) -> Bool {
+        guard let item = draggedDockItem, dockItemsBeforeDrag != nil else { return false }
+        dockPanelController.trackDrag(at: point)
+        guard let frame = dockPanelController.frame, dockFrameBeforeDrag.union(frame).contains(point) else { return false }
+        let frames = dockPanelController.itemFrames(for: visibleDockItems)
+        let reordered = DockDragReordering.items(dockItems, moving: item, to: point,
+                                                frames: frames, position: settings.dockPosition)
+        if dockItems != reordered {
+            withAnimation(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil : .easeInOut(duration: 0.27)) {
+                dockItems = reordered
+            }
+        }
+        return true
+    }
+
+    func endDockItemDrag(remove shouldRemove: Bool, canceled: Bool) {
+        let original = dockItemsBeforeDrag
+        if canceled, let original { dockItems = original }
+        else if shouldRemove, let item = draggedDockItem { remove(item) }
+        draggedDockItem = nil
+        dockItemsBeforeDrag = nil
+        if let original, original != dockItems { appListStore.save(dockItems) }
+        applySettingsToWindows()
+        dockPanelController.setItemDragging(false)
+        scheduleAutoHideIfNeeded(pointerLocation: NSEvent.mouseLocation)
+    }
+
     func remove(_ item: DockItem) {
+        guard item.bundleIdentifier != "com.apple.finder" else { return }
         if item.isFolder {
             folderStackPanelController.close()
         }
@@ -681,11 +802,15 @@ public final class DockingAppModel: ObservableObject {
     }
 
     func moveDockItem(from source: IndexSet, to destination: Int) {
-        dockItems.move(fromOffsets: source, toOffset: destination)
+        guard source.allSatisfy({ dockItems.indices.contains($0) && dockItems[$0].bundleIdentifier != "com.apple.finder" }) else { return }
+        var items = dockItems
+        items.move(fromOffsets: source, toOffset: destination)
+        dockItems = items
     }
 
     func moveDockItem(_ item: DockItem, by offset: Int) {
-        guard let sourceIndex = dockItems.firstIndex(where: { $0.id == item.id }) else {
+        guard item.bundleIdentifier != "com.apple.finder",
+              let sourceIndex = dockItems.firstIndex(where: { $0.id == item.id }) else {
             return
         }
 
@@ -699,20 +824,24 @@ public final class DockingAppModel: ObservableObject {
         // API uses insertion indexes after removal, which is easy to misuse from
         // per-row buttons and would make a one-step move skip rows. Direct
         // remove/insert preserves the user's visible row order exactly.
-        let moved = dockItems.remove(at: sourceIndex)
-        dockItems.insert(moved, at: destinationIndex)
+        var items = dockItems
+        let moved = items.remove(at: sourceIndex)
+        items.insert(moved, at: destinationIndex)
+        dockItems = items
     }
 
     func moveDockItem(_ item: DockItem, before target: DockItem) {
-        guard item.id != target.id,
+        guard item.bundleIdentifier != "com.apple.finder", item.id != target.id,
               let from = dockItems.firstIndex(where: { $0.id == item.id }),
               let to = dockItems.firstIndex(where: { $0.id == target.id }) else {
             return
         }
 
-        let moved = dockItems.remove(at: from)
+        var items = dockItems
+        let moved = items.remove(at: from)
         let adjustedIndex = from < to ? to - 1 : to
-        dockItems.insert(moved, at: adjustedIndex)
+        items.insert(moved, at: adjustedIndex)
+        dockItems = items
     }
 
     func resetAppList() {
@@ -876,10 +1005,12 @@ public final class DockingAppModel: ObservableObject {
         // of @Published storage avoids re-rendering the dock every time AppKit
         // reports the same widget position during layout.
         widgetFrames[kind] = frame
+        widgetDetailPanelController.updateAnchorFrame(frame, kind: kind)
     }
 
     func updateDockItemFrame(itemID: UUID, frame: NSRect) {
         dockItemFrames[itemID] = frame
+        folderStackPanelController.updateAnchorFrame(frame, itemID: itemID)
     }
 
     public func openControlCenterWindow() {
@@ -1137,7 +1268,7 @@ public final class DockingAppModel: ObservableObject {
             let pointerInsideVisibleDock = dockPanelController.containsPointer(at: NSEvent.mouseLocation)
             isPointerInsideDock = pointerInsideVisibleDock
             if !pointerInsideVisibleDock && !holdsDockAfterExplicitShow && !isDockOwnedSurfaceVisible {
-                dockPanelController.hide()
+                dockPanelController.scheduleAutoHide(model: self)
             }
         case .alwaysVisible:
             dockReentryGate.reset()

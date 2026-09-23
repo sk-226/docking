@@ -3,6 +3,7 @@ import Foundation
 enum DockItemKind: String, Codable, Equatable {
     case application
     case folder
+    case document
 
     var label: String {
         switch self {
@@ -10,6 +11,8 @@ enum DockItemKind: String, Codable, Equatable {
             return "Application"
         case .folder:
             return "Folder"
+        case .document:
+            return "Document"
         }
     }
 }
@@ -206,6 +209,8 @@ struct DockItem: Identifiable, Codable, Equatable {
             return bundleIdentifier ?? url?.path ?? "Application"
         case .folder:
             return url?.path ?? "Folder"
+        case .document:
+            return url?.path ?? "Document"
         }
     }
 }
@@ -576,7 +581,7 @@ struct DockingSettings: Codable, Equatable {
         unpinnedRunningAppVisibility: .separated,
         keepAboveOtherWindows: true,
         dockAutoHideResponsePreset: .standard,
-        autoHideDelay: 0.7,
+        autoHideDelay: 0,
         showOnAllSpaces: true,
         showOnFullScreenSpaces: true,
         displayMode: .automatic,
@@ -694,7 +699,7 @@ extension DockingSettings {
 }
 
 enum DockingSettingLimits {
-    static let autoHideDelay: ClosedRange<Double> = 0.05...2.0
+    static let autoHideDelay: ClosedRange<Double> = 0...2.0
     static let autoHideDelayStep = 0.05
     static let iconSize: ClosedRange<Double> = 24...72
     static let widgetScale: ClosedRange<Double> = 0.75...1.5

@@ -3,33 +3,16 @@ import Foundation
 struct DockLayoutMetrics: Equatable {
     var iconSizes: [Double]
     var iconCenters: [Double]
+    var iconLeadingInsets: [Double]
     var panelSize: CGSize
     var surfaceSize: CGSize
     var scale: Double
     var originShift: Double
     var padding: Double
+    var residenceThickness: Double = 0
 
     var scaledPanelSize: CGSize {
         CGSize(width: panelSize.width * scale, height: panelSize.height * scale)
-    }
-
-    func approaching(_ target: DockLayoutMetrics, elapsed: TimeInterval) -> DockLayoutMetrics {
-        guard iconSizes.count == target.iconSizes.count else { return target }
-        let distance = max(zip(iconSizes, target.iconSizes).map { abs($0 - $1) }.max() ?? 0,
-                           abs(originShift - target.originShift))
-        guard distance > 0.01 else { return target }
-        let progress = 1 - exp(-max(0, elapsed) / 0.035)
-        func blend(_ current: Double, _ next: Double) -> Double {
-            current + (next - current) * progress
-        }
-        var result = target
-        result.iconSizes = zip(iconSizes, target.iconSizes).map(blend)
-        result.originShift = blend(originShift, target.originShift)
-        result.panelSize = CGSize(width: blend(panelSize.width, target.panelSize.width),
-                                  height: blend(panelSize.height, target.panelSize.height))
-        result.surfaceSize = CGSize(width: blend(surfaceSize.width, target.surfaceSize.width),
-                                    height: blend(surfaceSize.height, target.surfaceSize.height))
-        return result
     }
 }
 
@@ -40,8 +23,8 @@ struct DockMagnificationBounds {
     var leading: Double = .infinity
     var trailing: Double = .infinity
 
-    func originShift(for growth: Double) -> Double {
-        min(max(growth / 2, growth - max(0, trailing)), max(0, leading))
+    func originShift(for growth: Double, preferred: Double) -> Double {
+        min(max(preferred, growth - max(0, trailing)), max(0, leading))
     }
 }
 
@@ -50,40 +33,42 @@ enum DockLayout {
     static let indicatorSpace = 6.0
     static let edgeInset = 6.0
 
-    static func panelSize(itemCount: Int, settings: DockingSettings, hasSeparatedRunningItems: Bool = false) -> CGSize {
-        metrics(itemCount: itemCount, settings: settings, separatedRunningStart: hasSeparatedRunningItems ? itemCount : nil).panelSize
+    static func panelSize(itemCount: Int, settings: DockingSettings, hasDocuments: Bool = false) -> CGSize {
+        metrics(itemCount: itemCount, settings: settings, documentStart: hasDocuments ? itemCount : nil).panelSize
     }
 
     static func shortAxisSize(settings: DockingSettings) -> Double {
         settings.effectiveDockThickness
     }
 
-    static func dividerCount(itemCount: Int, widgetCount: Int, hasSeparatedRunningItems: Bool) -> Int {
-        (hasSeparatedRunningItems ? 1 : 0) + (widgetCount > 0 && itemCount > 0 ? 1 : 0)
-    }
-
     static func metrics(
         itemCount: Int,
         settings: DockingSettings,
-        separatedRunningStart: Int? = nil,
+        documentStart: Int? = nil,
+        runningSectionStart: Int? = nil,
         maximumLength: Double = .infinity,
         pointerOffset: Double? = nil,
+        magnificationProgress: Double = 1,
         magnificationBounds: DockMagnificationBounds = DockMagnificationBounds()
     ) -> DockLayoutMetrics {
         let baseSize = settings.iconSize
         let padding = max(6, baseSize * 0.16)
         let vertical = settings.dockPosition.isVertical
         let widgets = settings.enabledWidgetWidths
-        let dividers = dividerCount(itemCount: itemCount, widgetCount: widgets.count, hasSeparatedRunningItems: separatedRunningStart != nil)
+        let sectionStarts = Set([documentStart, runningSectionStart].compactMap { $0 })
+        let dividers = sectionStarts.count + (widgets.isEmpty || itemCount == 0 ? 0 : 1)
         let spacing = settings.spacing
         let widgetLength = vertical ? Double(widgets.count) * settings.widgetTileHeight : widgets.reduce(0, +)
         let gapCount = itemCount + widgets.count + dividers
         let baseLength = Double(itemCount) * baseSize + widgetLength + addButtonSize + Double(dividers) + Double(gapCount) * spacing + padding * 2
-        let scale = min(1, maximumLength / baseLength)
+        let maximumGrowth = max(0, settings.magnificationSize - baseSize)
+        let reservedGrowth = settings.magnificationEnabled && itemCount > 0
+            ? DockMagnificationLens.maximumExpansion(for: maximumGrowth) : 0
+        let scale = min(1, maximumLength / (baseLength + reservedGrowth))
         var centers: [Double] = []
         var cursor = padding
         for index in 0..<itemCount {
-            if index == separatedRunningStart { cursor += 1 + spacing }
+            if sectionStarts.contains(index) { cursor += 1 + spacing }
             centers.append(cursor + baseSize / 2)
             cursor += baseSize + spacing
         }
@@ -91,105 +76,94 @@ enum DockLayout {
         let availableGrowth = max(0, min(maximumLength / scale - baseLength,
                                         max(0, magnificationBounds.leading) + max(0, magnificationBounds.trailing)))
         let lens = DockMagnificationLens(centers: centers, baseSize: baseSize,
-                                         radius: (baseSize + spacing) * 2,
-                                         maximumGrowth: max(0, settings.magnificationSize - baseSize),
-                                         availableGrowth: availableGrowth, bounds: magnificationBounds)
-        let sizes: [Double]
+                                         maximumGrowth: maximumGrowth,
+                                         availableGrowth: availableGrowth, bounds: magnificationBounds,
+                                         progress: magnificationProgress, focusBounds: padding...(baseLength - padding))
+        let geometry: DockMagnificationLens.Geometry
         if settings.magnificationEnabled, let pointerOffset, pointerOffset.isFinite,
-           !centers.isEmpty, availableGrowth > 0, lens.maximumGrowth > 0 {
-            // pointerOffset is measured from the *resting frame on screen*, not
-            // from animated content. Solve against target geometry only: feeding
-            // presentation geometry back into this mapping creates hover jitter.
-            sizes = lens.sizes(at: lens.focus(for: pointerOffset))
+           !centers.isEmpty, availableGrowth > 0, lens.maximumGrowth > 0, magnificationProgress > 0 {
+            geometry = lens.geometry(at: lens.focus(for: pointerOffset))
         } else {
-            sizes = Array(repeating: baseSize, count: itemCount)
+            geometry = .init(sizes: Array(repeating: baseSize, count: itemCount),
+                             leadingInsets: Array(repeating: 0, count: itemCount), growth: 0, originShift: 0, currentGrowth: 0)
         }
-        let growth = sizes.reduce(0) { $0 + $1 - baseSize }
+        let sizes = geometry.sizes
+        let growth = geometry.growth
         let length = baseLength + growth
         let thickness = settings.effectiveDockThickness
         let expandedThickness = max(thickness, (sizes.max() ?? baseSize) + edgeInset * 2)
         return DockLayoutMetrics(
             iconSizes: sizes,
             iconCenters: centers,
+            iconLeadingInsets: geometry.leadingInsets,
             panelSize: CGSize(width: vertical ? expandedThickness : length, height: vertical ? length : expandedThickness),
             surfaceSize: CGSize(width: vertical ? thickness : length, height: vertical ? length : thickness),
             scale: scale,
-            originShift: magnificationBounds.originShift(for: growth),
-            padding: padding
+            originShift: geometry.originShift,
+            padding: padding,
+            residenceThickness: max(thickness, baseSize + edgeInset + geometry.currentGrowth) + 10
         )
     }
 }
 
-// A center-to-center mapping avoids the discontinuous slope of the old
-// per-icon growth fractions (which can even reverse direction at high zoom).
-// This is a geometric model, not a claim to reproduce Apple's private curve.
 struct DockMagnificationLens {
+    struct Geometry {
+        let sizes: [Double]
+        let leadingInsets: [Double]
+        let growth: Double
+        let originShift: Double
+        let currentGrowth: Double
+    }
+
+    // Dock-2427.6 の定数ビット列．出典と精度の範囲は NATIVE_MAGNIFICATION.md を参照．
+    static let nativePi = Double(Float(bitPattern: 0x40490fdb))
+
     let centers: [Double]
     let baseSize: Double
-    let radius: Double
     let maximumGrowth: Double
     let availableGrowth: Double
     let bounds: DockMagnificationBounds
+    var progress: Double = 1
+    var focusBounds: ClosedRange<Double>?
 
-    func sizes(at focus: Double) -> [Double] {
-        var sizes = centers.map { center in
-            let distance = abs(center - focus) / radius
-            guard distance < 1 else { return baseSize }
-            return baseSize + maximumGrowth * (cos(distance * .pi) + 1) / 2
-        }
-        let growth = sizes.reduce(0) { $0 + $1 - baseSize }
-        if growth > availableGrowth {
-            sizes = sizes.map { baseSize + ($0 - baseSize) * availableGrowth / growth }
-        }
-        return sizes
+    var radius: Double { baseSize * 3 }
+
+    static func maximumExpansion(for growth: Double) -> Double {
+        growth / sin(nativePi / 12)
     }
 
-    // Map a focus between resting icon centers to the same fractional position
-    // between their enlarged centers, after centering and screen-edge clamping.
-    func screenOffset(at focus: Double, sizes: [Double]) -> Double {
-        let growth = sizes.reduce(0) { $0 + $1 - baseSize }
-        var precedingGrowth = 0.0
-        var previousCenter: Double?
-        for index in centers.indices {
-            let delta = sizes[index] - baseSize
-            let center = centers[index] + precedingGrowth + delta / 2 - bounds.originShift(for: growth)
-            if focus <= centers[index] {
-                guard index > 0, let previousCenter else { return center }
-                let fraction = (focus - centers[index - 1]) / (centers[index] - centers[index - 1])
-                return previousCenter + (center - previousCenter) * fraction
-            }
-            precedingGrowth += delta
-            previousCenter = center
+    func geometry(at focus: Double) -> Geometry {
+        guard let first = centers.first, let last = centers.last else {
+            return Geometry(sizes: [], leadingInsets: [], growth: 0, originShift: 0, currentGrowth: 0)
         }
-        return previousCenter ?? focus
+        let amplitude = Self.maximumExpansion(for: maximumGrowth) / 2
+        func displacement(_ coordinate: Double) -> Double {
+            let distance = coordinate - focus
+            if distance <= -radius { return -amplitude }
+            if distance >= radius { return amplitude }
+            return amplitude * sin(Self.nativePi * distance / (2 * radius))
+        }
+        let fullGrowth = displacement(last + baseSize / 2) - displacement(first - baseSize / 2)
+        let fraction = min(1, max(0, progress)) * (fullGrowth > 0 ? min(1, availableGrowth / fullGrowth) : 0)
+        var sizes: [Double] = []
+        var insets: [Double] = []
+        var previousEnd = displacement(first - baseSize / 2)
+        for center in centers {
+            let start = displacement(center - baseSize / 2)
+            let end = displacement(center + baseSize / 2)
+            sizes.append(baseSize + (end - start) * fraction)
+            insets.append((start - previousEnd) * fraction)
+            previousEnd = end
+        }
+        let growth = fullGrowth * fraction
+        let originShift = bounds.originShift(for: growth, preferred: -displacement(first - baseSize / 2) * fraction)
+        return Geometry(sizes: sizes, leadingInsets: insets, growth: growth, originShift: originShift,
+                        currentGrowth: maximumGrowth * fraction)
     }
 
     func focus(for pointer: Double) -> Double {
         guard let first = centers.first, let last = centers.last else { return pointer }
-        let firstSizes = sizes(at: first)
-        let firstScreen = screenOffset(at: first, sizes: firstSizes)
-        if pointer <= firstScreen {
-            // Beyond the end centers, preserve the cosine's two-pitch falloff
-            // in pointer coordinates. Clamping focus would pin the end icon;
-            // inverting the moving off-end geometry can fold the mapping.
-            return first + (pointer - firstScreen)
-        }
-        let lastSizes = sizes(at: last)
-        let lastScreen = screenOffset(at: last, sizes: lastSizes)
-        if pointer >= lastScreen {
-            return last + (pointer - lastScreen)
-        }
-
-        // Bounded, deterministic solve over icon centers. No state from the
-        // previous frame, Newton overshoot, or pointer-direction dependence.
-        var lower = first
-        var upper = last
-        for _ in 0..<32 {
-            let focus = (lower + upper) / 2
-            let offset = screenOffset(at: focus, sizes: sizes(at: focus))
-            if abs(offset - pointer) < 0.000_000_1 { return focus }
-            if offset < pointer { lower = focus } else { upper = focus }
-        }
-        return (lower + upper) / 2
+        let range = focusBounds ?? (first - baseSize / 2)...(last + baseSize / 2)
+        return min(max(pointer, range.lowerBound), range.upperBound)
     }
 }

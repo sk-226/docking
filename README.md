@@ -7,7 +7,7 @@
 Docking is a native macOS overlay dock built with SwiftUI and a small AppKit
 windowing layer.
 
-It provides a configurable dock panel, app and folder items, calendar/weather
+It provides a configurable dock panel, app, file and folder items, calendar/weather
 widgets, and a Control Center for settings.
 
 Docking was built for desktops where the menu bar is already crowded: frequently

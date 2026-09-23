@@ -22,8 +22,14 @@ not interacting with the dock.
 
 - Running apps are observed with `NSWorkspace` launch, terminate, and activate
   notifications. The app does one initial scan and then reacts to system events.
-- App icons are cached by bundle identifier or app path. SwiftUI body refreshes
-  reuse decoded `NSImage` instances instead of decoding icons every frame.
+- App icons are cached by bundle identifier or app path. The AppKit interaction
+  view retains each icon's decoded layer contents across magnification frames.
+  It renders the configured maximum icon size at the window's backing scale,
+  rebuilding only when the source image changes or more pixels are needed.
+  Resizing updates geometry rather than rebuilding a SwiftUI image hierarchy.
+  Screen-frame reports include window movement and are coalesced per view per
+  run-loop. Open folder/widget panels receive the current source frame for
+  outside-click detection, without publishing additional SwiftUI state.
 - Edge summoning uses local/global mouse monitors and click-through panels for
   target geometry and Space membership. No tracking view intercepts input. A
   deliberate outward push arms one reveal delay; clicks, drags, scrolling and
@@ -53,7 +59,9 @@ not interacting with the dock.
   on machines where users have opted out of animation.
 - The Dock surface uses native SwiftUI Liquid Glass, with a system material
   when Reduce Transparency is enabled.
-- Magnification uses a display link only while geometry is changing. The link
+- Magnification uses a display link while geometry changes and for 100 ms after
+  the latest pointer change. The brief input grace period avoids restarting the
+  link on every pointer event; unchanged input performs no layout work. The link
   pauses when settled, and the window reserves expansion space so pointer
   movement does not resize its backing surface. Transparent space outside the
   visible Dock passes mouse events through.
