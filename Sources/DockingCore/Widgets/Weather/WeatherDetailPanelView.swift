@@ -2,6 +2,7 @@ import SwiftUI
 
 struct WeatherDetailPanelView: View {
     @EnvironmentObject private var model: DockingAppModel
+    @ObservedObject var viewModel: WeatherWidgetViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -15,7 +16,7 @@ struct WeatherDetailPanelView: View {
                 }
                 Spacer()
                 Button {
-                    Task { await model.weatherViewModel.refresh(settings: model.settings, force: true) }
+                    Task { await viewModel.refresh(settings: model.settings, force: true) }
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
@@ -31,12 +32,12 @@ struct WeatherDetailPanelView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .dockingSurface(settings: model.settings, cornerRadius: 18)
         .task {
-            await model.weatherViewModel.refreshIfNeeded(settings: model.settings)
+            await viewModel.refreshIfNeeded(settings: model.settings)
         }
     }
 
     private var statusText: String {
-        switch model.weatherViewModel.state {
+        switch viewModel.state {
         case .stale:
             return compactStatus(prefix: "Cached") ?? "Cached"
         case .manualLocationNotSet:
@@ -51,7 +52,7 @@ struct WeatherDetailPanelView: View {
     }
 
     private var locationTitle: String {
-        guard let snapshot = model.weatherViewModel.snapshot else {
+        guard let snapshot = viewModel.snapshot else {
             return "Weather"
         }
 
@@ -66,7 +67,7 @@ struct WeatherDetailPanelView: View {
     }
 
     private func compactStatus(prefix: String) -> String? {
-        guard let fetchedAt = model.weatherViewModel.snapshot?.fetchedAt else {
+        guard let fetchedAt = viewModel.snapshot?.fetchedAt else {
             return prefix
         }
 
@@ -75,9 +76,9 @@ struct WeatherDetailPanelView: View {
 
     @ViewBuilder
     private var content: some View {
-        switch model.weatherViewModel.state {
+        switch viewModel.state {
         case .idle, .loading:
-            if let snapshot = model.weatherViewModel.snapshot {
+            if let snapshot = viewModel.snapshot {
                 WeatherSnapshotContent(snapshot: snapshot, settings: model.settings)
             } else {
                 ProgressView("Loading weather...")
@@ -102,7 +103,7 @@ struct WeatherDetailPanelView: View {
                 message: "Choose a city manually or enable Location Services."
             )
         case .loaded, .stale:
-            if let snapshot = model.weatherViewModel.snapshot {
+            if let snapshot = viewModel.snapshot {
                 WeatherSnapshotContent(snapshot: snapshot, settings: model.settings)
             } else {
                 EmptyView()

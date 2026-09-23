@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CalendarDetailPanelView: View {
     @EnvironmentObject private var model: DockingAppModel
+    @ObservedObject var viewModel: CalendarWidgetViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -9,13 +10,13 @@ struct CalendarDetailPanelView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Calendar")
                         .font(.title2.weight(.semibold))
-                    Text(model.calendarViewModel.nextEventLine)
+                    Text(viewModel.nextEventLine)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button {
-                    Task { await model.calendarViewModel.refresh(settings: model.settings, reason: "manual") }
+                    Task { await viewModel.refresh(settings: model.settings, reason: "manual") }
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
@@ -31,15 +32,15 @@ struct CalendarDetailPanelView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .dockingSurface(settings: model.settings, cornerRadius: 18)
         .task {
-            await model.calendarViewModel.refreshIfNeeded(settings: model.settings)
+            await viewModel.refreshIfNeeded(settings: model.settings)
         }
     }
 
     @ViewBuilder
     private var content: some View {
-        switch model.calendarViewModel.state {
+        switch viewModel.state {
         case .idle, .loading:
-            if model.calendarViewModel.events.isEmpty {
+            if viewModel.events.isEmpty {
                 ProgressView("Loading events...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -89,7 +90,7 @@ struct CalendarDetailPanelView: View {
     private var calendarEventsList: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if model.calendarViewModel.state == .loading {
+                if viewModel.state == .loading {
                     HStack(spacing: 6) {
                         ProgressView()
                             .controlSize(.small)
@@ -99,12 +100,12 @@ struct CalendarDetailPanelView: View {
                     }
                 }
 
-                if let nextEvent = CalendarDetailPanelPresentation.summaryEvent(from: model.calendarViewModel.events) {
+                if let nextEvent = CalendarDetailPanelPresentation.summaryEvent(from: viewModel.events) {
                     CalendarNextEventSummary(event: nextEvent, showLocation: model.settings.calendarShowsLocation)
                 }
 
                 ForEach(
-                    Array(CalendarDetailPanelPresentation.groupedEventsAfterSummary(model.calendarViewModel.events).enumerated()),
+                    Array(CalendarDetailPanelPresentation.groupedEventsAfterSummary(viewModel.events).enumerated()),
                     id: \.offset
                 ) { _, group in
                     VStack(alignment: .leading, spacing: 8) {
