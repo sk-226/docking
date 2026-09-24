@@ -131,6 +131,32 @@ guest() {
   tart exec "$VM_NAME" /bin/zsh -lc "cd '$GUEST_ROOT' && $command"
 }
 
+# The guest's AppleVirtIOFS client does not revalidate its caches when the host
+# changes a file: a file replaced by rename keeps resolving to the deleted inode,
+# and an in-place rewrite shows the new size and mtime with the old bytes. SwiftPM
+# then skips or recompiles from stale sources and the check still passes. A
+# remount drops those caches. Docking is stopped first because a launched
+# dist/Docking.app keeps the mount busy, and diskutil is used instead of umount
+# because Spotlight's mds holds the volume root open after a launch.
+guest_with_fresh_mount() {
+  local command="$1"
+  local mount_point="${GUEST_ROOT%/*}"
+  start_vm
+  if ! tart exec "$VM_NAME" /bin/zsh -c "
+    /usr/bin/pkill -x Docking
+    for _ in {1..50}; do /usr/bin/pgrep -x Docking >/dev/null || break; sleep 0.1; done
+    sudo -n /usr/sbin/diskutil quiet unmount '$mount_point' &&
+      sudo -n /bin/mkdir -p '$mount_point' &&
+      sudo -n /sbin/mount_virtiofs com.apple.virtio-fs.automount '$mount_point' &&
+      /bin/test -d '$GUEST_ROOT'
+  "; then
+    echo "Could not remount '$mount_point' in $VM_NAME to drop stale host file caches." >&2
+    echo "Close guest shells or processes using the mount, or restart the VM with ./script/tart.sh stop." >&2
+    exit 1
+  fi
+  guest "$command"
+}
+
 run_gui() {
   require_tart
   require_vm
@@ -179,22 +205,22 @@ case "$command" in
     guest "sw_vers && printf '\\n' && xcodebuild -version && printf '\\n' && swift --version"
     ;;
   build)
-    guest "swift build --product Docking --scratch-path /private/tmp/docking-app-swiftpm-run"
+    guest_with_fresh_mount "swift build --product Docking --scratch-path /private/tmp/docking-app-swiftpm-run"
     ;;
   validate)
-    guest "swift run --scratch-path /private/tmp/docking-validation DockingValidation && swift test --scratch-path /private/tmp/docking-validation"
+    guest_with_fresh_mount "swift run --scratch-path /private/tmp/docking-validation DockingValidation && swift test --scratch-path /private/tmp/docking-validation"
     ;;
   check)
-    guest "swift build --product Docking --scratch-path /private/tmp/docking-app-swiftpm-run && swift run --scratch-path /private/tmp/docking-validation DockingValidation && swift test --scratch-path /private/tmp/docking-validation"
+    guest_with_fresh_mount "swift build --product Docking --scratch-path /private/tmp/docking-app-swiftpm-run && swift run --scratch-path /private/tmp/docking-validation DockingValidation && swift test --scratch-path /private/tmp/docking-validation"
     ;;
   verify)
-    guest "./script/build_and_run.sh --verify"
+    guest_with_fresh_mount "./script/build_and_run.sh --verify"
     ;;
   smoke)
-    guest "./script/launch_smoke_check.sh"
+    guest_with_fresh_mount "./script/launch_smoke_check.sh"
     ;;
   release)
-    guest "./script/release_check.sh"
+    guest_with_fresh_mount "./script/release_check.sh"
     ;;
   -h|--help|help|"")
     usage

@@ -59,6 +59,11 @@ tools can work with the normal checkout while builds and launch checks execute
 inside the guest. Tart's guest agent is used through `tart exec`, so SSH setup
 and guest GitHub credentials are not required.
 
+The guest does not reliably see host edits through its cached view of that
+mount, so `build`, `validate`, `check`, `verify`, `smoke`, and `release` first
+stop Docking in the guest and remount the share. They fail if a guest shell or
+other process is still using it.
+
 Useful commands:
 
 ```bash
