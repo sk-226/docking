@@ -2240,6 +2240,26 @@ func validateCalendarRequestKeyChangeRefetchesRecentData() async throws {
 }
 
 @MainActor
+func validateCalendarClockChangeRefetchesRecentData() async throws {
+    let provider = CountingCalendarProvider()
+    let viewModel = CalendarWidgetViewModel(provider: provider)
+
+    var settings = DockingSettings.default
+    await viewModel.refreshIfNeeded(settings: settings)
+    await viewModel.refreshAfterClockChange(settings: settings)
+    try expect(provider.upcomingEventRequestCount == 2, "a clock or time zone change should refetch inside the recent-refresh window")
+
+    settings.calendarEnabled = false
+    await viewModel.refreshAfterClockChange(settings: settings)
+    try expect(provider.upcomingEventRequestCount == 2, "a clock change should not fetch while the calendar widget is disabled")
+
+    let undeterminedProvider = CountingCalendarProvider(authorizationState: .notDetermined)
+    let undeterminedViewModel = CalendarWidgetViewModel(provider: undeterminedProvider)
+    await undeterminedViewModel.refreshAfterClockChange(settings: .default)
+    try expect(undeterminedProvider.upcomingEventRequestCount == 0, "a clock change should not request Calendar access")
+}
+
+@MainActor
 func validateCalendarRequestKeyChangeReplacesInFlightRefresh() async throws {
     let provider = RecordingDelayedCalendarProvider()
     let viewModel = CalendarWidgetViewModel(provider: provider)
@@ -3176,6 +3196,7 @@ let asyncValidations: [(String, () async throws -> Void)] = [
     ("weather fresh cache avoids passive refresh", { try await validateWeatherFreshCacheDoesNotRefreshProvider() }),
     ("weather request key change refetches", { try await validateWeatherRequestKeyChangeRefetchesFreshData() }),
     ("calendar request key change refetches", { try await validateCalendarRequestKeyChangeRefetchesRecentData() }),
+    ("calendar clock change refetches", { try await validateCalendarClockChangeRefetchesRecentData() }),
     ("calendar request key change replaces in-flight refresh", { try await validateCalendarRequestKeyChangeReplacesInFlightRefresh() }),
     ("calendar scheduled refresh", { try await validateCalendarScheduledRefresh() }),
     ("weather scheduled refresh", { try await validateWeatherScheduledRefresh() }),

@@ -1242,9 +1242,14 @@ public final class DockingAppModel: ObservableObject {
         // Widget timers sleep toward wall-clock deadlines such as local
         // midnight, so day, clock, and time zone changes move those deadlines.
         // Re-evaluating re-arms them.
-        for name in [Notification.Name.NSCalendarDayChanged, .NSSystemClockDidChange, .NSSystemTimeZoneDidChange] {
+        observe(NotificationCenter.default, name: .NSCalendarDayChanged) { [weak self] in
+            self?.refreshWidgetsIfNeeded()
+        }
+        // Clock and time zone changes also change how loaded events are
+        // displayed, so the calendar refetches even inside its recent window.
+        for name in [Notification.Name.NSSystemClockDidChange, .NSSystemTimeZoneDidChange] {
             observe(NotificationCenter.default, name: name) { [weak self] in
-                self?.refreshWidgetsIfNeeded()
+                self?.refreshWidgetsAfterClockChange()
             }
         }
     }
@@ -1266,6 +1271,13 @@ public final class DockingAppModel: ObservableObject {
     private func refreshWidgetsIfNeeded() {
         Task {
             await calendarViewModel.refreshIfNeeded(settings: settings)
+            await weatherViewModel.refreshIfNeeded(settings: settings)
+        }
+    }
+
+    private func refreshWidgetsAfterClockChange() {
+        Task {
+            await calendarViewModel.refreshAfterClockChange(settings: settings)
             await weatherViewModel.refreshIfNeeded(settings: settings)
         }
     }

@@ -59,7 +59,8 @@ not interacting with the dock.
   midnight; Weather wakes when the cached forecast expires. The timer is
   re-armed after each evaluation, after wake, and after day, clock, or time
   zone changes, and is not armed while a widget is disabled or waiting on a
-  city or location permission.
+  city or location permission. Clock and time zone changes also refetch the
+  calendar, because loaded event times and Today/Tomorrow labels depend on them.
 - Weather refetches when its request settings (city, current location, unit)
   change, but that refetch waits briefly after the last edit so typing a city
   does not issue a request per keystroke.

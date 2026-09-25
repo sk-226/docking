@@ -146,6 +146,26 @@ final class CalendarWidgetViewModel: ObservableObject {
         await refresh(settings: settings, reason: "stale-or-launch")
     }
 
+    func refreshAfterClockChange(settings: DockingSettings) async {
+        currentSettings = settings
+        guard settings.calendarEnabled else {
+            cancelScheduledRefresh()
+            return
+        }
+
+        guard provider.authorizationState == .granted else {
+            cancelScheduledRefresh()
+            publishAuthorizationState(provider.authorizationState)
+            return
+        }
+
+        // Event times and Today/Tomorrow labels are formatted from the current
+        // clock and time zone during body evaluation. A change to either keeps
+        // the request key and the recent-refresh window intact, so
+        // `refreshIfNeeded` would only re-arm the timer and publish nothing.
+        await refresh(settings: settings, reason: "clock-change")
+    }
+
     func refresh(settings: DockingSettings, reason: String) async {
         currentSettings = settings
         guard settings.calendarEnabled else {
