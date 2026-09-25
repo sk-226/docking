@@ -666,7 +666,7 @@ struct WidgetsControlCenterSection: View {
                     Stepper("Lookahead days: \(model.settings.calendarLookaheadDays)", value: $model.settings.calendarLookaheadDays, in: DockingSettingLimits.calendarLookaheadDays)
                     Stepper("Max events: \(model.settings.calendarMaxEventCount)", value: $model.settings.calendarMaxEventCount, in: DockingSettingLimits.calendarMaxEventCount)
                     Toggle("Show event locations", isOn: $model.settings.calendarShowsLocation)
-                    CalendarSourcePicker()
+                    CalendarSourcePicker(viewModel: model.calendarViewModel)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -730,6 +730,7 @@ private struct WeatherDataSourceStatus: View {
 
 private struct CalendarSourcePicker: View {
     @EnvironmentObject private var model: DockingAppModel
+    @ObservedObject var viewModel: CalendarWidgetViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -738,7 +739,7 @@ private struct CalendarSourcePicker: View {
                 Spacer()
                 Button {
                     Task {
-                        await model.calendarViewModel.refreshAvailableCalendars(settings: model.settings)
+                        await viewModel.refreshAvailableCalendars(settings: model.settings)
                     }
                 } label: {
                     Label("Load", systemImage: "arrow.clockwise")
@@ -761,7 +762,7 @@ private struct CalendarSourcePicker: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                switch model.calendarViewModel.sourceState {
+                switch viewModel.sourceState {
                 case .idle:
                     // Do not enumerate calendars merely because the user opened
                     // Control Center. EventKit can display a system permission dialog,
@@ -792,12 +793,12 @@ private struct CalendarSourcePicker: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 case .loaded:
-                    if model.calendarViewModel.availableCalendars.isEmpty {
+                    if viewModel.availableCalendars.isEmpty {
                         Text("No calendars found.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(model.calendarViewModel.availableCalendars) { calendar in
+                        ForEach(viewModel.availableCalendars) { calendar in
                             Toggle(
                                 isOn: Binding(
                                     get: { isSelected(calendar.id) },
@@ -826,7 +827,7 @@ private struct CalendarSourcePicker: View {
     private func setSelected(_ selected: Bool, id: String) {
         var ids = Set(model.settings.calendarSelectedCalendarIDs)
         if ids.isEmpty {
-            ids = Set(model.calendarViewModel.availableCalendars.map(\.id))
+            ids = Set(viewModel.availableCalendars.map(\.id))
         }
 
         if selected {
@@ -835,7 +836,7 @@ private struct CalendarSourcePicker: View {
             ids.remove(id)
         }
 
-        let allIDs = Set(model.calendarViewModel.availableCalendars.map(\.id))
+        let allIDs = Set(viewModel.availableCalendars.map(\.id))
         model.settings.calendarSelectedCalendarIDs = ids == allIDs ? [] : Array(ids).sorted()
     }
 }

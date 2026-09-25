@@ -18,13 +18,24 @@ final class WeatherWidgetViewModel: ObservableObject {
 
     private let provider: WeatherProvider
     private let cache: WeatherCache
-    private var refreshTask: Task<Void, Never>?
+    private var refreshTask: Task<Bool, Never>?
     private var refreshGeneration = 0
+    private var scheduledRefreshTask: Task<Void, Never>?
+    private var currentSettings: DockingSettings = .default
+    private let now: () -> Date
+    private let sleep: WidgetRefreshSleep
     private static let missingManualLocationWithCacheMessage = "Showing cached weather. Choose a city in Control Center to update."
 
-    init(provider: WeatherProvider, cache: WeatherCache = WeatherCache()) {
+    init(
+        provider: WeatherProvider,
+        cache: WeatherCache = WeatherCache(),
+        now: @escaping () -> Date = Date.init,
+        sleep: @escaping WidgetRefreshSleep = WidgetRefreshSchedule.sleep(until:)
+    ) {
         self.provider = provider
         self.cache = cache
+        self.now = now
+        self.sleep = sleep
         self.snapshot = cache.load()
         if snapshot != nil {
             state = .stale("Showing cached weather until the next refresh succeeds.")
@@ -57,13 +68,15 @@ final class WeatherWidgetViewModel: ObservableObject {
     }
 
     func refreshIfNeeded(settings: DockingSettings) async {
+        currentSettings = settings
         guard settings.weatherEnabled else {
             cancelRefresh()
             return
         }
 
-        if let snapshot, WeatherCache.isFresh(snapshot, intervalMinutes: settings.weatherRefreshIntervalMinutes) {
+        if cacheDecision(settings: settings) == .useCache {
             state = .loaded
+            scheduleNextRefresh()
             return
         }
 
@@ -71,6 +84,7 @@ final class WeatherWidgetViewModel: ObservableObject {
     }
 
     func refresh(settings: DockingSettings, force: Bool) async {
+        currentSettings = settings
         guard settings.weatherEnabled else {
             // Disabled widgets should be inert even if a caller reaches the
             // ViewModel directly. Canceling here prevents a previously-started
@@ -80,10 +94,9 @@ final class WeatherWidgetViewModel: ObservableObject {
             return
         }
 
-        if !force,
-           let snapshot,
-           WeatherCache.isFresh(snapshot, intervalMinutes: settings.weatherRefreshIntervalMinutes) {
+        if !force, cacheDecision(settings: settings) == .useCache {
             state = .loaded
+            scheduleNextRefresh()
             return
         }
 
@@ -96,6 +109,7 @@ final class WeatherWidgetViewModel: ObservableObject {
             refreshGeneration += 1
             refreshTask?.cancel()
             refreshTask = nil
+            cancelScheduledRefresh()
             // A cached forecast is still useful, but the user also needs to
             // know why it cannot refresh. The stale message therefore names
             // both facts instead of showing a bare "choose a city" prompt next
@@ -113,9 +127,13 @@ final class WeatherWidgetViewModel: ObservableObject {
             unit: settings.weatherUnit
         )
         let manualFallbackConfiguration = Self.manualFallbackConfiguration(from: settings)
+        let requestKey = settings.weatherRequestKey
 
         let task = Task { [provider, cache, manualFallbackConfiguration] in
-            func publish(_ loaded: WeatherSnapshot) async {
+            func publish(_ fetched: WeatherSnapshot) async {
+                var keyed = fetched
+                keyed.requestKey = requestKey
+                let loaded = keyed
                 await MainActor.run {
                     self.snapshot = loaded
                     self.state = .loaded
@@ -123,64 +141,71 @@ final class WeatherWidgetViewModel: ObservableObject {
                 }
             }
 
+            // The Bool says whether retrying later on a timer can succeed.
+            // Missing city and location-permission outcomes need the user to
+            // act, and those actions already trigger a refresh through the
+            // settings or permission flow.
             func publishManualFallbackOrLocationState(
                 emptyState: WeatherWidgetState,
                 staleMessage: String
-            ) async {
+            ) async -> Bool {
                 guard let manualFallbackConfiguration else {
                     await MainActor.run { self.state = self.snapshot == nil ? emptyState : .stale(staleMessage) }
-                    return
+                    return false
                 }
 
                 do {
                     let loaded = try await provider.fetchWeather(configuration: manualFallbackConfiguration)
                     guard !Task.isCancelled else {
-                        return
+                        return false
                     }
                     await publish(loaded)
                 } catch {
                     guard !Task.isCancelled else {
-                        return
+                        return false
                     }
                     await MainActor.run {
                         let message = "Current location could not be used, and manual city fallback also failed. \(error.localizedDescription)"
                         self.state = self.snapshot == nil ? .error(message) : .stale(message)
                     }
                 }
+                return true
             }
 
             do {
                 let loaded = try await provider.fetchWeather(configuration: configuration)
                 guard !Task.isCancelled else {
-                    return
+                    return false
                 }
                 await publish(loaded)
+                return true
             } catch WeatherProviderError.manualLocationMissing {
                 guard !Task.isCancelled else {
-                    return
+                    return false
                 }
                 await MainActor.run {
                     self.state = self.snapshot == nil ? .manualLocationNotSet : .stale(Self.missingManualLocationWithCacheMessage)
                 }
+                return false
             } catch WeatherProviderError.locationPermissionNeeded {
                 guard !Task.isCancelled else {
-                    return
+                    return false
                 }
-                await publishManualFallbackOrLocationState(
+                return await publishManualFallbackOrLocationState(
                     emptyState: .locationPermissionNeeded,
                     staleMessage: "Location access is needed to update weather."
                 )
             } catch WeatherProviderError.locationDenied {
                 guard !Task.isCancelled else {
-                    return
+                    return false
                 }
-                await publishManualFallbackOrLocationState(
+                return await publishManualFallbackOrLocationState(
                     emptyState: .locationDenied,
                     staleMessage: "Location access is denied. Showing cached weather."
                 )
             } catch {
                 guard !Task.isCancelled else {
-                    return
+                    return false
                 }
                 await MainActor.run {
                     if self.snapshot != nil {
@@ -189,12 +214,20 @@ final class WeatherWidgetViewModel: ObservableObject {
                         self.state = .error(error.localizedDescription)
                     }
                 }
+                return true
             }
         }
 
         refreshTask = task
         state = .loading
-        _ = await task.result
+        let canRetryLater = await task.value
+        if refreshGeneration == generation {
+            if canRetryLater {
+                scheduleNextRefresh()
+            } else {
+                cancelScheduledRefresh()
+            }
+        }
         clearRefreshTask(generation: generation)
     }
 
@@ -202,9 +235,50 @@ final class WeatherWidgetViewModel: ObservableObject {
         refreshGeneration += 1
         refreshTask?.cancel()
         refreshTask = nil
+        cancelScheduledRefresh()
         if state == .loading {
             state = snapshot == nil ? .idle : .stale("Showing cached weather until the next refresh succeeds.")
         }
+    }
+
+    private func cacheDecision(settings: DockingSettings) -> WidgetRefreshDecision {
+        WidgetRefreshDecision.weather(
+            snapshot: snapshot,
+            currentKey: settings.weatherRequestKey,
+            intervalMinutes: settings.weatherRefreshIntervalMinutes,
+            now: now()
+        )
+    }
+
+    private func scheduleNextRefresh() {
+        cancelScheduledRefresh()
+        guard currentSettings.weatherEnabled else {
+            return
+        }
+
+        let deadline = WidgetRefreshSchedule.nextWeatherRefresh(
+            fetchedAt: snapshot?.fetchedAt,
+            intervalMinutes: currentSettings.weatherRefreshIntervalMinutes,
+            now: now()
+        )
+        let sleep = self.sleep
+        scheduledRefreshTask = Task { [weak self] in
+            do {
+                try await sleep(deadline)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, let self else {
+                return
+            }
+            self.scheduledRefreshTask = nil
+            await self.refreshIfNeeded(settings: self.currentSettings)
+        }
+    }
+
+    private func cancelScheduledRefresh() {
+        scheduledRefreshTask?.cancel()
+        scheduledRefreshTask = nil
     }
 
     private func clearRefreshTask(generation: Int) {

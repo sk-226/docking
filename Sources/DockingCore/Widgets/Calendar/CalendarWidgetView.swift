@@ -2,11 +2,12 @@ import SwiftUI
 
 struct CalendarWidgetView: View {
     @EnvironmentObject private var model: DockingAppModel
+    @ObservedObject var viewModel: CalendarWidgetViewModel
 
     var body: some View {
         let presentation = CalendarDockPresentation(
-            event: model.calendarViewModel.events.first,
-            state: model.calendarViewModel.state,
+            event: viewModel.events.first,
+            state: viewModel.state,
             showsLocation: model.settings.calendarShowsLocation
         )
         let preset = model.settings.calendarWidgetSizePreset

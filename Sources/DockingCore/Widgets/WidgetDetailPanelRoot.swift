@@ -8,9 +8,9 @@ struct WidgetDetailPanelRoot: View {
         Group {
             switch kind {
             case .calendar:
-                CalendarDetailPanelView()
+                CalendarDetailPanelView(viewModel: model.calendarViewModel)
             case .weather:
-                WeatherDetailPanelView()
+                WeatherDetailPanelView(viewModel: model.weatherViewModel)
             }
         }
         .preferredColorScheme(model.settings.theme.colorScheme)

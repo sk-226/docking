@@ -2197,6 +2197,157 @@ func validateWidgetTaskLifecycle() async throws {
 }
 
 @MainActor
+func validateWeatherRequestKeyChangeRefetchesFreshData() async throws {
+    let provider = CountingWeatherProvider()
+    let cacheURL = FileManager.default.temporaryDirectory.appendingPathComponent("WeatherRequestKeyValidation-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: cacheURL) }
+    let viewModel = WeatherWidgetViewModel(provider: provider, cache: WeatherCache(fileURL: cacheURL))
+
+    var settings = DockingSettings.default
+    settings.weatherUsesCurrentLocation = false
+    settings.weatherManualLocation = "Tokyo"
+    await viewModel.refreshIfNeeded(settings: settings)
+    try expect(provider.requestCount == 1, "weather launch refresh should fetch once")
+
+    settings.weatherManualLocation = "Osaka"
+    await viewModel.refreshIfNeeded(settings: settings)
+    try expect(provider.requestCount == 2, "changing the weather city should refetch even while the previous forecast is fresh")
+    try expect(provider.requests.last?.manualLocation == "Osaka", "the refetch should ask for the newly selected city")
+    try expect(viewModel.snapshot?.requestKey == settings.weatherRequestKey, "the published snapshot should record the settings that produced it")
+
+    settings.weatherRefreshIntervalMinutes = 120
+    await viewModel.refreshIfNeeded(settings: settings)
+    try expect(provider.requestCount == 2, "changing only the refresh interval should not refetch fresh weather")
+}
+
+@MainActor
+func validateCalendarRequestKeyChangeRefetchesRecentData() async throws {
+    let provider = CountingCalendarProvider()
+    let viewModel = CalendarWidgetViewModel(provider: provider)
+
+    var settings = DockingSettings.default
+    await viewModel.refreshIfNeeded(settings: settings)
+    await viewModel.refreshIfNeeded(settings: settings)
+    try expect(provider.upcomingEventRequestCount == 1, "an unchanged calendar request should honor the recent-refresh window")
+
+    settings.calendarSelectedCalendarIDs = ["work"]
+    await viewModel.refreshIfNeeded(settings: settings)
+    try expect(provider.upcomingEventRequestCount == 2, "changing the selected calendars should refetch inside the recent-refresh window")
+
+    settings.calendarShowsLocation.toggle()
+    await viewModel.refreshIfNeeded(settings: settings)
+    try expect(provider.upcomingEventRequestCount == 2, "display-only calendar settings should not refetch")
+}
+
+@MainActor
+func validateCalendarClockChangeRefetchesRecentData() async throws {
+    let provider = CountingCalendarProvider()
+    let viewModel = CalendarWidgetViewModel(provider: provider)
+
+    var settings = DockingSettings.default
+    await viewModel.refreshIfNeeded(settings: settings)
+    await viewModel.refreshAfterClockChange(settings: settings)
+    try expect(provider.upcomingEventRequestCount == 2, "a clock or time zone change should refetch inside the recent-refresh window")
+
+    settings.calendarEnabled = false
+    await viewModel.refreshAfterClockChange(settings: settings)
+    try expect(provider.upcomingEventRequestCount == 2, "a clock change should not fetch while the calendar widget is disabled")
+
+    let undeterminedProvider = CountingCalendarProvider(authorizationState: .notDetermined)
+    let undeterminedViewModel = CalendarWidgetViewModel(provider: undeterminedProvider)
+    await undeterminedViewModel.refreshAfterClockChange(settings: .default)
+    try expect(undeterminedProvider.upcomingEventRequestCount == 0, "a clock change should not request Calendar access")
+}
+
+@MainActor
+func validateCalendarRequestKeyChangeReplacesInFlightRefresh() async throws {
+    let provider = RecordingDelayedCalendarProvider()
+    let viewModel = CalendarWidgetViewModel(provider: provider)
+
+    var first = DockingSettings.default
+    first.calendarSelectedCalendarIDs = ["work"]
+    let firstRefresh = Task { await viewModel.refreshIfNeeded(settings: first) }
+    try await Task.sleep(nanoseconds: 50_000_000)
+
+    var second = first
+    second.calendarSelectedCalendarIDs = ["work", "personal"]
+    await viewModel.refreshIfNeeded(settings: second)
+    _ = await firstRefresh.result
+    try expect(provider.requestedCalendarIDs == [["work"], ["work", "personal"]], "a new calendar selection should replace an in-flight refresh for the old selection")
+
+    await viewModel.refreshIfNeeded(settings: second)
+    try expect(provider.requestedCalendarIDs.count == 2, "the replacement refresh should be recorded as the latest request")
+}
+
+@MainActor
+func validateCalendarScheduledRefresh() async throws {
+    let provider = CountingCalendarProvider()
+    let sleeper = ManualRefreshSleeper()
+    let viewModel = CalendarWidgetViewModel(provider: provider, sleep: { try await sleeper.sleep(until: $0) })
+
+    await viewModel.refreshIfNeeded(settings: .default)
+    try await sleeper.settle()
+    try expect(provider.upcomingEventRequestCount == 1, "calendar launch refresh should fetch once")
+    try expect(sleeper.deadlines.count == 1, "a completed calendar fetch should arm the next refresh")
+
+    try await sleeper.fireAll()
+    try expect(provider.upcomingEventRequestCount == 2, "the calendar timer should refetch even inside the recent-refresh window")
+    try expect(sleeper.deadlines.count == 2, "the scheduled calendar refresh should arm the following one")
+
+    var disabled = DockingSettings.default
+    disabled.calendarEnabled = false
+    viewModel.disable(settings: disabled)
+    try await sleeper.fireAll()
+    try expect(provider.upcomingEventRequestCount == 2, "disabling Calendar should stop its pending timer")
+}
+
+@MainActor
+func validateWeatherScheduledRefresh() async throws {
+    let provider = CountingWeatherProvider()
+    let sleeper = ManualRefreshSleeper()
+    let clock = ValidationClock(now: Date())
+    let cacheURL = FileManager.default.temporaryDirectory.appendingPathComponent("WeatherScheduleValidation-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: cacheURL) }
+
+    var settings = DockingSettings.default
+    settings.weatherUsesCurrentLocation = false
+    settings.weatherManualLocation = "Tokyo"
+    let cache = WeatherCache(fileURL: cacheURL)
+    var cachedSnapshot = validationWeatherSnapshot(locationName: "Fresh Cache", fetchedAt: clock.now)
+    cachedSnapshot.requestKey = settings.weatherRequestKey
+    cache.save(cachedSnapshot)
+
+    let viewModel = WeatherWidgetViewModel(
+        provider: provider,
+        cache: cache,
+        now: { clock.now },
+        sleep: { try await sleeper.sleep(until: $0) }
+    )
+
+    await viewModel.refreshIfNeeded(settings: settings)
+    try await sleeper.settle()
+    try expect(provider.requestCount == 0, "fresh cached weather should not fetch at launch")
+    try expect(
+        sleeper.deadlines == [cachedSnapshot.fetchedAt.addingTimeInterval(Double(settings.weatherRefreshIntervalMinutes) * 60)],
+        "fresh cached weather should still arm a refresh for when the cache expires"
+    )
+
+    clock.now = clock.now.addingTimeInterval(Double(settings.weatherRefreshIntervalMinutes) * 60)
+    try await sleeper.fireAll()
+    try expect(provider.requestCount == 1, "the weather timer should refetch once the refresh interval has elapsed")
+    try expect(sleeper.deadlines.count == 2, "a completed weather fetch should arm the next refresh")
+
+    viewModel.cancelRefresh()
+    try await sleeper.fireAll()
+    try expect(provider.requestCount == 1, "disabling Weather should stop its pending timer")
+
+    settings.weatherManualLocation = ""
+    await viewModel.refreshIfNeeded(settings: settings)
+    try await sleeper.settle()
+    try expect(sleeper.deadlines.count == 2, "weather without a city should not arm a timer")
+}
+
+@MainActor
 func validateCalendarLaunchDoesNotRequestPermission() async throws {
     let provider = CountingCalendarProvider(authorizationState: .notDetermined)
     let viewModel = CalendarWidgetViewModel(provider: provider)
@@ -2430,16 +2581,18 @@ func validateWeatherFreshCacheDoesNotRefreshProvider() async throws {
     let cacheURL = FileManager.default.temporaryDirectory.appendingPathComponent("WeatherFreshCacheValidation-\(UUID().uuidString).json")
     defer { try? FileManager.default.removeItem(at: cacheURL) }
 
-    let cache = WeatherCache(fileURL: cacheURL)
-    let cachedSnapshot = validationWeatherSnapshot(locationName: "Fresh Cache", fetchedAt: Date())
-    cache.save(cachedSnapshot)
-
-    let viewModel = WeatherWidgetViewModel(provider: provider, cache: cache)
     var settings = DockingSettings.default
     settings.weatherEnabled = true
     settings.weatherUsesCurrentLocation = false
     settings.weatherManualLocation = "Tokyo"
     settings.weatherRefreshIntervalMinutes = DockingSettings.default.weatherRefreshIntervalMinutes
+
+    let cache = WeatherCache(fileURL: cacheURL)
+    var cachedSnapshot = validationWeatherSnapshot(locationName: "Fresh Cache", fetchedAt: Date())
+    cachedSnapshot.requestKey = settings.weatherRequestKey
+    cache.save(cachedSnapshot)
+
+    let viewModel = WeatherWidgetViewModel(provider: provider, cache: cache)
 
     // Fresh cached weather is intentionally considered good enough for passive
     // launch/panel refresh paths. This test protects the battery/network
@@ -2628,11 +2781,15 @@ private struct StaticWeatherProvider: WeatherProvider {
 }
 
 private final class CountingWeatherProvider: WeatherProvider {
-    private(set) var requestCount = 0
+    private(set) var requests: [WeatherRequestConfiguration] = []
+
+    var requestCount: Int {
+        requests.count
+    }
 
     func fetchWeather(configuration: WeatherRequestConfiguration) async throws -> WeatherSnapshot {
-        requestCount += 1
-        return validationWeatherSnapshot(locationName: "Counting")
+        requests.append(configuration)
+        return validationWeatherSnapshot(locationName: configuration.manualLocation ?? "Counting", fetchedAt: Date())
     }
 }
 
@@ -2789,6 +2946,59 @@ private final class ThrowingCalendarProvider: CalendarProviding {
     func upcomingEvents(lookaheadDays: Int, maxEvents: Int, selectedCalendarIDs: [String]) async throws -> [CalendarEventSummary] {
         upcomingEventRequestCount += 1
         throw error
+    }
+}
+
+private final class RecordingDelayedCalendarProvider: CalendarProviding {
+    let changeNotificationName = Notification.Name("RecordingDelayedCalendarProviderChanged")
+    var changeNotificationObject: Any? {
+        nil
+    }
+    let authorizationState: CalendarAuthorizationState = .granted
+    private(set) var requestedCalendarIDs: [[String]] = []
+
+    func availableCalendars() async throws -> [CalendarSourceSummary] {
+        []
+    }
+
+    func upcomingEvents(lookaheadDays: Int, maxEvents: Int, selectedCalendarIDs: [String]) async throws -> [CalendarEventSummary] {
+        requestedCalendarIDs.append(selectedCalendarIDs)
+        try await Task.sleep(nanoseconds: 200_000_000)
+        return []
+    }
+}
+
+@MainActor
+private final class ManualRefreshSleeper {
+    private(set) var deadlines: [Date] = []
+    private var waiters: [CheckedContinuation<Void, Error>] = []
+
+    func sleep(until deadline: Date) async throws {
+        deadlines.append(deadline)
+        try await withCheckedThrowingContinuation { waiters.append($0) }
+    }
+
+    // Resumes every armed timer, including ones the ViewModel already
+    // cancelled, so tests observe whether cancellation is honored.
+    func fireAll() async throws {
+        let firing = waiters
+        waiters = []
+        firing.forEach { $0.resume() }
+        try await settle()
+    }
+
+    // Timer tasks record their deadline only once they start running.
+    func settle() async throws {
+        try await Task.sleep(nanoseconds: 50_000_000)
+    }
+}
+
+@MainActor
+private final class ValidationClock {
+    var now: Date
+
+    init(now: Date) {
+        self.now = now
     }
 }
 
@@ -2984,6 +3194,12 @@ let asyncValidations: [(String, () async throws -> Void)] = [
     ("calendar restricted permission state", { try await validateCalendarRestrictedPublishesPermissionState() }),
     ("calendar write-only permission state", { try await validateCalendarWriteOnlyPublishesPermissionState() }),
     ("weather fresh cache avoids passive refresh", { try await validateWeatherFreshCacheDoesNotRefreshProvider() }),
+    ("weather request key change refetches", { try await validateWeatherRequestKeyChangeRefetchesFreshData() }),
+    ("calendar request key change refetches", { try await validateCalendarRequestKeyChangeRefetchesRecentData() }),
+    ("calendar clock change refetches", { try await validateCalendarClockChangeRefetchesRecentData() }),
+    ("calendar request key change replaces in-flight refresh", { try await validateCalendarRequestKeyChangeReplacesInFlightRefresh() }),
+    ("calendar scheduled refresh", { try await validateCalendarScheduledRefresh() }),
+    ("weather scheduled refresh", { try await validateWeatherScheduledRefresh() }),
     ("weather provider fallback", validateCompositeWeatherFallback),
     ("weather provider permission boundary", validateCompositeWeatherDoesNotHideLocationDenial),
     ("weather manual location missing stays local", { try await validateWeatherManualLocationMissingStaysLocal() }),
