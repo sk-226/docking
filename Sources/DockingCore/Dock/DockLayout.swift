@@ -156,7 +156,11 @@ struct DockMagnificationLens {
             previousEnd = end
         }
         let growth = fullGrowth * fraction
-        let originShift = bounds.originShift(for: growth, preferred: -displacement(first - baseSize / 2) * fraction)
+        // Past the last icon (over widgets) keep the trailing end fixed, so the
+        // widget under the pointer stays put and the shift fades out with growth.
+        let trailingDisplacement = min(0, displacement(last + baseSize / 2))
+        let originShift = bounds.originShift(for: growth,
+                                             preferred: (trailingDisplacement - displacement(first - baseSize / 2)) * fraction)
         return Geometry(sizes: sizes, leadingInsets: insets, growth: growth, originShift: originShift,
                         currentGrowth: maximumGrowth * fraction)
     }
