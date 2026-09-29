@@ -4,7 +4,7 @@ set -euo pipefail
 MODE="${1:-run}"
 APP_NAME="Docking"
 BUNDLE_ID="app.docking.docking"
-APP_VERSION="0.0.5"
+APP_VERSION="0.0.6"
 MIN_SYSTEM_VERSION="26.0"
 CONFIGURATION="${CONFIGURATION:-debug}"
 
