@@ -261,4 +261,25 @@ final class DockMagnificationTests: XCTestCase {
                            position.isVertical ? target.surfaceSize.width : target.surfaceSize.height)
         }
     }
+
+    func testPointerOverWidgetsKeepsTrailingEndFixedWithoutJump() {
+        for position in DockPosition.allCases {
+            var settings = settings()
+            settings.dockPosition = position
+            settings.calendarEnabled = true
+            settings.weatherEnabled = true
+            let base = DockLayout.metrics(itemCount: 9, settings: settings)
+            let baseLength = position.isVertical ? base.panelSize.height : base.panelSize.width
+            let lastEdge = base.iconCenters[8] + settings.iconSize / 2
+            var previousShift: Double?
+            for pointer in stride(from: lastEdge, through: baseLength - base.padding, by: 0.5) {
+                let target = DockLayout.metrics(itemCount: 9, settings: settings, pointerOffset: pointer)
+                let length = position.isVertical ? target.panelSize.height : target.panelSize.width
+                XCTAssertEqual(length - target.originShift, baseLength, accuracy: 0.000_001)
+                if let previousShift { XCTAssertLessThan(abs(target.originShift - previousShift), 2) }
+                previousShift = target.originShift
+            }
+            XCTAssertEqual(DockLayout.metrics(itemCount: 9, settings: settings, pointerOffset: 10_000), base)
+        }
+    }
 }
