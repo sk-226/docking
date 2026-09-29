@@ -54,6 +54,16 @@ not interacting with the dock.
   widget or panel needs data.
 - Disabling a widget cancels its in-flight refresh and closes its detail panel,
   so disabled widgets do not keep doing background work.
+- Widgets refresh on their own through a single one-shot timer per widget, not
+  polling. Calendar wakes at the earliest end of a loaded event or the next
+  midnight; Weather wakes when the cached forecast expires. The timer is
+  re-armed after each evaluation, after wake, and after day, clock, or time
+  zone changes, and is not armed while a widget is disabled or waiting on a
+  city or location permission. Clock and time zone changes also refetch the
+  calendar, because loaded event times and Today/Tomorrow labels depend on them.
+- Weather refetches when its request settings (city, current location, unit)
+  change, but that refetch waits briefly after the last edit so typing a city
+  does not issue a request per keystroke.
 - Reduced Motion disables panel frame animation and hover magnification. This is
   both an accessibility requirement and a guard against unnecessary motion work
   on machines where users have opted out of animation.
@@ -108,7 +118,8 @@ done on the target machine.
 ## Network Cadence
 
 Weather refreshes are allowed on launch, widget open, relevant settings changes,
-and manual refresh. They should not repeat every few seconds.
+manual refresh, and once per refresh interval from the widget timer. They should
+not repeat every few seconds.
 
 Manual check:
 
@@ -120,6 +131,20 @@ Manual check:
 
 The expected behavior is one forecast request when data is missing or stale, then
 cached data until the configured refresh interval or a manual refresh.
+
+## Widget Refresh Without Interaction
+
+1. Launch Docking and do not touch it. Calendar and Weather should change from
+   Loading to real data without opening a panel or switching apps.
+2. In Control Center > Widgets, type a new city. The dock tile should switch to
+   the new city shortly after typing stops, and the logs from
+   `./script/build_and_run.sh --logs` should show one weather fetch, not one per
+   keystroke.
+3. Select a single calendar. The dock tile should switch immediately.
+4. Create an event that ends a few minutes from now. After it ends, the dock
+   tile should move to the next event without any interaction.
+5. Repeat the Fast Local Sample with widgets enabled; idle CPU should not change,
+   and weather fetches in the logs should be spaced by the refresh interval.
 
 ## Sleep and Wake
 

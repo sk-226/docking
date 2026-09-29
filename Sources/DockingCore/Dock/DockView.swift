@@ -42,10 +42,10 @@ struct DockView: View {
             }
             if model.enabledWidgetCount > 0 && !items.isEmpty { dockDivider }
             if settings.calendarEnabled {
-                CalendarWidgetView().padding(edge, widgetInset)
+                CalendarWidgetView(viewModel: model.calendarViewModel).padding(edge, widgetInset)
             }
             if settings.weatherEnabled {
-                WeatherWidgetView().padding(edge, widgetInset)
+                WeatherWidgetView(viewModel: model.weatherViewModel).padding(edge, widgetInset)
             }
             Button { model.addDockItem() } label: {
                 Image(systemName: "plus")

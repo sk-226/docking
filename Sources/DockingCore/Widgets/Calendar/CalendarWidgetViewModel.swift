@@ -37,9 +37,20 @@ final class CalendarWidgetViewModel: ObservableObject {
     private var sourceGeneration = 0
     private var eventStoreChangeToken: NSObjectProtocol?
     private var currentSettings: DockingSettings = .default
+    private var inFlightRequestKey: CalendarRequestKey?
+    private var lastRequestKey: CalendarRequestKey?
+    private var scheduledRefreshTask: Task<Void, Never>?
+    private let now: () -> Date
+    private let sleep: WidgetRefreshSleep
 
-    init(provider: CalendarProviding) {
+    init(
+        provider: CalendarProviding,
+        now: @escaping () -> Date = Date.init,
+        sleep: @escaping WidgetRefreshSleep = WidgetRefreshSchedule.sleep(until:)
+    ) {
         self.provider = provider
+        self.now = now
+        self.sleep = sleep
 
         eventStoreChangeToken = NotificationCenter.default.addObserver(
             forName: provider.changeNotificationName,
@@ -112,23 +123,47 @@ final class CalendarWidgetViewModel: ObservableObject {
     func refreshIfNeeded(settings: DockingSettings) async {
         currentSettings = settings
         guard settings.calendarEnabled else {
+            cancelScheduledRefresh()
             return
         }
 
-        guard refreshTask == nil else {
+        let requestKey = settings.calendarRequestKey
+        if refreshTask != nil, inFlightRequestKey == requestKey {
             return
         }
 
         guard provider.authorizationState == .granted else {
+            cancelScheduledRefresh()
             publishAuthorizationState(provider.authorizationState)
             return
         }
 
-        if let lastRefresh, Date().timeIntervalSince(lastRefresh) < 5 * 60 {
+        if lastRequestKey == requestKey, let lastRefresh, now().timeIntervalSince(lastRefresh) < 5 * 60 {
+            scheduleNextRefresh()
             return
         }
 
         await refresh(settings: settings, reason: "stale-or-launch")
+    }
+
+    func refreshAfterClockChange(settings: DockingSettings) async {
+        currentSettings = settings
+        guard settings.calendarEnabled else {
+            cancelScheduledRefresh()
+            return
+        }
+
+        guard provider.authorizationState == .granted else {
+            cancelScheduledRefresh()
+            publishAuthorizationState(provider.authorizationState)
+            return
+        }
+
+        // Event times and Today/Tomorrow labels are formatted from the current
+        // clock and time zone during body evaluation. A change to either keeps
+        // the request key and the recent-refresh window intact, so
+        // `refreshIfNeeded` would only re-arm the timer and publish nothing.
+        await refresh(settings: settings, reason: "clock-change")
     }
 
     func refresh(settings: DockingSettings, reason: String) async {
@@ -145,6 +180,7 @@ final class CalendarWidgetViewModel: ObservableObject {
         refreshGeneration += 1
         let generation = refreshGeneration
         refreshTask?.cancel()
+        let requestKey = settings.calendarRequestKey
         let task = Task { [provider] in
             do {
                 let loaded = try await provider.upcomingEvents(
@@ -157,7 +193,8 @@ final class CalendarWidgetViewModel: ObservableObject {
                 }
                 await MainActor.run {
                     self.events = loaded
-                    self.lastRefresh = Date()
+                    self.lastRefresh = self.now()
+                    self.lastRequestKey = requestKey
                     self.state = loaded.isEmpty ? .empty : .loaded
                 }
             } catch CalendarProviderError.notDetermined {
@@ -189,8 +226,12 @@ final class CalendarWidgetViewModel: ObservableObject {
         }
 
         refreshTask = task
+        inFlightRequestKey = requestKey
         state = .loading
         _ = await task.result
+        if refreshGeneration == generation {
+            scheduleNextRefresh()
+        }
         clearRefreshTask(generation: generation)
     }
 
@@ -198,6 +239,8 @@ final class CalendarWidgetViewModel: ObservableObject {
         refreshGeneration += 1
         refreshTask?.cancel()
         refreshTask = nil
+        inFlightRequestKey = nil
+        cancelScheduledRefresh()
         if state == .loading {
             state = events.isEmpty ? .idle : .loaded
         }
@@ -287,6 +330,36 @@ final class CalendarWidgetViewModel: ObservableObject {
         await refresh(settings: currentSettings, reason: reason)
     }
 
+    private func scheduleNextRefresh() {
+        cancelScheduledRefresh()
+        guard currentSettings.calendarEnabled, provider.authorizationState == .granted else {
+            return
+        }
+
+        let deadline = WidgetRefreshSchedule.nextCalendarRefresh(events: events, now: now(), calendar: .autoupdatingCurrent)
+        let sleep = self.sleep
+        scheduledRefreshTask = Task { [weak self] in
+            do {
+                try await sleep(deadline)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, let self else {
+                return
+            }
+            self.scheduledRefreshTask = nil
+            // The deadline is an event end or midnight, both of which change
+            // what should be shown even if the last fetch was recent, so this
+            // bypasses the recent-refresh window in `refreshIfNeeded`.
+            await self.refresh(settings: self.currentSettings, reason: "scheduled")
+        }
+    }
+
+    private func cancelScheduledRefresh() {
+        scheduledRefreshTask?.cancel()
+        scheduledRefreshTask = nil
+    }
+
     private func publishAuthorizationState(_ authorizationState: CalendarAuthorizationState) {
         switch authorizationState {
         case .notDetermined:
@@ -321,6 +394,7 @@ final class CalendarWidgetViewModel: ObservableObject {
             return
         }
         refreshTask = nil
+        inFlightRequestKey = nil
     }
 
     private func clearSourceTask(generation: Int) {

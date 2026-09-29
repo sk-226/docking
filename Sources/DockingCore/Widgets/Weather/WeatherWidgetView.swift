@@ -2,11 +2,12 @@ import SwiftUI
 
 struct WeatherWidgetView: View {
     @EnvironmentObject private var model: DockingAppModel
+    @ObservedObject var viewModel: WeatherWidgetViewModel
 
     var body: some View {
         let presentation = WeatherDockPresentation(
-            snapshot: model.weatherViewModel.snapshot,
-            state: model.weatherViewModel.state,
+            snapshot: viewModel.snapshot,
+            state: viewModel.state,
             settings: model.settings
         )
 
